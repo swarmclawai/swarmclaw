@@ -1,20 +1,25 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
+import type { Agent, ProviderType } from '@/types'
 import { isWorkerOnlyAgent, buildWorkerOnlyAgentMessage } from './agent-availability'
 
 describe('isWorkerOnlyAgent', () => {
-  const CLI_PROVIDERS = ['claude-cli', 'codex-cli', 'opencode-cli', 'gemini-cli', 'openclaw']
-  const NON_CLI_PROVIDERS = ['openai', 'anthropic', 'google', 'deepseek', 'groq', 'custom']
+  const CLI_PROVIDERS = ['claude-cli', 'codex-cli', 'opencode-cli', 'gemini-cli', 'openclaw'] satisfies ProviderType[]
+  const NON_CLI_PROVIDERS = ['openai', 'anthropic', 'google', 'deepseek', 'groq', 'together'] satisfies ProviderType[]
+
+  function withProvider(provider: unknown): Pick<Agent, 'provider'> {
+    return { provider } as Pick<Agent, 'provider'>
+  }
 
   for (const provider of CLI_PROVIDERS) {
     it(`returns true for ${provider}`, () => {
-      assert.equal(isWorkerOnlyAgent({ provider }), true)
+      assert.equal(isWorkerOnlyAgent(withProvider(provider)), true)
     })
   }
 
   for (const provider of NON_CLI_PROVIDERS) {
     it(`returns false for ${provider}`, () => {
-      assert.equal(isWorkerOnlyAgent({ provider }), false)
+      assert.equal(isWorkerOnlyAgent(withProvider(provider)), false)
     })
   }
 
@@ -27,7 +32,7 @@ describe('isWorkerOnlyAgent', () => {
   })
 
   it('returns false for empty provider string', () => {
-    assert.equal(isWorkerOnlyAgent({ provider: '' }), false)
+    assert.equal(isWorkerOnlyAgent(withProvider('')), false)
   })
 })
 

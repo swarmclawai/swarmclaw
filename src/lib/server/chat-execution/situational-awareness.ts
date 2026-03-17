@@ -1,4 +1,11 @@
-import { loadTasks, loadSchedules, loadSupervisorIncidents, loadMission, loadAgents, loadConnectors, loadChatrooms, loadUsage } from '@/lib/server/storage'
+import { listAgentIncidents } from '@/lib/server/autonomy/supervisor-incident-repository'
+import { listAgents } from '@/lib/server/agents/agent-repository'
+import { loadChatrooms } from '@/lib/server/chatrooms/chatroom-repository'
+import { loadConnectors } from '@/lib/server/connectors/connector-repository'
+import { loadMission } from '@/lib/server/missions/mission-repository'
+import { loadSchedules } from '@/lib/server/schedules/schedule-repository'
+import { loadTasks } from '@/lib/server/tasks/task-repository'
+import { loadUsage } from '@/lib/server/usage/usage-repository'
 import { listPersistedRuns } from '@/lib/server/runtime/run-ledger'
 import type { BoardTask, Mission, Schedule, SupervisorIncident, SessionRunRecord } from '@/types'
 
@@ -258,7 +265,7 @@ export function buildPlatformStatusSummary(): string {
   const oneDayAgo = now - 86_400_000
 
   // Agents
-  const agents = Object.values(loadAgents())
+  const agents = Object.values(listAgents())
   const activeAgents = agents.filter((a) => a.lastUsedAt && a.lastUsedAt > oneHourAgo)
 
   // Tasks
@@ -276,7 +283,7 @@ export function buildPlatformStatusSummary(): string {
   const connectors = Object.values(loadConnectors())
   const connectorLines: string[] = []
   for (const c of connectors) {
-    const status = c.status === 'running' || c.status === 'connected' ? '✓' : `✗ (${c.status})`
+    const status = c.status === 'running' ? '✓' : `✗ (${c.status})`
     connectorLines.push(`${c.platform || c.id} ${status}`)
   }
 
@@ -285,8 +292,7 @@ export function buildPlatformStatusSummary(): string {
   const activeChatrooms = chatrooms.filter((c) => !c.archivedAt && !c.temporary)
 
   // Incidents
-  const allIncidents = Object.values(loadSupervisorIncidents())
-  const recentIncidents = allIncidents.filter((i) => i.createdAt > oneDayAgo)
+  const recentIncidents = listAgentIncidents().filter((i) => i.createdAt > oneDayAgo)
   const warnings = recentIncidents.filter((i) => i.severity === 'medium').length
   const errors = recentIncidents.filter((i) => i.severity === 'high').length
 
@@ -348,8 +354,7 @@ export function buildSituationalAwarenessBlock(input: SituationalAwarenessInput)
 
   const failedRuns = listPersistedRuns({ sessionId, status: 'failed', limit: 10 })
 
-  const allIncidents = loadSupervisorIncidents()
-  const incidents = Object.values(allIncidents).filter((i) => i.agentId === agentId)
+  const incidents = listAgentIncidents(agentId)
 
   const mission = missionId ? loadMission(missionId) : null
 

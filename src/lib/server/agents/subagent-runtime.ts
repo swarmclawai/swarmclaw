@@ -8,7 +8,7 @@
 
 import { genId } from '@/lib/id'
 import { DEFAULT_DELEGATION_MAX_DEPTH } from '@/lib/runtime/runtime-loop'
-import { loadAgents, loadSessions, saveSessions } from '@/lib/server/storage'
+import { loadAgents } from '@/lib/server/agents/agent-repository'
 import { enqueueSessionRun, type EnqueueSessionRunResult } from '@/lib/server/runtime/session-run-manager'
 import { loadRuntimeSettings } from '@/lib/server/runtime/runtime-settings'
 import { applyResolvedRoute, resolvePrimaryAgentRoute } from '@/lib/server/agents/agent-runtime-config'
@@ -48,6 +48,7 @@ import { debug } from '@/lib/server/debug'
 import { logExecution } from '@/lib/server/execution-log'
 import { enqueueSystemEvent } from '@/lib/server/runtime/system-events'
 import { getEnabledCapabilityIds, splitCapabilityIds } from '@/lib/capability-selection'
+import { getSession, loadSessions, saveSession } from '@/lib/server/sessions/session-repository'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -276,7 +277,7 @@ async function spawnSubagentImpl(
     browserProfileId,
   }
   sessions[sid] = applyResolvedRoute(nextSession, resolvePrimaryAgentRoute(agent))
-  saveSessions(sessions)
+  saveSession(sid, sessions[sid])
 
   log.info('subagent', 'Spawning', { agentId: agent.id, agentName: agent.name, depth: depth + 1, jobId: job.id, sessionId: sid })
   logExecution(sid, 'delegation_start', `Subagent spawning: ${agent.name}`, {
@@ -398,12 +399,13 @@ async function spawnSubagentImpl(
           `subagent:${job.id}`,
         )
       }
+      const completedSession = getSession(sid)
       await runCapabilityHook(
         'sessionEnd',
         {
           sessionId: sid,
-          session: loadSessions()[sid] || null,
-          messageCount: Array.isArray(loadSessions()[sid]?.messages) ? loadSessions()[sid].messages.length : 0,
+          session: completedSession,
+          messageCount: Array.isArray(completedSession?.messages) ? completedSession.messages.length : 0,
           durationMs: subagentResult.durationMs,
           reason: subagentResult.status,
         },
@@ -460,12 +462,13 @@ async function spawnSubagentImpl(
           `subagent:${job.id}`,
         )
       }
+      const failedSession = getSession(sid)
       await runCapabilityHook(
         'sessionEnd',
         {
           sessionId: sid,
-          session: loadSessions()[sid] || null,
-          messageCount: Array.isArray(loadSessions()[sid]?.messages) ? loadSessions()[sid].messages.length : 0,
+          session: failedSession,
+          messageCount: Array.isArray(failedSession?.messages) ? failedSession.messages.length : 0,
           durationMs: subagentResult.durationMs,
           reason: subagentResult.status,
         },

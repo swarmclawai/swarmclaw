@@ -1,6 +1,6 @@
 {
   "name": "@swarmclawai/swarmclaw",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "description": "Self-hosted AI runtime for OpenClaw, delegation, autonomy, runtime skills, crypto wallets, and chat platform connectors.",
   "license": "MIT",
   "publishConfig": {
@@ -30,7 +30,7 @@
   },
   "files": [
     "bin/",
-    "bundled-skills/",
+    "skills/",
     "src/",
     "public/",
     "Dockerfile.sandbox-browser",

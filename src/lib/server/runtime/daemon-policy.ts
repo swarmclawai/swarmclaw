@@ -1,5 +1,5 @@
 import { DEFAULT_HEARTBEAT_INTERVAL_SEC } from '@/lib/runtime/heartbeat-defaults'
-import { loadSettings } from '@/lib/server/storage'
+import { loadSettings } from '@/lib/server/settings/settings-repository'
 import type { Session } from '@/types'
 
 const SYNTHETIC_HEALTH_SESSION_USERS = new Set(['workbench', 'comparison-bench'])

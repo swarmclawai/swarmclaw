@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server'
 import { spawn } from 'child_process'
-import { loadSessions, devServers, localIP } from '@/lib/server/storage'
 import { notFound } from '@/lib/server/collection-helpers'
 import { resolveDevServerLaunchDir } from '@/lib/server/runtime/devserver-launch'
+import { clearDevServer, getDevServer, hasDevServer, registerDevServer, stopDevServer, updateDevServerUrl } from '@/lib/server/runtime/runtime-state'
+import { localIP } from '@/lib/server/runtime/network'
+import { listSessions } from '@/lib/server/sessions/session-repository'
 import { safeParseBody } from '@/lib/server/safe-parse-body'
 import { sleep } from '@/lib/shared-utils'
 import net from 'net'
@@ -56,22 +58,21 @@ async function startDevServer(id: string, session: { cwd: string }): Promise<Dev
       if (match) {
         const detectedPort = match[1]
         detectedUrl = `http://${localIP()}:${detectedPort}`
-        const ds = devServers.get(id)
-        if (ds) ds.url = detectedUrl
+        updateDevServerUrl(id, detectedUrl)
       }
     }
   }
 
   proc.stdout!.on('data', onData)
   proc.stderr!.on('data', onData)
-  proc.on('close', () => { devServers.delete(id); log.info(TAG, `dev server stopped for ${id}`) })
-  proc.on('error', () => devServers.delete(id))
+  proc.on('close', () => { clearDevServer(id); log.info(TAG, `dev server stopped for ${id}`) })
+  proc.on('error', () => clearDevServer(id))
 
-  devServers.set(id, { proc, url: `http://${localIP()}:${port}` })
+  registerDevServer(id, { proc, url: `http://${localIP()}:${port}` })
   log.info(TAG, `starting dev server in ${launch.launchDir} (session cwd=${session.cwd})`)
 
   await sleep(4000)
-  const ds = devServers.get(id)
+  const ds = getDevServer(id)
   if (!ds) {
     return {
       status: 502,
@@ -99,7 +100,7 @@ async function startDevServer(id: string, session: { cwd: string }): Promise<Dev
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const sessions = loadSessions()
+  const sessions = listSessions()
   const session = sessions[id]
   if (!session) return notFound()
 
@@ -108,8 +109,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const { action } = body
 
   if (action === 'start') {
-    if (devServers.has(id)) {
-      const ds = devServers.get(id)!
+    if (hasDevServer(id)) {
+      const ds = getDevServer(id)!
       return NextResponse.json({ running: true, url: ds.url })
     }
 
@@ -126,18 +127,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json(result.body, result.status ? { status: result.status } : undefined)
 
   } else if (action === 'stop') {
-    if (devServers.has(id)) {
-      const ds = devServers.get(id)!
-      try { ds.proc.kill('SIGTERM') } catch {}
-      if (typeof ds.proc.pid === 'number') {
-        try { process.kill(-ds.proc.pid, 'SIGTERM') } catch {}
-      }
-      devServers.delete(id)
-    }
+    stopDevServer(id)
     return NextResponse.json({ running: false })
 
   } else if (action === 'status') {
-    return NextResponse.json({ running: devServers.has(id), url: devServers.get(id)?.url })
+    return NextResponse.json({ running: hasDevServer(id), url: getDevServer(id)?.url })
   }
 
   return NextResponse.json({ running: false })

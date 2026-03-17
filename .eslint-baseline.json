@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "generatedAt": "2026-03-17T17:56:39.080Z",
-  "totalIssues": 414,
-  "uniqueIssues": 128,
+  "generatedAt": "2026-03-17T23:23:55.526Z",
+  "totalIssues": 396,
+  "uniqueIssues": 123,
   "issues": [
     {
       "filePath": "bin/worker-cmd.js",
@@ -58,13 +58,6 @@
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
-      "count": 1
-    },
-    {
-      "filePath": "src/app/api/ip/route.ts",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'_req' is defined but never used.",
       "count": 1
     },
     {
@@ -355,13 +348,6 @@
       "count": 22
     },
     {
-      "filePath": "src/lib/server/chat-execution/stream-agent-chat.ts",
-      "ruleId": "no-console",
-      "severity": 1,
-      "message": "Unexpected console statement.",
-      "count": 1
-    },
-    {
       "filePath": "src/lib/server/connectors/discord.ts",
       "ruleId": "@typescript-eslint/no-unused-vars",
       "severity": 1,
@@ -635,25 +621,11 @@
       "count": 2
     },
     {
-      "filePath": "src/lib/server/runtime/daemon-state.ts",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'listRunningConnectors' is defined but never used.",
-      "count": 1
-    },
-    {
-      "filePath": "src/lib/server/runtime/daemon-state.ts",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'sendConnectorMessage' is defined but never used.",
-      "count": 1
-    },
-    {
       "filePath": "src/lib/server/runtime/heartbeat-service.ts",
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
-      "count": 18
+      "count": 5
     },
     {
       "filePath": "src/lib/server/runtime/process-manager.ts",
@@ -668,13 +640,6 @@
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
       "count": 9
-    },
-    {
-      "filePath": "src/lib/server/runtime/queue-recovery.test.ts",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 1
     },
     {
       "filePath": "src/lib/server/runtime/queue.test.ts",

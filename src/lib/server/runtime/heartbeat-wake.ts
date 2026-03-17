@@ -12,7 +12,9 @@ import {
   readHeartbeatFile,
 } from '@/lib/server/runtime/heartbeat-service'
 import { buildMainLoopHeartbeatPrompt, isMainSession } from '@/lib/server/agents/main-agent-loop'
-import { loadSessions, loadAgents, loadSettings } from '@/lib/server/storage'
+import { listAgents } from '@/lib/server/agents/agent-repository'
+import { getSession, listSessions } from '@/lib/server/sessions/session-repository'
+import { loadSettings } from '@/lib/server/settings/settings-repository'
 import {
   enqueueSessionRun,
   getSessionExecutionState,
@@ -314,9 +316,9 @@ function flushWakes(): void {
 
   if (!wakes.length) return
 
-  const agents = loadAgents()
+  const agents = listAgents()
   const settings = loadSettings()
-  const sessions = loadSessions() as unknown as Record<string, Record<string, unknown>>
+  const sessions = listSessions() as unknown as Record<string, Record<string, unknown>>
   let delayedForRetry = false
 
   for (const wake of wakes) {
@@ -324,7 +326,7 @@ function flushWakes(): void {
       const sessionId = resolveWakeSessionId(wake, sessions)
       if (!sessionId) continue
 
-      const session = (sessions[sessionId] || loadSessions()[sessionId]) as unknown as Record<string, unknown> | undefined
+      const session = (sessions[sessionId] || getSession(sessionId)) as unknown as Record<string, unknown> | undefined
       if (!session) continue
 
       let execution = getSessionExecutionState(sessionId)

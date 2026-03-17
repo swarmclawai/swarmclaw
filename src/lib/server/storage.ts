@@ -1,8 +1,6 @@
 import fs from 'fs'
 import path from 'path'
 import crypto from 'crypto'
-import os from 'os'
-import type { ChildProcess } from 'node:child_process'
 import Database from 'better-sqlite3'
 
 import { perf } from '@/lib/server/runtime/perf'
@@ -105,11 +103,6 @@ export function withTransaction<T>(fn: () => T): T {
 type StoredObject = Record<string, unknown>
 type StoredSessionRecord = Session
 type StoredAgentRecord = Agent
-type ActiveProcess = ChildProcess | {
-  runId?: string | null
-  source?: string
-  kill: (signal?: NodeJS.Signals | number) => boolean | void
-}
 
 // Collection tables (id → JSON blob)
 const COLLECTIONS = [
@@ -306,7 +299,18 @@ function deleteCollectionItem(table: string, id: string) {
   db.prepare(`DELETE FROM ${table} WHERE id = ?`).run(id)
   const cached = collectionCache.get(table)
   if (cached) cached.delete(id)
+  invalidateDerivedCollectionCaches(table)
+}
+
+function invalidateDerivedCollectionCaches(table: string): void {
   factoryTtlCaches.get(table)?.invalidate()
+  if (table === 'sessions') {
+    getSessionsCache().invalidate()
+    return
+  }
+  if (table === 'agents') {
+    getAgentsCache().invalidate()
+  }
 }
 
 /**
@@ -322,7 +326,7 @@ function upsertCollectionItem(table: string, id: string, value: unknown) {
   if (cached) {
     cached.set(id, serialized)
   }
-  factoryTtlCaches.get(table)?.invalidate()
+  invalidateDerivedCollectionCaches(table)
 }
 
 function loadCollectionItem(table: string, id: string): unknown | null {
@@ -356,7 +360,7 @@ function upsertCollectionItems(table: string, entries: Array<[string, unknown]>)
       cached.set(id, serialized)
     }
   }
-  factoryTtlCaches.get(table)?.invalidate()
+  invalidateDerivedCollectionCaches(table)
 }
 
 export function loadStoredItem(table: StorageCollection, id: string): unknown | null {
@@ -1437,21 +1441,6 @@ export const upsertDocumentRevision = documentRevisionsStore.upsert
 const webhooksStore = createCollectionStore('webhooks')
 export const loadWebhooks = webhooksStore.load
 export const saveWebhooks = webhooksStore.save
-
-// --- Active processes ---
-export const active = new Map<string, ActiveProcess>()
-export const devServers = new Map<string, { proc: ChildProcess; url: string }>()
-
-// --- Utilities ---
-export function localIP(): string {
-  for (const ifaces of Object.values(os.networkInterfaces())) {
-    if (!ifaces) continue
-    for (const i of ifaces) {
-      if (i.family === 'IPv4' && !i.internal) return i.address
-    }
-  }
-  return 'localhost'
-}
 
 // --- MCP Servers ---
 const mcpServersStore = createCollectionStore('mcp_servers')

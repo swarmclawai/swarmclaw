@@ -1,10 +1,12 @@
 import { NextResponse } from 'next/server'
-import { loadSession, upsertSession, deleteSession, active, loadAgents } from '@/lib/server/storage'
+import { loadAgents } from '@/lib/server/storage'
 import { notFound } from '@/lib/server/collection-helpers'
 import { normalizeProviderEndpoint } from '@/lib/openclaw/openclaw-endpoint'
 import { resolvePrimaryAgentRoute } from '@/lib/server/agents/agent-runtime-config'
 import { clearMainLoopStateForSession } from '@/lib/server/agents/main-agent-loop'
 import { cleanupSessionProcesses } from '@/lib/server/runtime/process-manager'
+import { deleteSession, getSession, saveSession } from '@/lib/server/sessions/session-repository'
+import { stopActiveSessionProcess } from '@/lib/server/runtime/runtime-state'
 import { getSessionQueueSnapshot, getSessionRunState } from '@/lib/server/runtime/session-run-manager'
 import { normalizeCapabilitySelection } from '@/lib/capability-selection'
 import { enrichSessionWithMissionSummary } from '@/lib/server/missions/mission-service'
@@ -12,12 +14,12 @@ import { safeParseBody } from '@/lib/server/safe-parse-body'
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const session = loadSession(id)
+  const session = getSession(id)
   if (!session) return notFound()
 
   const run = getSessionRunState(id)
   const queue = getSessionQueueSnapshot(id)
-  session.active = active.has(id) || !!run.runningRunId
+  session.active = !!run.runningRunId
   session.queuedCount = queue.queueLength
   session.currentRunId = run.runningRunId || null
 
@@ -28,7 +30,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   const { id } = await params
   const { data: updates, error } = await safeParseBody(req)
   if (error) return error
-  const session = loadSession(id) as Record<string, unknown> | null
+  const session = getSession(id) as Record<string, unknown> | null
   if (!session) return notFound()
 
   if (updates.resetMainLoopState === true) {
@@ -142,17 +144,14 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   if (updates.delegateResumeIds !== undefined) session.delegateResumeIds = updates.delegateResumeIds
   if (!Array.isArray(session.messages)) session.messages = []
 
-  upsertSession(id, session)
+  saveSession(id, session)
   return NextResponse.json(enrichSessionWithMissionSummary(session as never))
 }
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  if (!loadSession(id)) return notFound()
-  if (active.has(id)) {
-    try { active.get(id)?.kill() } catch {}
-    active.delete(id)
-  }
+  if (!getSession(id)) return notFound()
+  stopActiveSessionProcess(id)
   cleanupSessionProcesses(id)
   deleteSession(id)
   return new NextResponse('OK')

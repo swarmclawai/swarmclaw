@@ -367,12 +367,14 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
   const toolEvents = message.toolEvents ?? emptyToolEvents
   const toolEventsForMedia = useMemo(
     () => (liveStreamActive
-      ? liveToolEvents.map((event) => ({
-          name: event.name,
-          input: event.input,
-          output: event.output,
-          error: event.status === 'error' || undefined,
-        }))
+      ? (liveToolEvents.length > 0
+          ? liveToolEvents.map((event) => ({
+              name: event.name,
+              input: event.input,
+              output: event.output,
+              error: event.status === 'error' || undefined,
+            }))
+          : toolEvents)
       : toolEvents),
     [liveStreamActive, liveToolEvents, toolEvents],
   )
@@ -383,7 +385,15 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
   )
   const displayToolEvents = useMemo(
     () => (liveStreamActive
-      ? liveToolEvents.filter((ev) => ev.name !== 'send_file' || ev.status === 'error')
+      ? (liveToolEvents.length > 0
+          ? liveToolEvents.filter((ev) => ev.name !== 'send_file' || ev.status === 'error')
+          : persistedToolEvents.map((ev, i) => ({
+              id: ev.toolCallId || `${message.time}-${ev.name}-${i}`,
+              name: ev.name,
+              input: ev.input,
+              output: ev.output,
+              status: ev.error ? 'error' as const : 'done' as const,
+            })))
       : persistedToolEvents.map((ev, i) => ({
           id: ev.toolCallId || `${message.time}-${ev.name}-${i}`,
           name: ev.name,
@@ -419,11 +429,11 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
     ? (liveStreamActive ? (liveStream?.thinking?.trim() ? liveStream.thinking : undefined) : message.thinking)
     : undefined
 
-  const sourceText = liveStreamActive ? (liveStream?.text || '') : message.text
+  const sourceText = liveStreamActive ? (liveStream?.text || message.text || '') : message.text
   const connectorDeliveryTranscript = !isUser && message.kind === 'connector-delivery'
     ? (message.source?.deliveryTranscript?.trim() || '')
     : ''
-  const copySourceText = connectorDeliveryTranscript || (liveStreamActive ? (liveStream?.text || '') : message.text)
+  const copySourceText = connectorDeliveryTranscript || (liveStreamActive ? (liveStream?.text || message.text || '') : message.text)
 
   // Extract ALL media from ALL tool events for inline display after the message text.
   // Covers send_file, browser screenshots, file tool outputs — everything.

@@ -1,10 +1,10 @@
 import { hmrSingleton } from '@/lib/shared-utils'
-import { log } from '@/lib/server/logger'
 
 const TAG = 'instrumentation'
 
 export async function register() {
   if (process.env.NEXT_RUNTIME === 'nodejs') {
+    const { log } = await import('@/lib/server/logger')
     const isWorkerOnly = process.env.SWARMCLAW_WORKER_ONLY === '1'
     const { initWsServer, closeWsServer } = await import('./lib/server/ws-hub')
     const { ensureDaemonStarted } = await import('@/lib/server/runtime/daemon-state')

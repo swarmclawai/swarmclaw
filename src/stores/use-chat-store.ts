@@ -10,6 +10,7 @@ import {
   removeQueuedSessionMessage,
 } from '@/lib/chat/chats'
 import { mergeCompletedAssistantMessage, reconcileClientMessageMetadata } from '@/lib/chat/chat-streaming-state'
+import { createAssistantRenderId } from '@/lib/chat/assistant-render-id'
 import { stripAllInternalMetadata } from '@/lib/strip-internal-metadata'
 import {
   clearQueuedMessagesForSession,
@@ -152,10 +153,6 @@ function stripHiddenControlTokens(text: string): string {
   return cleaned.replace(/\n{3,}/g, '\n\n').trim()
 }
 
-function nextAssistantRenderId(): string {
-  return `assistant-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
-}
-
 function reconcileMessagesForState(
   nextMessages: Message[],
   currentMessages: Message[],
@@ -181,6 +178,17 @@ function syncSessionQueueState(sessionId: string, params: {
     queuedCount: params.queuedCount,
     currentRunId: params.currentRunId ?? null,
     active: params.active ?? session.active,
+  })
+}
+
+function markSessionRunIdle(sessionId: string): void {
+  const appState = useAppStore.getState()
+  const session = appState.sessions[sessionId]
+  if (!session) return
+  appState.updateSessionInStore({
+    ...session,
+    active: false,
+    currentRunId: null,
   })
 }
 
@@ -239,6 +247,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         s.queuedMessages,
         sessionId,
         snapshotToQueuedMessages(snapshot),
+        { activeRunId: snapshot.activeRunId },
       )
       // Clear "sending" items whose text has already appeared in chat messages
       const messages = s.messages
@@ -285,6 +294,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           removeQueuedMessageById(s.queuedMessages, optimistic.runId),
           sessionId,
           snapshotToQueuedMessages(response.snapshot),
+          { activeRunId: response.snapshot.activeRunId },
         ),
       }))
       syncSessionQueueState(sessionId, {
@@ -314,6 +324,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         s.queuedMessages,
         sessionId,
         snapshotToQueuedMessages(response.snapshot),
+        { activeRunId: response.snapshot.activeRunId },
       ),
     }))
     syncSessionQueueState(sessionId, {
@@ -331,6 +342,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         s.queuedMessages,
         sessionId,
         snapshotToQueuedMessages(response.snapshot),
+        { activeRunId: response.snapshot.activeRunId },
       ),
     }))
     syncSessionQueueState(sessionId, {
@@ -388,7 +400,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       attachedFiles,
       ...(replyToId ? { replyToId } : {}),
     }
-    const assistantRenderId = nextAssistantRenderId()
+    const assistantRenderId = createAssistantRenderId()
     set((s) => ({
       streaming: true,
       streamingSessionId: sessionId,
@@ -603,6 +615,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         thinkingText: '',
         thinkingStartTime: 0,
       }))
+      markSessionRunIdle(sessionId)
       if (get().ttsEnabled && !get().voiceConversationActive) speak(visibleFinalText)
     } else {
       set({
@@ -617,6 +630,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         thinkingText: '',
         thinkingStartTime: 0,
       })
+      markSessionRunIdle(sessionId)
     }
 
     void useAppStore.getState().refreshSession(sessionId)
@@ -635,6 +649,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           thinkingText: '',
           thinkingStartTime: 0,
         })
+        markSessionRunIdle(sessionId)
       }
     }
   },
@@ -865,5 +880,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
       toolEvents: [],
       agentStatus: null,
     })
+    if (sessionId) markSessionRunIdle(sessionId)
   },
 }))

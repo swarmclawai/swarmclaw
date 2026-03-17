@@ -1,4 +1,4 @@
-import { loadSettings } from '@/lib/server/storage'
+import { loadSettings } from '@/lib/server/settings/settings-repository'
 import type { AppNotification } from '@/types'
 import { errorMessage } from '@/lib/shared-utils'
 import { log } from '@/lib/server/logger'

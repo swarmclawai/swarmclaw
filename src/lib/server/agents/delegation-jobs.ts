@@ -1,13 +1,20 @@
 import { genId } from '@/lib/id'
 import { hmrSingleton } from '@/lib/shared-utils'
 import type { DelegationJobArtifact, DelegationJobCheckpoint, DelegationJobRecord, DelegationJobStatus } from '@/types'
-import { loadDelegationJobs, loadDelegationJobItem, loadSession, logActivity, patchDelegationJob, upsertDelegationJob } from '@/lib/server/storage'
+import {
+  loadDelegationJob,
+  loadDelegationJobs,
+  patchDelegationJob,
+  upsertDelegationJob,
+} from '@/lib/server/agents/delegation-job-repository'
+import { logActivity } from '@/lib/server/activity/activity-log'
 import { logExecution } from '@/lib/server/execution-log'
 import { log } from '@/lib/server/logger'
 import { debug } from '@/lib/server/debug'
 import { createNotification } from '@/lib/server/create-notification'
 import { enqueueSystemEvent } from '@/lib/server/runtime/system-events'
 import { ensureDelegationMission, syncDelegationMissionFromJob } from '@/lib/server/missions/mission-service'
+import { loadSession } from '@/lib/server/sessions/session-repository'
 import { notify } from '@/lib/server/ws-hub'
 
 interface DelegationRuntimeHandle {
@@ -115,7 +122,7 @@ export function createDelegationJob(input: CreateDelegationJobInput): Delegation
 }
 
 export function getDelegationJob(id: string): DelegationJobRecord | null {
-  const current = loadDelegationJobItem(id)
+  const current = loadDelegationJob(id)
   if (!current || typeof current !== 'object') return null
   return current as DelegationJobRecord
 }
@@ -144,9 +151,9 @@ export function updateDelegationJob(
     }
   })
   if (!result) return null
-  const synced = syncDelegationMissionFromJob(id) || result
+  syncDelegationMissionFromJob(id)
   notifyDelegationJobsChanged()
-  return getDelegationJob(id) || synced
+  return getDelegationJob(id) || result
 }
 
 export function appendDelegationCheckpoint(

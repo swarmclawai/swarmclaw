@@ -1,10 +1,17 @@
 import { hmrSingleton } from '@/lib/shared-utils'
 import type { GoalContract, Message, MessageToolEvent, Session } from '@/types'
 import { mergeGoalContracts, parseGoalContractFromText, parseMainLoopPlan, parseMainLoopReview } from '@/lib/server/agents/autonomy-contract'
+import {
+  deletePersistedMainLoopState,
+  loadPersistedMainLoopState,
+  upsertPersistedMainLoopState,
+} from '@/lib/server/agents/main-loop-state-repository'
+import { loadAgents } from '@/lib/server/agents/agent-repository'
 import { assessAutonomyRun } from '@/lib/server/autonomy/supervisor-reflection'
 import { enqueueSystemEvent } from '@/lib/server/runtime/system-events'
-import { loadAgents, loadSessions, loadSettings, loadPersistedMainLoopState, upsertPersistedMainLoopState, deletePersistedMainLoopState } from '@/lib/server/storage'
 import { buildMissionHeartbeatPrompt as buildMissionHeartbeatPromptFromMission, getMissionForSession } from '@/lib/server/missions/mission-service'
+import { loadSettings } from '@/lib/server/settings/settings-repository'
+import { getSession, loadSessions } from '@/lib/server/sessions/session-repository'
 
 const LEGACY_META_LINE_RE = /\[(?:MAIN_LOOP_META|MAIN_LOOP_PLAN|MAIN_LOOP_REVIEW|AGENT_HEARTBEAT_META)\]\s*(\{[^\n]*\})?/i
 const HEARTBEAT_META_RE = /\[AGENT_HEARTBEAT_META\]\s*(\{[^\n]*\})/i
@@ -437,7 +444,7 @@ function hydrateStateFromSession(sessionId: string): MainLoopState | null {
 }
 
 function persistState(sessionId: string, state: MainLoopState): void {
-  upsertPersistedMainLoopState(sessionId, state as unknown)
+  upsertPersistedMainLoopState(sessionId, state as unknown as Record<string, unknown>)
 }
 
 function getOrCreateState(sessionId: string): MainLoopState | null {
@@ -738,7 +745,7 @@ export function isMainSession(session: unknown): boolean {
 export function buildMainLoopHeartbeatPrompt(session: unknown, fallbackPrompt: string): string {
   const candidate = asSession(session)
   if (!candidate?.id) return fallbackPrompt
-  const persistedSession = loadSessions()[String(candidate.id)] as Session | undefined
+  const persistedSession = getSession(String(candidate.id)) as Session | undefined
   const missionPrompt = buildMissionHeartbeatPromptFromMission(
     persistedSession || candidate as Session,
     fallbackPrompt,

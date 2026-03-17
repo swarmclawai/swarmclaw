@@ -1,4 +1,6 @@
-import { loadSchedules, loadAgents, loadTasks, upsertSchedule, upsertSchedules, upsertTask } from '@/lib/server/storage'
+import { listAgents } from '@/lib/server/agents/agent-repository'
+import { loadSchedules, upsertSchedule, upsertSchedules } from '@/lib/server/schedules/schedule-repository'
+import { loadTasks, upsertTask } from '@/lib/server/tasks/task-repository'
 import { enqueueTask } from '@/lib/server/runtime/queue'
 import { CronExpressionParser } from 'cron-parser'
 import { pushMainLoopEventToMainSessions } from '@/lib/server/agents/main-agent-loop'
@@ -90,7 +92,7 @@ function computeNextRuns() {
 async function tick(now = Date.now()) {
   await processDueWatchJobs(now)
   const schedules = loadSchedules()
-  const agents = loadAgents()
+  const agents = listAgents()
   const tasks = loadTasks()
   const inFlightScheduleKeys = new Set<string>(
     Object.values(tasks as Record<string, ScheduleTaskLike>)

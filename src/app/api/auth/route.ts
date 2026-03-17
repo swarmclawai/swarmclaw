@@ -1,10 +1,13 @@
 import { NextResponse } from 'next/server'
 import { safeParseBody } from '@/lib/server/safe-parse-body'
-import { getAccessKey, validateAccessKey, isFirstTimeSetup, markSetupComplete, replaceAccessKey } from '@/lib/server/storage'
+import { log } from '@/lib/server/logger'
+import { getAccessKey, validateAccessKey, isFirstTimeSetup, markSetupComplete, replaceAccessKey } from '@/lib/server/storage-auth'
 import { AUTH_COOKIE_NAME, getCookieValue } from '@/lib/auth'
 import { isProductionRuntime } from '@/lib/runtime/runtime-env'
 import { hmrSingleton } from '@/lib/shared-utils'
 export const dynamic = 'force-dynamic'
+
+const TAG = 'auth-route'
 
 interface AuthAttemptEntry {
   count: number
@@ -75,6 +78,20 @@ function pruneExpiredEntries() {
   }
 }
 
+function startDaemonAfterAuth() {
+  void import('@/lib/server/runtime/daemon-state')
+    .then(({ ensureDaemonStarted }) => {
+      try {
+        ensureDaemonStarted('api/auth:post')
+      } catch (err: unknown) {
+        log.error(TAG, 'Deferred daemon start failed', err)
+      }
+    })
+    .catch((err: unknown) => {
+      log.error(TAG, 'Failed to load daemon-state for deferred start', err)
+    })
+}
+
 /** POST /api/auth — validate an access key */
 export async function POST(req: Request) {
   const rateLimitEnabled = isRateLimitEnabled()
@@ -98,8 +115,7 @@ export async function POST(req: Request) {
     replaceAccessKey(key.trim())
     markSetupComplete()
     if (rateLimitEnabled) authRateLimitMap.delete(clientIp)
-    const { ensureDaemonStarted } = await import('@/lib/server/runtime/daemon-state')
-    ensureDaemonStarted('api/auth:post')
+    startDaemonAfterAuth()
     return setAuthCookie(NextResponse.json({ ok: true }), req, key.trim())
   }
 
@@ -128,7 +144,6 @@ export async function POST(req: Request) {
   if (isFirstTimeSetup()) {
     markSetupComplete()
   }
-  const { ensureDaemonStarted } = await import('@/lib/server/runtime/daemon-state')
-  ensureDaemonStarted('api/auth:post')
+  startDaemonAfterAuth()
   return setAuthCookie(NextResponse.json({ ok: true }), req, key)
 }

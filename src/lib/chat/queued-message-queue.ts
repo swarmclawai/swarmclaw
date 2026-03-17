@@ -41,18 +41,27 @@ export function snapshotToQueuedMessages(snapshot: SessionQueueSnapshot): Queued
   return snapshot.items.map((item) => ({ ...item }))
 }
 
+interface ReplaceQueuedMessagesOptions {
+  activeRunId?: string | null
+}
+
 export function replaceQueuedMessagesForSession(
   queue: QueuedSessionMessage[],
   sessionId: string,
   nextItems: QueuedSessionMessage[],
+  options: ReplaceQueuedMessagesOptions = {},
 ): QueuedSessionMessage[] {
   const otherSessions = queue.filter((item) => item.sessionId !== sessionId)
   const previousForSession = queue.filter((item) => item.sessionId === sessionId && !item.sending)
   // Detect consumed messages: items in local state but not in server snapshot.
-  // Keep them visible as "sending" so they don't vanish from the UI.
+  // Keep only the run that actually became active visible as "sending" so it
+  // doesn't vanish from the UI before the transcript refresh catches up.
   const nextRunIds = new Set(nextItems.map((item) => item.runId))
+  const activeRunId = typeof options.activeRunId === 'string' && options.activeRunId.trim()
+    ? options.activeRunId
+    : null
   const consumed = previousForSession
-    .filter((item) => !item.optimistic && !nextRunIds.has(item.runId))
+    .filter((item) => !item.optimistic && !nextRunIds.has(item.runId) && activeRunId === item.runId)
     .map((item) => ({ ...item, sending: true }))
   return [
     ...otherSessions,

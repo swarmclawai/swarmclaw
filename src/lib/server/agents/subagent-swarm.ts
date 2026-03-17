@@ -13,22 +13,23 @@ import { genId } from '@/lib/id'
 import { errorMessage, hmrSingleton, sleep } from '@/lib/shared-utils'
 import { log } from '@/lib/server/logger'
 import { logExecution } from '@/lib/server/execution-log'
-import { logActivity } from '@/lib/server/storage'
+import { logActivity } from '@/lib/server/activity/activity-log'
 import { createNotification } from '@/lib/server/create-notification'
 import { notify } from '@/lib/server/ws-hub'
+import { loadAgents } from '@/lib/server/agents/agent-repository'
 import {
   spawnSubagent,
   type SubagentContext,
   type SubagentHandle,
   type SubagentResult,
 } from '@/lib/server/agents/subagent-runtime'
-import { loadAgents, loadSessions } from '@/lib/server/storage'
 import { getDelegationJob } from '@/lib/server/agents/delegation-jobs'
 import {
   getLineageNode,
   cancelLineageNode,
   type SubagentState,
 } from '@/lib/server/agents/subagent-lineage'
+import { loadSessions } from '@/lib/server/sessions/session-repository'
 import type { Agent } from '@/types'
 
 // ---------------------------------------------------------------------------

@@ -3,9 +3,10 @@ import { HumanMessage, AIMessage } from '@langchain/core/messages'
 import { createReactAgent } from '@langchain/langgraph/prebuilt'
 import { MemorySaver } from '@langchain/langgraph'
 import { DEFAULT_HEARTBEAT_INTERVAL_SEC } from '@/lib/runtime/heartbeat-defaults'
+import { getAgent } from '@/lib/server/agents/agent-repository'
 import { buildSessionTools } from '@/lib/server/session-tools'
 import { buildChatModel } from '@/lib/server/build-llm'
-import { loadSettings, loadAgents } from '@/lib/server/storage'
+import { loadSettings } from '@/lib/server/settings/settings-repository'
 import { getExtensionManager } from '@/lib/server/extensions'
 import {
   collectCapabilityAgentContext,
@@ -228,13 +229,14 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
   // fallbackCredentialIds is intentionally accepted for compatibility with caller signatures.
   void fallbackCredentialIds
 
+  const sessionAgent = session.agentId ? getAgent(session.agentId) : null
+
   // Resolve agent's thinking level for provider-native params
   let agentThinkingLevel: 'minimal' | 'low' | 'medium' | 'high' | undefined
   if (session.thinkingLevel) {
     agentThinkingLevel = session.thinkingLevel
-  } else if (session.agentId) {
-    const agentsForThinking = loadAgents()
-    agentThinkingLevel = agentsForThinking[session.agentId]?.thinkingLevel
+  } else if (sessionAgent) {
+    agentThinkingLevel = sessionAgent.thinkingLevel
   }
 
   const llm = buildChatModel({
@@ -320,9 +322,8 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
   let agentResponseStyle: 'concise' | 'normal' | 'detailed' | null = null
   let agentResponseMaxChars: number | null = null
   const activeProjectContext = resolveActiveProjectContext(session)
-  if (session.agentId) {
-    const agents = loadAgents()
-    const agent = agents[session.agentId]
+  if (sessionAgent) {
+    const agent = sessionAgent
     isCoordinatorAgent = agent?.role === 'coordinator'
     agentDelegationEnabled = agent?.delegationEnabled === true
     agentDelegationTargetMode = agent?.delegationTargetMode === 'selected' ? 'selected' : 'all'
@@ -415,10 +416,8 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
 
   // Proactive memory recall — full mode only
   {
-    const agents = loadAgents()
-    const agentForMemory = session.agentId ? agents[session.agentId] : null
     const memoryResult = await buildProactiveMemorySection(
-      session, agentForMemory, message, activeProjectContext.projectRoot,
+      session, sessionAgent, message, activeProjectContext.projectRoot,
       isMinimalPrompt, currentThreadRecallRequest,
     )
     if (memoryResult.section) promptParts.push(memoryResult.section)
@@ -926,14 +925,18 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
           && !abortController.signal.aborted)
           || (isTransientProviderError && !abortController.signal.aborted)
 
-        const logLevel = abortController.signal.aborted ? 'warn' : 'error'
-        console[logLevel](`[stream-agent-chat] Error in streamEvents iteration=${iteration}`, {
+        const logPayload = {
           errName, errMsg, errStack,
           statusCode, retryAfterMs: extractedRetryAfterMs,
           isRecursionError, isContextOverflow, isTransientAbort,
           hasToolCalls: state.hasToolCalls, fullTextLen: state.fullText.length,
           parentAborted: abortController.signal.aborted,
-        })
+        }
+        if (abortController.signal.aborted) {
+          log.warn(TAG, `Error in streamEvents iteration=${iteration}`, logPayload)
+        } else {
+          log.error(TAG, `Error in streamEvents iteration=${iteration}`, logPayload)
+        }
 
         if (timers.requiredToolKickoffTimedOut && limits.canContinue('required_tool') && !abortController.signal.aborted) {
           const hadPartialOutput = state.fullText.length > iterationStartState.fullText.length || state.streamedToolEvents.length > iterationStartState.toolEventCount

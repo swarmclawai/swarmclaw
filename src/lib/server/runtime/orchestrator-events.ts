@@ -1,6 +1,6 @@
 import { enqueueOrchestratorEvent } from '@/lib/server/runtime/system-events'
 import { isOrchestratorEligible } from '@/lib/orchestrator-config'
-import { loadAgents } from '@/lib/server/storage'
+import { listAgents } from '@/lib/server/agents/agent-repository'
 
 /**
  * Broadcast an event to all orchestrator-enabled agents.
@@ -8,7 +8,7 @@ import { loadAgents } from '@/lib/server/storage'
  */
 export function notifyOrchestrators(text: string, contextKey?: string): void {
   try {
-    const agents = loadAgents()
+    const agents = listAgents()
     for (const agent of Object.values(agents)) {
       if (agent.orchestratorEnabled && !agent.disabled && !agent.trashedAt && isOrchestratorEligible(agent)) {
         enqueueOrchestratorEvent(agent.id, text, contextKey)

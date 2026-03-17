@@ -3,13 +3,15 @@ import { after, before, describe, it } from 'node:test'
 
 let mod: typeof import('@/lib/server/protocols/protocol-normalization')
 
+const savedBuildMode = process.env.SWARMCLAW_BUILD_MODE
 before(async () => {
   process.env.SWARMCLAW_BUILD_MODE = '1'
   mod = await import('@/lib/server/protocols/protocol-normalization')
 })
 
 after(() => {
-  delete process.env.SWARMCLAW_BUILD_MODE
+  if (savedBuildMode === undefined) delete process.env.SWARMCLAW_BUILD_MODE
+  else process.env.SWARMCLAW_BUILD_MODE = savedBuildMode
 })
 
 describe('protocol-normalization', () => {
@@ -26,8 +28,8 @@ describe('protocol-normalization', () => {
     })
 
     it('artifact_exists with artifactKind', () => {
-      const result = mod.normalizeCondition({ type: 'artifact_exists', artifactKind: 'report' })
-      assert.deepEqual(result, { type: 'artifact_exists', artifactKind: 'report' })
+      const result = mod.normalizeCondition({ type: 'artifact_exists', artifactKind: 'summary' })
+      assert.deepEqual(result, { type: 'artifact_exists', artifactKind: 'summary' })
     })
 
     it('artifact_exists without artifactKind', () => {
@@ -53,7 +55,7 @@ describe('protocol-normalization', () => {
         type: 'all',
         conditions: [
           { type: 'summary_exists' },
-          { type: 'artifact_exists', artifactKind: 'doc' },
+          { type: 'artifact_exists', artifactKind: 'notes' },
         ],
       })
       assert.equal(result!.type, 'all')

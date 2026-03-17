@@ -1,7 +1,8 @@
 import { genId } from '@/lib/id'
 import type { RunEventRecord, SessionRunRecord, SessionRunStatus, SSEEvent } from '@/types'
 import {
-  deleteStoredItem,
+  deleteRuntimeRun,
+  deleteRuntimeRunEvent,
   loadRuntimeRun,
   loadRuntimeRunEvents,
   loadRuntimeRunEventsByRunId,
@@ -9,7 +10,7 @@ import {
   patchRuntimeRun,
   upsertRuntimeRun,
   upsertRuntimeRunEvent,
-} from '@/lib/server/storage'
+} from '@/lib/server/runtime/run-repository'
 
 const MAX_SUMMARY_CHARS = 240
 const RESTART_RECOVERABLE_SOURCES = new Set([
@@ -137,7 +138,7 @@ export function pruneOldRuns(): { prunedRuns: number; prunedEvents: number } {
       // Non-terminal (running/queued) — only prune if stuck for much longer
       if (deadline - endTs < ORPHANED_RUN_RETENTION_MS) continue
     }
-    deleteStoredItem('runtime_runs', id)
+    deleteRuntimeRun(id)
     prunedRunIds.add(id)
     prunedRuns++
   }
@@ -146,7 +147,7 @@ export function pruneOldRuns(): { prunedRuns: number; prunedEvents: number } {
   const events = loadRuntimeRunEvents()
   for (const [id, event] of Object.entries(events)) {
     if (prunedRunIds.has(event.runId)) {
-      deleteStoredItem('runtime_run_events', id)
+      deleteRuntimeRunEvent(id)
       prunedEvents++
       continue
     }
@@ -154,7 +155,7 @@ export function pruneOldRuns(): { prunedRuns: number; prunedEvents: number } {
     const parentRun = runs[event.runId]
     if (!parentRun || !TERMINAL_STATUSES.has(parentRun.status)) continue
     if (deadline - event.timestamp < RUN_EVENT_RETENTION_MS) continue
-    deleteStoredItem('runtime_run_events', id)
+    deleteRuntimeRunEvent(id)
     prunedEvents++
   }
 

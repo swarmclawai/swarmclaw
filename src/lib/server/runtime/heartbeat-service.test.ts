@@ -370,8 +370,8 @@ describe('buildAgentHeartbeatPrompt', () => {
       {
         id: 's1',
         messages: [
-          { role: 'user', text: 'Check the logs', toolEvents: [] },
-          { role: 'assistant', text: 'Logs look clean', toolEvents: [] },
+          { role: 'user', text: 'Check the logs', toolEvents: [], time: Date.now() },
+          { role: 'assistant', text: 'Logs look clean', toolEvents: [], time: Date.now() },
         ],
       },
       { name: 'Bot' },

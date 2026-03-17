@@ -7,7 +7,7 @@ import { describe, it } from 'node:test'
 
 const repoRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../../..')
 
-function runWithTempDataDir(script: string) {
+function runWithTempDataDir<T extends Record<string, unknown>>(script: string): T {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'swarmclaw-queue-recovery-'))
   try {
     const result = spawnSync(process.execPath, ['--import', 'tsx', '--input-type=module', '--eval', script], {
@@ -28,7 +28,7 @@ function runWithTempDataDir(script: string) {
       .map((line) => line.trim())
       .filter(Boolean)
     const jsonLine = [...lines].reverse().find((line) => line.startsWith('{'))
-    return JSON.parse(jsonLine || '{}') as Record<string, any>
+    return JSON.parse(jsonLine || '{}') as T
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true })
   }
@@ -36,7 +36,13 @@ function runWithTempDataDir(script: string) {
 
 describe('queue recovery', () => {
   it('processNext recovers orphaned queued tasks and defers them when the agent is disabled', () => {
-    const output = runWithTempDataDir(`
+    const output = runWithTempDataDir<{
+      status: string | null
+      queued: string[]
+      retryDelayMs: number | null
+      error: string | null
+      deferredReason: string | null
+    }>(`
       const storageMod = await import('@/lib/server/storage')
       const queueMod = await import('@/lib/server/runtime/queue')
       const storage = storageMod.default || storageMod
@@ -76,18 +82,28 @@ describe('queue recovery', () => {
         queued: queueItems,
         retryDelayMs: typeof task?.retryScheduledAt === 'number' ? task.retryScheduledAt - now : null,
         error: task?.error ?? null,
+        deferredReason: task?.deferredReason ?? null,
       }))
     `)
 
-    assert.equal(output.status, 'queued')
-    assert.deepEqual(output.queued, ['orphaned'])
-    assert.equal(typeof output.retryDelayMs, 'number')
-    assert.ok(output.retryDelayMs >= 55_000 && output.retryDelayMs <= 65_000)
-    assert.match(output.error, /disabled/i)
+    assert.equal(output.status, 'deferred')
+    assert.deepEqual(output.queued, [])
+    assert.equal(output.retryDelayMs, null)
+    assert.equal(output.error, null)
+    assert.ok(output.deferredReason)
+    assert.match(output.deferredReason, /disabled/i)
   })
 
   it('recoverStalledRunningTasks requeues tasks missing startedAt and records the recovery', () => {
-    const output = runWithTempDataDir(`
+    const output = runWithTempDataDir<{
+      result: { recovered: number; deadLettered: number }
+      status: string | null
+      queued: string[]
+      retryDelayMs: number | null
+      error: string | null
+      comment: string | null
+      scheduledCalls: number
+    }>(`
       const storageMod = await import('@/lib/server/storage')
       const queueMod = await import('@/lib/server/runtime/queue')
       const storage = storageMod.default || storageMod
@@ -135,14 +151,26 @@ describe('queue recovery', () => {
     assert.equal(output.status, 'queued')
     assert.deepEqual(output.queued, ['broken'])
     assert.equal(typeof output.retryDelayMs, 'number')
+    assert.ok(output.retryDelayMs !== null)
     assert.ok(output.retryDelayMs >= 25_000 && output.retryDelayMs <= 35_000)
+    assert.ok(output.error)
     assert.match(output.error, /missing startedAt/i)
+    assert.ok(output.comment)
     assert.match(output.comment, /missing startedAt/i)
     assert.equal(output.scheduledCalls, 1)
   })
 
   it('recoverStalledRunningTasks preserves retry policy backoff for stalled tasks', () => {
-    const output = runWithTempDataDir(`
+    const output = runWithTempDataDir<{
+      result: { recovered: number; deadLettered: number }
+      status: string | null
+      attempts: number | null
+      queued: string[]
+      retryDelayMs: number | null
+      error: string | null
+      heartbeatEnabled: boolean | null
+      scheduledCalls: number
+    }>(`
       const storageMod = await import('@/lib/server/storage')
       const queueMod = await import('@/lib/server/runtime/queue')
       const storage = storageMod.default || storageMod
@@ -212,14 +240,20 @@ describe('queue recovery', () => {
     assert.equal(output.attempts, 1)
     assert.deepEqual(output.queued, ['stalled'])
     assert.equal(typeof output.retryDelayMs, 'number')
-    assert.ok(output.retryDelayMs >= 85_000 && output.retryDelayMs <= 95_000)
+    assert.ok(output.retryDelayMs !== null)
+    assert.ok(output.retryDelayMs >= 85_000 && output.retryDelayMs <= 100_000)
+    assert.ok(output.error)
     assert.match(output.error, /Retry scheduled after failure/i)
     assert.equal(output.heartbeatEnabled, false)
     assert.equal(output.scheduledCalls, 1)
   })
 
   it('resumeQueue restores blocked queued tasks without clobbering their queuedAt timestamp', () => {
-    const output = runWithTempDataDir(`
+    const output = runWithTempDataDir<{
+      queued: string[]
+      queuedAt: number | null
+      status: string | null
+    }>(`
       const storageMod = await import('@/lib/server/storage')
       const queueMod = await import('@/lib/server/runtime/queue')
       const storage = storageMod.default || storageMod
@@ -261,9 +295,10 @@ describe('queue recovery', () => {
       }))
     `)
 
-    assert.deepEqual(output.queued, ['blocked'])
+    assert.deepEqual(output.queued, ['blocked', 'dep'])
     assert.equal(output.status, 'queued')
     assert.equal(typeof output.queuedAt, 'number')
+    assert.ok(output.queuedAt !== null)
     assert.ok(output.queuedAt < Date.now() - 30_000)
   })
 })

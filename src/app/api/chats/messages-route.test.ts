@@ -10,11 +10,13 @@ test('chat messages route materializes stale streaming artifacts even if runtime
     returnedText: string | null
     persistedStreaming: boolean | null
     persistedText: string | null
-  }>(`
-    const storageMod = await import('./src/lib/server/storage')
-    const routeMod = await import('./src/app/api/chats/[id]/messages/route')
-    const storage = storageMod.default || storageMod
-    const route = routeMod.default || routeMod
+	  }>(`
+	    const storageMod = await import('./src/lib/server/storage')
+	    const routeMod = await import('./src/app/api/chats/[id]/messages/route')
+	    const runtimeStateMod = await import('./src/lib/server/runtime/runtime-state')
+	    const storage = storageMod.default || storageMod
+	    const route = routeMod.default || routeMod
+	    const runtimeState = runtimeStateMod.default || runtimeStateMod
 
     storage.upsertStoredItem('sessions', 'session-stale', {
       id: 'session-stale',
@@ -37,7 +39,7 @@ test('chat messages route materializes stale streaming artifacts even if runtime
       ],
     })
 
-    storage.active.set('session-stale', { kill() {} })
+	    runtimeState.registerActiveSessionProcess('session-stale', { kill() {} })
 
     const response = await route.GET(
       new Request('http://local/api/chats/session-stale/messages'),

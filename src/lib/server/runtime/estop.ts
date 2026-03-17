@@ -1,5 +1,7 @@
 import type { ApprovalRequest, EstopState } from '@/types'
-import { loadApprovals, loadPersistedEstopState, loadSettings, savePersistedEstopState, upsertApproval } from '@/lib/server/storage'
+import { loadApprovals, upsertApproval } from '@/lib/server/approvals/approval-repository'
+import { loadPersistedEstopState, savePersistedEstopState } from '@/lib/server/runtime/estop-repository'
+import { loadSettings } from '@/lib/server/settings/settings-repository'
 import { requestApproval } from '@/lib/server/approvals'
 
 const DEFAULT_ESTOP_STATE: EstopState = {

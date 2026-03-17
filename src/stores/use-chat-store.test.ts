@@ -196,6 +196,60 @@ describe('useChatStore control-token hygiene', () => {
     assert.equal(assistantMessage?.clientRenderId, state.assistantRenderId)
   })
 
+  it('marks the session idle locally as soon as a direct stream finishes', async () => {
+    const session = makeSession({ active: true, currentRunId: 'run-1' } as Partial<Session>)
+    useAppStore.setState({
+      agents: { 'agent-1': makeAgent() },
+      sessions: { [session.id]: session },
+      currentAgentId: 'agent-1',
+    })
+    useChatStore.setState({
+      messages: [],
+      pendingFiles: [],
+      replyingTo: null,
+      toolEvents: [],
+      streamText: '',
+      displayText: '',
+      streaming: false,
+      streamingSessionId: null,
+      streamSource: null,
+      assistantRenderId: null,
+      streamPhase: 'thinking',
+      streamToolName: '',
+      thinkingText: '',
+      thinkingStartTime: 0,
+      queuedMessages: [],
+      agentStatus: null,
+      lastUsage: null,
+      hasMoreMessages: false,
+      loadingMore: false,
+      totalMessages: 0,
+    })
+
+    global.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url === '/api/chats/session-1/chat') {
+        return sseResponse([
+          { t: 'r', text: 'Done' },
+          { t: 'done' },
+        ])
+      }
+      if (url === '/api/chats/session-1') {
+        return new Response(JSON.stringify({ ...session, active: false, currentRunId: null }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      }
+      throw new Error(`Unexpected fetch: ${url}`)
+    }) as unknown as typeof fetch
+
+    await useChatStore.getState().sendMessage('Hello', { sessionId: 'session-1' })
+
+    const refreshedSession = useAppStore.getState().sessions['session-1']
+    assert.equal(refreshedSession?.active, false)
+    assert.equal(refreshedSession?.currentRunId, null)
+  })
+
   it('replaces optimistic queued items with the backend queue snapshot', async () => {
     const session = makeSession()
     useAppStore.setState({

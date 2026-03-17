@@ -43,16 +43,17 @@ describe('chat-streaming-state', () => {
         localStreaming: true,
         hasLiveArtifacts: true,
         assistantRenderId: 'render-1',
+        showLiveRow: true,
+        syntheticAssistant: messages[1],
       } as StreamingAwareMessageListOptions),
       [
         { role: 'user', text: 'hello', time: 1 },
         {
           role: 'assistant',
-          text: 'final answer',
-          time: 0,
+          text: 'partial',
+          time: 2,
           kind: 'chat',
           streaming: true,
-          thinking: 'working...',
           clientRenderId: 'render-1',
         },
       ],
@@ -69,6 +70,7 @@ describe('chat-streaming-state', () => {
         localStreaming: true,
         hasLiveArtifacts: true,
         assistantRenderId: 'render-2',
+        showLiveRow: true,
       } as StreamingAwareMessageListOptions),
       [
         { role: 'user', text: 'hello', time: 1 },
@@ -79,6 +81,43 @@ describe('chat-streaming-state', () => {
           kind: 'chat',
           streaming: true,
           clientRenderId: 'render-2',
+        },
+      ],
+    )
+  })
+
+  it('can show a synthetic live row for server-driven runs using the latest persisted streaming artifact', () => {
+    const messages: Message[] = [
+      { role: 'user', text: 'queued follow-up', time: 1 },
+      {
+        role: 'assistant',
+        text: 'Drafting the handoff now.',
+        time: 2,
+        streaming: true,
+        thinking: 'Collecting the completion details',
+        toolEvents: [{ name: 'send_file', input: '{}', output: '/api/uploads/deck.pdf' }],
+      },
+    ]
+
+    assert.deepEqual(
+      buildStreamingAwareMessageList(messages, {
+        localStreaming: true,
+        hasLiveArtifacts: false,
+        assistantRenderId: 'render-server',
+        showLiveRow: true,
+        syntheticAssistant: messages[1],
+      }),
+      [
+        { role: 'user', text: 'queued follow-up', time: 1 },
+        {
+          role: 'assistant',
+          text: 'Drafting the handoff now.',
+          time: 2,
+          kind: 'chat',
+          streaming: true,
+          thinking: 'Collecting the completion details',
+          toolEvents: [{ name: 'send_file', input: '{}', output: '/api/uploads/deck.pdf' }],
+          clientRenderId: 'render-server',
         },
       ],
     )

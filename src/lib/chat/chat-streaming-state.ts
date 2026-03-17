@@ -10,6 +10,8 @@ export interface StreamingAwareMessageListOptions {
   localStreaming: boolean
   hasLiveArtifacts: boolean
   assistantRenderId?: string | null
+  showLiveRow?: boolean
+  syntheticAssistant?: Partial<Message> | null
 }
 
 function isStreamingAssistantMessage(
@@ -27,13 +29,13 @@ function isStreamingAssistantMessage(
 
 export function shouldHidePersistedStreamingAssistantMessage(
   message: Message,
-  opts: { localStreaming: boolean; hasLiveArtifacts: boolean },
+  opts: { localStreaming: boolean; hasLiveArtifacts: boolean; showLiveRow?: boolean },
 ): boolean {
+  const showLiveRow = opts.showLiveRow ?? (opts.localStreaming && opts.hasLiveArtifacts)
   return (
-    opts.localStreaming
+    showLiveRow
     && message.role === 'assistant'
     && message.streaming === true
-    && opts.hasLiveArtifacts
   )
 }
 
@@ -41,21 +43,31 @@ export function buildStreamingAwareMessageList(
   messages: Message[],
   opts: StreamingAwareMessageListOptions,
 ): Message[] {
-  const nextMessages = opts.localStreaming && opts.hasLiveArtifacts
+  const showLiveRow = opts.showLiveRow ?? (opts.localStreaming && opts.hasLiveArtifacts)
+  const nextMessages = showLiveRow
     ? messages.filter((message) => !shouldHidePersistedStreamingAssistantMessage(message, opts))
     : messages
 
-  if (!opts.localStreaming || !opts.hasLiveArtifacts || !opts.assistantRenderId) {
+  if (!showLiveRow || !opts.assistantRenderId) {
     return nextMessages
   }
 
   const syntheticAssistantMessage: Message = {
     role: 'assistant',
-    text: '',
-    time: 0,
-    kind: 'chat',
+    text: typeof opts.syntheticAssistant?.text === 'string' ? opts.syntheticAssistant.text : '',
+    time: typeof opts.syntheticAssistant?.time === 'number' ? opts.syntheticAssistant.time : 0,
+    kind: opts.syntheticAssistant?.kind || 'chat',
     streaming: true,
     clientRenderId: opts.assistantRenderId,
+  }
+  if (typeof opts.syntheticAssistant?.thinking === 'string') {
+    syntheticAssistantMessage.thinking = opts.syntheticAssistant.thinking
+  }
+  if (Array.isArray(opts.syntheticAssistant?.toolEvents)) {
+    syntheticAssistantMessage.toolEvents = opts.syntheticAssistant.toolEvents
+  }
+  if (opts.syntheticAssistant?.source) {
+    syntheticAssistantMessage.source = opts.syntheticAssistant.source
   }
 
   return [

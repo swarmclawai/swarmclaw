@@ -27,6 +27,7 @@ import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { speak } from '@/lib/tts'
 import { api } from '@/lib/app/api-client'
 import { messagesDiffer } from '@/lib/chat/chat-streaming-state'
+import { createAssistantRenderId } from '@/lib/chat/assistant-render-id'
 import { getSessionLastMessage } from '@/lib/chat/session-summary'
 import { getEnabledCapabilityIds, getEnabledToolIds } from '@/lib/capability-selection'
 
@@ -70,6 +71,36 @@ export function ChatArea() {
   const previewContent = useChatStore((s) => s.previewContent)
   const setPreviewContent = useChatStore((s) => s.setPreviewContent)
   const isDesktop = useMediaQuery('(min-width: 768px)')
+
+  const markSessionLocallyIdle = useCallback((targetSessionId: string) => {
+    const appState = useAppStore.getState()
+    const existing = appState.sessions[targetSessionId]
+    if (!existing) return
+    appState.updateSessionInStore({
+      ...existing,
+      active: false,
+      currentRunId: null,
+    })
+  }, [])
+
+  const startServerStreamingPlaceholder = useCallback((targetSessionId: string, phase: 'queued' | 'thinking' | 'connecting' = 'thinking') => {
+    useChatStore.setState((state) => {
+      const sameServerStream = state.streaming
+        && state.streamSource === 'server'
+        && state.streamingSessionId === targetSessionId
+
+      return {
+        streaming: true,
+        streamingSessionId: targetSessionId,
+        streamSource: 'server',
+        streamPhase: sameServerStream ? state.streamPhase : phase,
+        streamText: '',
+        displayText: '',
+        assistantRenderId: sameServerStream && state.assistantRenderId ? state.assistantRenderId : createAssistantRenderId(),
+        thinkingStartTime: sameServerStream && state.thinkingStartTime > 0 ? state.thinkingStartTime : Date.now(),
+      }
+    })
+  }, [])
 
   const currentAgent = useAppStore((s) => {
     const agentId = session?.agentId
@@ -178,14 +209,12 @@ export function ChatArea() {
     })
 
     const sessionAtLoad = useAppStore.getState().sessions[requestedSessionId]
-    if (sessionAtLoad?.active) {
-      useChatStore.setState({ streaming: true, streamingSessionId: requestedSessionId, streamSource: 'server', streamText: '' })
-    }
+    if (sessionAtLoad?.active) startServerStreamingPlaceholder(requestedSessionId)
 
     return () => {
       cancelled = true
     }
-  }, [loadQueuedMessages, refreshSession, sessionId, setDevServer, setMessages])
+  }, [loadQueuedMessages, refreshSession, sessionId, setDevServer, setMessages, startServerStreamingPlaceholder])
 
   useEffect(() => {
     if (!sessionId || messagesLoading) return
@@ -195,9 +224,7 @@ export function ChatArea() {
       void refreshSession(requestedSessionId).then(() => {
         if (cancelled || selectActiveSessionId(useAppStore.getState()) !== requestedSessionId) return
         const refreshed = useAppStore.getState().sessions[requestedSessionId]
-        if (refreshed?.active) {
-          useChatStore.setState({ streaming: true, streamingSessionId: requestedSessionId, streamSource: 'server', streamText: '' })
-        }
+        if (refreshed?.active) startServerStreamingPlaceholder(requestedSessionId)
       }).catch((err) => console.error('Failed to refresh session:', err))
 
       void devServer(requestedSessionId, 'status').then((r) => {
@@ -213,7 +240,7 @@ export function ChatArea() {
       cancelled = true
       window.clearTimeout(timer)
     }
-  }, [messagesLoading, refreshSession, sessionId, setDevServer])
+  }, [messagesLoading, refreshSession, sessionId, setDevServer, startServerStreamingPlaceholder])
 
   useEffect(() => {
     if (!sessionId || messagesLoading) return
@@ -292,19 +319,12 @@ export function ChatArea() {
         && !chatState.streaming
         && chatState.streamingSessionId !== sessionId
       ) {
-        useChatStore.setState({
-          streaming: true,
-          streamingSessionId: sessionId,
-          streamSource: 'server',
-          streamPhase: 'thinking',
-          streamText: '',
-          thinkingStartTime: Date.now(),
-        })
+        startServerStreamingPlaceholder(sessionId)
       }
     } catch (err) {
       console.error('Failed to refresh queue:', err)
     }
-  }, [loadQueuedMessages, sessionId])
+  }, [loadQueuedMessages, sessionId, startServerStreamingPlaceholder])
 
   // Subscribe to WS messages for this session — always subscribe when session exists,
   // only enable fallback polling when actively needed
@@ -316,7 +336,7 @@ export function ChatArea() {
   useWs(
     sessionId ? 'runs' : '',
     refreshQueue,
-    sessionId && (isServerActive || queuedCount > 0) ? 10_000 : undefined,
+    sessionId && (isServerActive || queuedCount > 0) ? 2_500 : undefined,
   )
 
   // Listen for stream-end signal from the server — clears streaming state
@@ -325,11 +345,12 @@ export function ChatArea() {
     if (!sessionId) return
     const state = useChatStore.getState()
     if (state.streamSource === 'server' && state.streamingSessionId === sessionId) {
-      useChatStore.setState({ streaming: false, streamingSessionId: null, streamSource: null, streamText: '', displayText: '', streamPhase: 'thinking', streamToolName: '', thinkingText: '', thinkingStartTime: 0 })
+      markSessionLocallyIdle(sessionId)
+      useChatStore.setState({ streaming: false, streamingSessionId: null, streamSource: null, streamText: '', displayText: '', assistantRenderId: null, streamPhase: 'thinking', streamToolName: '', thinkingText: '', thinkingStartTime: 0 })
       void refreshMessages()
       void refreshSession(sessionId)
     }
-  }, [sessionId, refreshMessages, refreshSession])
+  }, [markSessionLocallyIdle, sessionId, refreshMessages, refreshSession])
   useWs(sessionId ? `stream-end:${sessionId}` : '', handleStreamEnd)
 
   // Keep the local typing indicator aligned with the server's active state
@@ -338,7 +359,7 @@ export function ChatArea() {
     const state = useChatStore.getState()
     if (isServerActive) {
       if (!state.streaming && !state.streamText) {
-        useChatStore.setState({ streaming: true, streamingSessionId: sessionId, streamSource: 'server', streamText: '' })
+        startServerStreamingPlaceholder(sessionId)
       }
       return
     }
@@ -349,9 +370,10 @@ export function ChatArea() {
     ) {
       // Server finished — clear all streaming state and fetch final messages
       fetchMessages(sessionId).then(setMessages).catch(() => {})
-      useChatStore.setState({ streaming: false, streamingSessionId: null, streamSource: null, streamText: '', displayText: '', streamPhase: 'thinking', streamToolName: '', thinkingText: '', thinkingStartTime: 0 })
+      markSessionLocallyIdle(sessionId)
+      useChatStore.setState({ streaming: false, streamingSessionId: null, streamSource: null, streamText: '', displayText: '', assistantRenderId: null, streamPhase: 'thinking', streamToolName: '', thinkingText: '', thinkingStartTime: 0 })
     }
-  }, [isServerActive, sessionId, setMessages])
+  }, [isServerActive, markSessionLocallyIdle, sessionId, setMessages, startServerStreamingPlaceholder])
 
   // Poll browser status while session has browser tools
   const hasBrowserTool = getEnabledToolIds(session).includes('browser')

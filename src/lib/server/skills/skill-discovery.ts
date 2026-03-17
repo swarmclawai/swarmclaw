@@ -19,7 +19,7 @@ interface DiscoveryCache {
 }
 
 const CACHE_TTL_MS = 5_000
-const BUNDLED_SKILLS_DIR = path.join(process.cwd(), 'bundled-skills')
+const BUNDLED_SKILLS_DIR = path.join(process.cwd(), 'skills')
 const LEGACY_BUNDLED_SKILLS_DIR = path.join(DATA_DIR, 'skills')
 
 let cache: DiscoveryCache | null = null
@@ -84,7 +84,7 @@ function scanLayer(
 
 /**
  * Discover skills from three layers:
- *   1. Bundled: `bundled-skills/` (tracked with the app)
+ *   1. Bundled: `skills/` (tracked with the app)
  *      Legacy fallback: `data/skills/`
  *   2. Workspace: `<swarmclaw-home>/skills/` (user-installed)
  *   3. Project: `<cwd>/skills/` (project-local)

@@ -835,6 +835,8 @@ describe('mission-service', () => {
 
   it('reconciles stale executing missions on startup', () => {
     const output = runWithTempDataDir<{
+      beforeStatus: string | null
+      beforePhase: string | null
       missionStatus: string | null
       missionPhase: string | null
       eventTypes: string[]
@@ -863,17 +865,22 @@ describe('mission-service', () => {
         },
       })
 
-      const missionsList = missions.listMissions({ status: 'non_terminal' })
-      const mission = missionsList.find((entry) => entry.id === 'missionA') || missions.loadMissionById('missionA')
+      const before = missions.loadMissionById('missionA')
+      missions.runMissionControllerStartupRecovery()
+      const mission = missions.loadMissionById('missionA')
       const events = missions.listMissionEventsForMission('missionA')
 
       console.log(JSON.stringify({
+        beforeStatus: before?.status || null,
+        beforePhase: before?.phase || null,
         missionStatus: mission?.status || null,
         missionPhase: mission?.phase || null,
         eventTypes: events.map((event) => event.type),
       }))
     `, { prefix: 'swarmclaw-mission-service-' })
 
+    assert.equal(output.beforeStatus, 'active')
+    assert.equal(output.beforePhase, 'executing')
     assert.equal(output.missionStatus, 'active')
     assert.equal(output.missionPhase, 'planning')
     assert.ok(output.eventTypes.includes('interrupted'))

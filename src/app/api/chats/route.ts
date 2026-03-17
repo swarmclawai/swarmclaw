@@ -3,9 +3,11 @@ import { genId } from '@/lib/id'
 import os from 'os'
 import path from 'path'
 import { perf } from '@/lib/server/runtime/perf'
-import { loadSessions, saveSessions, deleteSession, active, loadAgents } from '@/lib/server/storage'
+import { loadAgents } from '@/lib/server/storage'
 import { WORKSPACE_DIR } from '@/lib/server/data-dir'
 import { notify } from '@/lib/server/ws-hub'
+import { deleteSession, listSessions, replaceSessions } from '@/lib/server/sessions/session-repository'
+import { stopActiveSessionProcess } from '@/lib/server/runtime/runtime-state'
 import { getSessionQueueSnapshot, getSessionRunState } from '@/lib/server/runtime/session-run-manager'
 import { normalizeProviderEndpoint } from '@/lib/openclaw/openclaw-endpoint'
 import { applyResolvedRoute, resolvePrimaryAgentRoute } from '@/lib/server/agents/agent-runtime-config'
@@ -25,11 +27,11 @@ export async function GET(req: Request) {
   const endPerf = perf.start('api', 'GET /api/chats')
   // Note: pruneThreadConnectorMirrors and materializeStreamingAssistantArtifacts
   // are handled by the daemon periodic health check, not on every list fetch.
-  const sessions = loadSessions()
+  const sessions = listSessions()
   for (const id of Object.keys(sessions)) {
     const run = getSessionRunState(id)
     const queue = getSessionQueueSnapshot(id)
-    sessions[id].active = active.has(id) || !!run.runningRunId
+    sessions[id].active = !!run.runningRunId
     sessions[id].queuedCount = queue.queueLength
     sessions[id].currentRunId = run.runningRunId || null
   }
@@ -59,14 +61,11 @@ export async function DELETE(req: Request) {
   if (!Array.isArray(ids) || !ids.length) {
     return new NextResponse('Missing ids', { status: 400 })
   }
-  const sessions = loadSessions()
+  const sessions = listSessions()
   let deleted = 0
   for (const id of ids) {
     if (!sessions[id]) continue
-    if (active.has(id)) {
-      try { active.get(id)?.kill() } catch {}
-      active.delete(id)
-    }
+    stopActiveSessionProcess(id)
     deleteSession(id)
     deleted += 1
   }
@@ -83,7 +82,7 @@ export async function POST(req: Request) {
   else if (!cwd) cwd = WORKSPACE_DIR
 
   const id = body.id || genId()
-  const sessions = loadSessions()
+  const sessions = listSessions()
   const agent = body.agentId ? loadAgents()[body.agentId] : null
   if (isAgentDisabled(agent)) {
     return NextResponse.json({ error: buildAgentDisabledMessage(agent, 'start chats') }, { status: 409 })
@@ -162,7 +161,7 @@ export async function POST(req: Request) {
   sessions[id] = (body.provider || body.model || body.credentialId || body.apiEndpoint)
     ? nextSession
     : applyResolvedRoute(nextSession, resolvedRoute)
-  saveSessions(sessions)
+  replaceSessions(sessions)
   notify('sessions')
   return NextResponse.json(sessions[id])
 }

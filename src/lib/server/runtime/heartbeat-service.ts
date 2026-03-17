@@ -6,7 +6,13 @@ import {
   DEFAULT_HEARTBEAT_SHOW_ALERTS,
   DEFAULT_HEARTBEAT_SHOW_OK,
 } from '@/lib/runtime/heartbeat-defaults'
-import { loadAgents, loadApprovals, loadSessions, loadSettings, patchSession, patchAgent, loadChatrooms, loadMission } from '@/lib/server/storage'
+import { logActivity } from '@/lib/server/activity/activity-log'
+import { loadApprovals } from '@/lib/server/approvals/approval-repository'
+import { loadAgents, patchAgent } from '@/lib/server/agents/agent-repository'
+import { loadChatrooms } from '@/lib/server/chatrooms/chatroom-repository'
+import { loadMission } from '@/lib/server/missions/mission-repository'
+import { loadSessions, patchSession } from '@/lib/server/sessions/session-repository'
+import { loadSettings } from '@/lib/server/settings/settings-repository'
 import { buildGoalAncestrySection, buildPlatformStatusSummary } from '@/lib/server/chat-execution/situational-awareness'
 import { drainDeferredWakes, hasDeferredWakes } from '@/lib/server/runtime/wake-dispatcher'
 import { buildWakeTriggerContext } from '@/lib/server/runtime/heartbeat-wake'
@@ -15,7 +21,7 @@ import { log } from '@/lib/server/logger'
 import { WORKSPACE_DIR } from '@/lib/server/data-dir'
 import { drainSystemEvents, drainOrchestratorEvents } from '@/lib/server/runtime/system-events'
 import { buildMissionContextBlock } from '@/lib/server/missions/mission-service'
-import type { Agent, Chatroom } from '@/types'
+import type { Agent, AppSettings, ApprovalRequest, Chatroom, Message, Session } from '@/types'
 import { isOrchestratorEligible } from '@/lib/orchestrator-config'
 import { buildIdentityContinuityContext } from '@/lib/server/identity-continuity'
 import { buildMainLoopHeartbeatPrompt, getMainLoopStateForSession, isMainSession } from '@/lib/server/agents/main-agent-loop'
@@ -23,7 +29,6 @@ import { ensureAgentThreadSession } from '@/lib/server/agents/agent-thread-sessi
 import { isAgentDisabled } from '@/lib/server/agents/agent-availability'
 import { errorMessage, hmrSingleton, jitteredBackoff } from '@/lib/shared-utils'
 import { logExecution } from '@/lib/server/execution-log'
-import { logActivity } from '@/lib/server/storage'
 import { createNotification } from '@/lib/server/create-notification'
 import { WORKER_ONLY_PROVIDER_IDS } from '@/lib/provider-sets'
 
@@ -190,6 +195,10 @@ interface HeartbeatFileSession {
   cwd?: string | null
 }
 
+type HeartbeatPromptSession = Partial<Session> & Record<string, unknown>
+type HeartbeatPromptAgent = Partial<Agent>
+type HeartbeatPromptMessage = Pick<Message, 'role' | 'text' | 'time' | 'toolEvents'>
+
 const DEFAULT_HEARTBEAT_PROMPT = 'Read HEARTBEAT.md if it exists (workspace context). Follow it strictly. Do not infer or repeat old tasks from prior chats. If nothing needs attention, reply HEARTBEAT_OK.'
 
 export function readHeartbeatFile(session: HeartbeatFileSession): string {
@@ -202,18 +211,24 @@ export function readHeartbeatFile(session: HeartbeatFileSession): string {
   return ''
 }
 
-const identityFileCache = hmrSingleton<Map<string, { data: Record<string, string>; expiresAt: number }>>(
+const identityFileCache = hmrSingleton<Map<string, { data: Record<string, string>; expiresAt: number; mtimeMs: number | null }>>(
   '__hb_identity_cache__', () => new Map(),
 )
 const IDENTITY_CACHE_TTL_MS = 60_000
 
 function readIdentityFile(session: { cwd?: string | null }): Record<string, string> {
   const cwd = typeof session.cwd === 'string' ? session.cwd : WORKSPACE_DIR
-  const cached = identityFileCache.get(cwd)
-  if (cached && Date.now() < cached.expiresAt) return cached.data
+  const filePath = path.join(cwd, 'IDENTITY.md')
+  let mtimeMs: number | null = null
   try {
-    const filePath = path.join(cwd, 'IDENTITY.md')
-    if (fs.existsSync(filePath)) {
+    mtimeMs = fs.statSync(filePath).mtimeMs
+  } catch {
+    mtimeMs = null
+  }
+  const cached = identityFileCache.get(cwd)
+  if (cached && Date.now() < cached.expiresAt && cached.mtimeMs === mtimeMs) return cached.data
+  try {
+    if (mtimeMs !== null) {
       const content = fs.readFileSync(filePath, 'utf-8')
       const identity: Record<string, string> = {}
       for (const line of content.split('\n')) {
@@ -224,12 +239,12 @@ function readIdentityFile(session: { cwd?: string | null }): Record<string, stri
         const value = cleaned.slice(colonIndex + 1).replace(/^[*_]+|[*_]+$/g, '').trim()
         if (value) identity[label] = value
       }
-      identityFileCache.set(cwd, { data: identity, expiresAt: Date.now() + IDENTITY_CACHE_TTL_MS })
+      identityFileCache.set(cwd, { data: identity, expiresAt: Date.now() + IDENTITY_CACHE_TTL_MS, mtimeMs })
       return identity
     }
   } catch { /* ignore */ }
   const empty: Record<string, string> = {}
-  identityFileCache.set(cwd, { data: empty, expiresAt: Date.now() + IDENTITY_CACHE_TTL_MS })
+  identityFileCache.set(cwd, { data: empty, expiresAt: Date.now() + IDENTITY_CACHE_TTL_MS, mtimeMs: null })
   return empty
 }
 
@@ -300,11 +315,11 @@ export function isHeartbeatContentEffectivelyEmpty(content: string | undefined |
 }
 
 export function buildAgentHeartbeatPrompt(
-  session: any,
-  agent: any,
+  session: HeartbeatPromptSession,
+  agent: HeartbeatPromptAgent | null | undefined,
   fallbackPrompt: string,
   heartbeatFileContent: string,
-  opts?: { approvals?: Record<string, unknown>; chatrooms?: Record<string, unknown> },
+  opts?: { approvals?: Record<string, ApprovalRequest>; chatrooms?: Record<string, Chatroom> },
 ): string {
   if (!agent) return fallbackPrompt
 
@@ -342,12 +357,12 @@ export function buildAgentHeartbeatPrompt(
   }
 
   // ── Phase 3: Goal ancestry ──
-  const missionId = session.missionId || agent.missionId || null
+  const missionId = (session.missionId || (agent as Record<string, unknown>).missionId || null) as string | null
   const goalAncestry = buildGoalAncestrySection(missionId)
   if (goalAncestry) sections.push(goalAncestry)
 
   // ── Phase 4: Active task checkout & events ──
-  const events = drainSystemEvents(session.id)
+  const events = drainSystemEvents(session.id!)
   if (events.length > 0) {
     const eventBlock = events.map((e) => `- [${new Date(e.timestamp).toISOString()}] ${e.text}`).join('\n')
     sections.push(`Events since last heartbeat:\n${eventBlock}`)
@@ -369,9 +384,9 @@ export function buildAgentHeartbeatPrompt(
   const effectiveFileContent = isHeartbeatContentEffectivelyEmpty(strippedContent) ? '' : strippedContent
   if (effectiveFileContent) sections.push(`\nHEARTBEAT.md contents:\n${effectiveFileContent.slice(0, 2000)}`)
 
-  const recentMessages = (session.messages || []).slice(-5)
+  const recentMessages = (Array.isArray(session.messages) ? session.messages : []).slice(-5) as HeartbeatPromptMessage[]
   const recentContext = recentMessages
-    .map((m: any) => {
+    .map((m) => {
       const text = (m.text || '').slice(0, 200)
       const tools = Array.isArray(m.toolEvents) && m.toolEvents.length > 0
         ? ` [tools used: ${m.toolEvents.map((t: { name: string }) => t.name).join(', ')}]`
@@ -386,7 +401,7 @@ export function buildAgentHeartbeatPrompt(
     const chatrooms = Object.values(opts?.chatrooms ?? loadChatrooms()) as Chatroom[]
     const myChatrooms = chatrooms.filter((c) => !c.archivedAt && c.agentIds?.includes(agentId))
     if (myChatrooms.length > 0) {
-      const lastHeartbeat = state.lastBySession.get(session.id) || 0
+      const lastHeartbeat = state.lastBySession.get(session.id!) || 0
       const chatroomLines = myChatrooms
         .map((c) => {
           const recent = (c.messages || []).filter((m: { time: number }) => m.time > lastHeartbeat)
@@ -422,36 +437,42 @@ export function buildAgentHeartbeatPrompt(
   return sections.filter(Boolean).join('\n')
 }
 
-function resolveInterval(obj: Record<string, any>, currentSec: number): number {
+function resolveInterval(obj: object, currentSec: number): number {
+  const r = obj as Record<string, unknown>
   // Prefer heartbeatInterval (duration string) over heartbeatIntervalSec (raw number)
-  if (obj.heartbeatInterval !== undefined && obj.heartbeatInterval !== null) {
-    return parseDuration(obj.heartbeatInterval, currentSec)
+  if (r.heartbeatInterval !== undefined && r.heartbeatInterval !== null) {
+    return parseDuration(r.heartbeatInterval, currentSec)
   }
-  if (obj.heartbeatIntervalSec !== undefined && obj.heartbeatIntervalSec !== null) {
-    return parseIntBounded(obj.heartbeatIntervalSec, currentSec, 0, 86400)
+  if (r.heartbeatIntervalSec !== undefined && r.heartbeatIntervalSec !== null) {
+    return parseIntBounded(r.heartbeatIntervalSec, currentSec, 0, 86400)
   }
   return currentSec
 }
 
-function resolveStr(obj: Record<string, any>, key: string, current: string | null): string | null {
-  const val = obj[key]
+function resolveStr(obj: object, key: string, current: string | null): string | null {
+  const val = (obj as Record<string, unknown>)[key]
   if (typeof val === 'string' && val.trim()) return val.trim()
   return current
 }
 
-function resolveBool(obj: Record<string, any>, key: string, current: boolean): boolean {
-  if (obj[key] === true) return true
-  if (obj[key] === false) return false
+function resolveBool(obj: object, key: string, current: boolean): boolean {
+  const r = obj as Record<string, unknown>
+  if (r[key] === true) return true
+  if (r[key] === false) return false
   return current
 }
 
-function resolveNum(obj: Record<string, any>, key: string, current: number): number {
-  const val = obj[key]
+function resolveNum(obj: object, key: string, current: number): number {
+  const val = (obj as Record<string, unknown>)[key]
   if (typeof val === 'number' && Number.isFinite(val)) return Math.trunc(val)
   return current
 }
 
-export function heartbeatConfigForSession(session: any, settings: Record<string, any>, agents: Record<string, any>): HeartbeatConfig {
+export function heartbeatConfigForSession(
+  session: HeartbeatPromptSession,
+  settings: Partial<AppSettings>,
+  agents: Record<string, HeartbeatPromptAgent>,
+): HeartbeatConfig {
   // Global defaults — 30 min interval (was 120s)
   let intervalSec = resolveInterval(settings, DEFAULT_HEARTBEAT_INTERVAL_SEC)
   const globalPrompt = (typeof settings.heartbeatPrompt === 'string' && settings.heartbeatPrompt.trim())
@@ -498,7 +519,7 @@ export function heartbeatConfigForSession(session: any, settings: Record<string,
   return { enabled: enabled && intervalSec > 0, intervalSec, prompt, model, ackMaxChars, showOk, showAlerts, target, lightContext }
 }
 
-function lastUserMessageAt(session: any): number {
+function lastUserMessageAt(session: HeartbeatPromptSession): number {
   if (!Array.isArray(session?.messages)) return 0
   for (let i = session.messages.length - 1; i >= 0; i--) {
     const msg = session.messages[i]
@@ -509,15 +530,15 @@ function lastUserMessageAt(session: any): number {
   return 0
 }
 
-function resolveHeartbeatUserIdleSec(settings: Record<string, any>, fallbackSec: number): number {
-  const configured = settings.heartbeatUserIdleSec
+function resolveHeartbeatUserIdleSec(settings: Partial<AppSettings>, fallbackSec: number): number {
+  const configured = (settings as Record<string, unknown>).heartbeatUserIdleSec
   if (configured === undefined || configured === null || configured === '') {
     return fallbackSec
   }
   return parseIntBounded(configured, fallbackSec, 0, 86_400)
 }
 
-function shouldRunHeartbeats(settings: Record<string, any>): boolean {
+function shouldRunHeartbeats(settings: Partial<AppSettings>): boolean {
   const loopMode = settings.loopMode === 'ongoing' ? 'ongoing' : 'bounded'
   return loopMode === 'ongoing'
 }

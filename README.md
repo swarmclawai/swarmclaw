@@ -190,6 +190,15 @@ The building blocks are the same: **agents, tools, memory, delegation, schedules
 
 ## Release Notes
 
+### v1.2.2 Highlights
+
+- **Modular chat execution pipeline**: decomposed the monolithic chat-execution module into 6 focused stages (preflight, preparation, stream execution, partial persistence, finalization, types) for maintainability and testability.
+- **Repository pattern adoption**: extracted ~15 repository modules from `storage.ts`, giving each domain (agents, sessions, missions, credentials, tasks, etc.) its own data-access layer.
+- **Runtime state encapsulation**: moved process-local state (active sessions, dev servers) from storage into `runtime-state.ts` with proper HMR singleton usage.
+- **Streaming state improvements**: stable assistant render IDs, better live-row display logic, and smoother streaming phase transitions in the chat UI.
+- **8 new skills**: coding-agent, github, nano-banana-pro, nano-pdf, openai-image-gen, resourceful-problem-solving, skill-creator, summarize.
+- **Lint baseline improvements**: reduced lint violations from 414 to 396 (-18).
+
 ### v1.2.1 Highlights
 
 - **System health endpoint**: new `/api/system/status` route returns lightweight health summary for external monitoring and uptime checks.

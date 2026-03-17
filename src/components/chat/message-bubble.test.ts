@@ -37,6 +37,41 @@ describe('MessageBubble', () => {
     assert.doesNotMatch(html, /streaming-cursor/)
   })
 
+  it('falls back to persisted streaming content when the live stream payload is temporarily empty', async () => {
+    const messageBubbleModule = await import('./message-bubble') as Record<string, unknown>
+    const MessageBubble = (
+      messageBubbleModule.MessageBubble
+      || (messageBubbleModule.default as { MessageBubble?: unknown } | undefined)?.MessageBubble
+      || (messageBubbleModule['module.exports'] as { MessageBubble?: unknown } | undefined)?.MessageBubble
+    ) as typeof import('./message-bubble').MessageBubble | undefined
+    assert.ok(MessageBubble)
+
+    const html = renderToStaticMarkup(
+      React.createElement(MessageBubble, {
+        message: {
+          role: 'assistant',
+          text: 'Recovered persisted partial text',
+          time: Date.now(),
+          kind: 'chat',
+          streaming: true,
+        },
+        assistantName: 'Hal2k-3',
+        agentName: 'Hal2k-3',
+        liveStream: {
+          active: true,
+          phase: 'responding',
+          toolName: '',
+          text: '',
+          thinking: '',
+          toolEvents: [],
+        },
+      }),
+    )
+
+    assert.match(html, /Recovered persisted partial text/)
+    assert.match(html, /streaming-cursor/)
+  })
+
   it('renders upload-linked screenshots inline without duplicating them at the bottom', async () => {
     const messageBubbleModule = await import('./message-bubble') as Record<string, unknown>
     const MessageBubble = (

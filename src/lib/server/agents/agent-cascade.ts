@@ -3,22 +3,21 @@
  *
  * When an agent is trashed, related entities (tasks, schedules, watch jobs,
  * connectors, webhooks, delegation jobs, chatroom memberships) must be
- * suspended to prevent phantom daemon activity.  On permanent delete the
+ * suspended to prevent phantom daemon activity. On permanent delete the
  * referencing rows are hard-removed.
  */
 
 import {
-  loadTasks,
-  upsertStoredItems,
-  loadSchedules,
-  loadWatchJobs,
-  loadConnectors,
+  deleteDelegationJob,
   loadDelegationJobs,
-  loadWebhooks,
-  loadChatrooms,
-  deleteStoredItem,
-} from '@/lib/server/storage'
-import type { StorageCollection } from '@/lib/server/storage'
+  saveDelegationJobRecords,
+} from '@/lib/server/agents/delegation-job-repository'
+import { loadChatrooms, saveChatrooms } from '@/lib/server/chatrooms/chatroom-repository'
+import { loadConnectors, saveConnectors } from '@/lib/server/connectors/connector-repository'
+import { deleteWatchJob, loadWatchJobs, upsertWatchJobs } from '@/lib/server/runtime/watch-job-repository'
+import { deleteSchedule, loadSchedules, upsertSchedules } from '@/lib/server/schedules/schedule-repository'
+import { deleteTask, loadTasks, saveTaskMany } from '@/lib/server/tasks/task-repository'
+import { loadWebhooks, saveWebhooks } from '@/lib/server/webhooks/webhook-repository'
 
 interface CascadeCounts {
   tasks: number
@@ -39,7 +38,7 @@ export function suspendAgentReferences(agentId: string): CascadeCounts {
 
   // 1. Tasks — cancel active ones
   const tasks = loadTasks()
-  const taskUpdates: Array<[string, unknown]> = []
+  const taskUpdates: Array<[string, Record<string, unknown>]> = []
   for (const t of Object.values(tasks) as unknown as Array<Record<string, unknown>>) {
     if (!t || t.agentId !== agentId) continue
     const status = t.status as string | undefined
@@ -50,13 +49,13 @@ export function suspendAgentReferences(agentId: string): CascadeCounts {
     }
   }
   if (taskUpdates.length) {
-    upsertStoredItems('tasks', taskUpdates)
+    saveTaskMany(taskUpdates)
     counts.tasks = taskUpdates.length
   }
 
   // 2. Schedules — pause (with marker for restore)
   const schedules = loadSchedules()
-  const schedUpdates: Array<[string, unknown]> = []
+  const schedUpdates: Array<[string, Record<string, unknown>]> = []
   for (const s of Object.values(schedules) as unknown as Array<Record<string, unknown>>) {
     if (!s || s.agentId !== agentId) continue
     if (s.enabled === false) continue
@@ -65,13 +64,13 @@ export function suspendAgentReferences(agentId: string): CascadeCounts {
     schedUpdates.push([s.id as string, s])
   }
   if (schedUpdates.length) {
-    upsertStoredItems('schedules', schedUpdates)
+    upsertSchedules(schedUpdates)
     counts.schedules = schedUpdates.length
   }
 
   // 3. Watch jobs — cancel active
   const watchJobs = loadWatchJobs()
-  const wjUpdates: Array<[string, unknown]> = []
+  const wjUpdates: Array<[string, Record<string, unknown>]> = []
   for (const w of Object.values(watchJobs) as unknown as Array<Record<string, unknown>>) {
     if (!w || w.agentId !== agentId) continue
     if (w.status === 'cancelled') continue
@@ -79,26 +78,28 @@ export function suspendAgentReferences(agentId: string): CascadeCounts {
     wjUpdates.push([w.id as string, w])
   }
   if (wjUpdates.length) {
-    upsertStoredItems('watch_jobs', wjUpdates)
+    upsertWatchJobs(wjUpdates)
     counts.watchJobs = wjUpdates.length
   }
 
   // 4. Connectors — detach agent (keep connector alive but unrouted)
-  const connectors = loadConnectors()
-  const connUpdates: Array<[string, unknown]> = []
-  for (const c of Object.values(connectors) as unknown as Array<Record<string, unknown>>) {
-    if (!c || c.agentId !== agentId) continue
-    c.agentId = null
-    connUpdates.push([c.id as string, c])
-  }
-  if (connUpdates.length) {
-    upsertStoredItems('connectors', connUpdates)
-    counts.connectors = connUpdates.length
+  {
+    const connectors = loadConnectors()
+    let connectorUpdates = 0
+    for (const c of Object.values(connectors)) {
+      if (!c || c.agentId !== agentId) continue
+      c.agentId = null
+      connectorUpdates += 1
+    }
+    if (connectorUpdates > 0) {
+      saveConnectors(connectors)
+      counts.connectors = connectorUpdates
+    }
   }
 
   // 5. Delegation jobs — cancel queued/running
   const delegationJobs = loadDelegationJobs()
-  const djUpdates: Array<[string, unknown]> = []
+  const djUpdates: Array<[string, Record<string, unknown>]> = []
   for (const d of Object.values(delegationJobs) as unknown as Array<Record<string, unknown>>) {
     if (!d || d.agentId !== agentId) continue
     const status = d.status as string | undefined
@@ -108,22 +109,22 @@ export function suspendAgentReferences(agentId: string): CascadeCounts {
     }
   }
   if (djUpdates.length) {
-    upsertStoredItems('delegation_jobs', djUpdates)
+    saveDelegationJobRecords(djUpdates)
     counts.delegationJobs = djUpdates.length
   }
 
   // 6. Webhooks — disable
   const webhooks = loadWebhooks()
-  const whUpdates: Array<[string, unknown]> = []
-  for (const w of Object.values(webhooks) as unknown as Array<Record<string, unknown>>) {
+  let webhookUpdates = 0
+  for (const w of Object.values(webhooks)) {
     if (!w || w.agentId !== agentId) continue
     if (w.enabled === false) continue
     w.enabled = false
-    whUpdates.push([w.id as string, w])
+    webhookUpdates += 1
   }
-  if (whUpdates.length) {
-    upsertStoredItems('webhooks', whUpdates)
-    counts.webhooks = whUpdates.length
+  if (webhookUpdates > 0) {
+    saveWebhooks(webhooks)
+    counts.webhooks = webhookUpdates
   }
 
   // 7. Chatrooms — remove agent from member arrays
@@ -138,23 +139,25 @@ export function suspendAgentReferences(agentId: string): CascadeCounts {
 export function purgeAgentReferences(agentId: string): CascadeCounts {
   const counts: CascadeCounts = { tasks: 0, schedules: 0, watchJobs: 0, connectors: 0, delegationJobs: 0, webhooks: 0, chatrooms: 0 }
 
-  counts.tasks = deleteMatching('tasks', loadTasks(), agentId)
-  counts.schedules = deleteMatching('schedules', loadSchedules(), agentId)
-  counts.watchJobs = deleteMatching('watch_jobs', loadWatchJobs(), agentId)
-  counts.delegationJobs = deleteMatching('delegation_jobs', loadDelegationJobs(), agentId)
-  counts.webhooks = deleteMatching('webhooks', loadWebhooks(), agentId)
+  counts.tasks = deleteMatching(loadTasks(), agentId, deleteTask)
+  counts.schedules = deleteMatching(loadSchedules(), agentId, deleteSchedule)
+  counts.watchJobs = deleteMatching(loadWatchJobs(), agentId, deleteWatchJob)
+  counts.delegationJobs = deleteMatching(loadDelegationJobs(), agentId, deleteDelegationJob)
+  counts.webhooks = purgeWebhooks(agentId)
 
   // Connectors: detach agent but keep the connector record
-  const connectors = loadConnectors()
-  const connUpdates: Array<[string, unknown]> = []
-  for (const c of Object.values(connectors) as unknown as Array<Record<string, unknown>>) {
-    if (!c || c.agentId !== agentId) continue
-    c.agentId = null
-    connUpdates.push([c.id as string, c])
-  }
-  if (connUpdates.length) {
-    upsertStoredItems('connectors', connUpdates)
-    counts.connectors = connUpdates.length
+  {
+    const connectors = loadConnectors()
+    let connectorUpdates = 0
+    for (const c of Object.values(connectors)) {
+      if (!c || c.agentId !== agentId) continue
+      c.agentId = null
+      connectorUpdates += 1
+    }
+    if (connectorUpdates > 0) {
+      saveConnectors(connectors)
+      counts.connectors = connectorUpdates
+    }
   }
 
   counts.chatrooms = removeAgentFromChatrooms(agentId)
@@ -167,7 +170,7 @@ export function purgeAgentReferences(agentId: string): CascadeCounts {
 /** Re-enable schedules that were paused by trash. */
 export function restoreAgentSchedules(agentId: string): number {
   const schedules = loadSchedules()
-  const updates: Array<[string, unknown]> = []
+  const updates: Array<[string, Record<string, unknown>]> = []
   for (const s of Object.values(schedules) as unknown as Array<Record<string, unknown>>) {
     if (!s || s.agentId !== agentId) continue
     if (!s.suspendedByTrash) continue
@@ -176,7 +179,7 @@ export function restoreAgentSchedules(agentId: string): number {
     updates.push([s.id as string, s])
   }
   if (updates.length) {
-    upsertStoredItems('schedules', updates)
+    upsertSchedules(updates)
   }
   return updates.length
 }
@@ -184,15 +187,15 @@ export function restoreAgentSchedules(agentId: string): number {
 // ── Internals ───────────────────────────────────────────────────────────
 
 function deleteMatching<T extends { agentId?: string | null; id?: string | null }>(
-  table: StorageCollection,
   collection: Record<string, T>,
   agentId: string,
+  deleteItem: (id: string) => void,
 ): number {
   let count = 0
   for (const item of Object.values(collection)) {
     if (!item || item.agentId !== agentId) continue
     if (!item.id) continue
-    deleteStoredItem(table, item.id)
+    deleteItem(item.id)
     count++
   }
   return count
@@ -200,7 +203,7 @@ function deleteMatching<T extends { agentId?: string | null; id?: string | null 
 
 function removeAgentFromChatrooms(agentId: string): number {
   const chatrooms = loadChatrooms()
-  const updates: Array<[string, unknown]> = []
+  let changedCount = 0
   for (const room of Object.values(chatrooms) as unknown as Array<Record<string, unknown>>) {
     if (!room) continue
     let changed = false
@@ -220,10 +223,27 @@ function removeAgentFromChatrooms(agentId: string): number {
       room.agentIds = agentIds.filter((id) => id !== agentId)
       if ((room.agentIds as string[]).length !== before) changed = true
     }
-    if (changed) updates.push([room.id as string, room])
+    if (changed) changedCount += 1
   }
-  if (updates.length) {
-    upsertStoredItems('chatrooms', updates)
+  if (changedCount > 0) {
+    saveChatrooms(chatrooms)
   }
-  return updates.length
+  return changedCount
+}
+
+function purgeWebhooks(agentId: string): number {
+  const webhooks = loadWebhooks() as Record<string, Record<string, unknown>>
+  const remaining: Record<string, Record<string, unknown>> = {}
+  let count = 0
+  for (const [id, webhook] of Object.entries(webhooks)) {
+    if (webhook && webhook.agentId === agentId) {
+      count += 1
+      continue
+    }
+    remaining[id] = webhook
+  }
+  if (count > 0) {
+    saveWebhooks(remaining)
+  }
+  return count
 }

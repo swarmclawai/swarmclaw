@@ -2,7 +2,7 @@ import type { LoopMode } from '@/types'
 import {
   normalizeRuntimeSettingFields,
 } from '@/lib/runtime/runtime-loop'
-import { loadSettings } from '@/lib/server/storage'
+import { loadSettings } from '@/lib/server/settings/settings-repository'
 
 export interface RuntimeSettings {
   loopMode: LoopMode

@@ -1,12 +1,12 @@
 import { execSync } from 'node:child_process'
 import path from 'node:path'
 import type { ApprovalRequest, GuardianCheckpoint } from '@/types'
+import { loadApprovals } from '@/lib/server/approvals/approval-repository'
 import {
-  loadApprovals,
   loadGuardianCheckpoints,
   patchGuardianCheckpoint,
   upsertGuardianCheckpoint,
-} from '@/lib/server/storage'
+} from '@/lib/server/agents/guardian-checkpoint-repository'
 import { requestApproval } from '@/lib/server/approvals'
 import { errorMessage } from '@/lib/shared-utils'
 import { genId } from '@/lib/id'

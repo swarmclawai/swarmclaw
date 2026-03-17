@@ -27,7 +27,7 @@ describe('queued-message-queue', () => {
   it('replaces queued items only for the requested session', () => {
     const replaced = replaceQueuedMessagesForSession(queue, 'session-a', [
       { runId: 'q4', sessionId: 'session-a', text: 'replacement', queuedAt: 4, position: 1 },
-    ])
+    ], { activeRunId: null })
     assert.deepEqual(
       listQueuedMessagesForSession(replaced, 'session-a').map((item) => item.runId),
       ['q4'],
@@ -35,6 +35,28 @@ describe('queued-message-queue', () => {
     assert.deepEqual(
       listQueuedMessagesForSession(replaced, 'session-b').map((item) => item.runId),
       ['q2'],
+    )
+  })
+
+  it('keeps only the newly active run as a sending placeholder when it disappears from the queue snapshot', () => {
+    const replaced = replaceQueuedMessagesForSession(queue, 'session-a', [
+      { runId: 'q3', sessionId: 'session-a', text: 'second a', queuedAt: 3, position: 1 },
+    ], { activeRunId: 'q1' })
+
+    assert.deepEqual(
+      listQueuedMessagesForSession(replaced, 'session-a').map((item) => [item.runId, item.sending === true]),
+      [['q1', true], ['q3', false]],
+    )
+  })
+
+  it('drops missing stale queue rows that are not the active run', () => {
+    const replaced = replaceQueuedMessagesForSession(queue, 'session-a', [
+      { runId: 'q3', sessionId: 'session-a', text: 'second a', queuedAt: 3, position: 1 },
+    ], { activeRunId: 'run-other' })
+
+    assert.deepEqual(
+      listQueuedMessagesForSession(replaced, 'session-a').map((item) => item.runId),
+      ['q3'],
     )
   })
 

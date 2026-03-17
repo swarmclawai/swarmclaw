@@ -13,7 +13,7 @@ const TAG = 'post-stream'
 import { extractSuggestions } from '@/lib/server/suggestions'
 import type { StructuredToolInterface } from '@langchain/core/tools'
 import { estimateCost, buildExtensionDefinitionCosts } from '@/lib/server/cost'
-import { appendUsage } from '@/lib/server/storage'
+import { appendUsage } from '@/lib/server/usage/usage-repository'
 import { runCapabilityHook } from '@/lib/server/native-capabilities'
 import {
   shouldForceExternalServiceSummary,

@@ -1,4 +1,4 @@
-import { loadSessions } from '@/lib/server/storage'
+import { listSessions } from '@/lib/server/sessions/session-repository'
 import type { Session } from '@/types'
 import { log } from '@/lib/server/logger'
 
@@ -26,7 +26,7 @@ const state: IdleWindowState = {
 export async function isIdleWindow(options?: { thresholdMs?: number }): Promise<boolean> {
   const threshold = options?.thresholdMs ?? DEFAULT_IDLE_THRESHOLD_MS
   const now = Date.now()
-  const sessions = loadSessions()
+  const sessions = listSessions()
 
   for (const session of Object.values(sessions) as unknown as Session[]) {
     if (!session?.id) continue

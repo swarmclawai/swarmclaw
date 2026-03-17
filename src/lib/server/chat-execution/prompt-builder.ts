@@ -73,13 +73,24 @@ function buildExtensionCapabilityLines(enabledExtensions: string[], opts?: { del
   return lines
 }
 
+const DISPLAY_TOOL_ALIASES: Record<string, string[]> = {
+  files: ['send_file'],
+  shell: ['sandbox_exec', 'sandbox_list_runtimes'],
+}
+
 function buildExactToolNameList(enabledExtensions: string[]): string[] {
   const planning = getEnabledToolPlanningView(enabledExtensions)
+  const displayAliases = dedup(
+    enabledExtensions
+      .map((toolId) => canonicalizeExtensionId(toolId))
+      .flatMap((toolId) => DISPLAY_TOOL_ALIASES[toolId] || []),
+  )
   const extensionToolNames = getExtensionManager()
     .getTools(enabledExtensions)
     .map(({ tool }) => tool.name)
   const combined = [
     ...planning.displayToolIds,
+    ...displayAliases,
     ...planning.entries.map((entry) => entry.toolName),
     ...extensionToolNames,
   ]

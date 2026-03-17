@@ -50,6 +50,10 @@ export function ChatInput({ streaming, busy, onSend, onStop, extensionChatAction
   const streamPhase = useChatStore((s) => s.streamPhase)
   const streamToolName = useChatStore((s) => s.streamToolName)
   const visibleQueuedMessages = listQueuedMessagesForSession(queuedMessages, sessionId)
+  const sendingQueuedMessages = visibleQueuedMessages.filter((item) => item.sending)
+  const pendingQueuedMessages = visibleQueuedMessages.filter((item) => !item.sending)
+  const displayedQueuedMessages = [...sendingQueuedMessages, ...pendingQueuedMessages]
+  const nextPendingRunId = pendingQueuedMessages[0]?.runId ?? null
   const shouldQueue = !!sessionId && (busy || visibleQueuedMessages.length > 0)
 
   useEffect(() => {
@@ -178,6 +182,8 @@ export function ChatInput({ streaming, busy, onSend, onStop, extensionChatAction
   const hasContent = value.trim().length > 0 || pendingFiles.length > 0
   const queueStatusLabel = !busy
     ? 'Queue ready'
+    : sendingQueuedMessages.length > 0 && pendingQueuedMessages.length === 0
+      ? 'Sending now'
     : streamPhase === 'queued'
       ? 'Queued'
       : streamPhase === 'tool' && streamToolName
@@ -191,6 +197,8 @@ export function ChatInput({ streaming, busy, onSend, onStop, extensionChatAction
               : 'Working'
   const queueStatusDetail = !busy
     ? 'Queued messages are ready and will dispatch automatically.'
+    : sendingQueuedMessages.length > 0 && pendingQueuedMessages.length === 0
+      ? 'The queued message has been accepted and should appear in the transcript shortly.'
     : 'Queued messages will send automatically when the current turn finishes.'
 
   return (
@@ -229,9 +237,16 @@ export function ChatInput({ streaming, busy, onSend, onStop, extensionChatAction
                     <span className={`relative inline-flex h-2.5 w-2.5 rounded-full ${busy ? 'bg-amber-300' : 'bg-white/[0.45]'}`} />
                   </span>
                   <span className="label-mono text-amber-300/80">Message queue</span>
-                  <span className="rounded-pill border border-amber-400/15 bg-amber-400/10 px-2 py-0.5 text-[10px] font-600 text-amber-200">
-                    {visibleQueuedMessages.length}
-                  </span>
+                  {pendingQueuedMessages.length > 0 && (
+                    <span className="rounded-pill border border-amber-400/15 bg-amber-400/10 px-2 py-0.5 text-[10px] font-600 text-amber-200">
+                      {pendingQueuedMessages.length}
+                    </span>
+                  )}
+                  {sendingQueuedMessages.length > 0 && (
+                    <span className="rounded-pill border border-sky-300/15 bg-sky-300/10 px-2 py-0.5 text-[10px] font-600 text-sky-200">
+                      {sendingQueuedMessages.length} sending
+                    </span>
+                  )}
                   <span className={`rounded-pill border px-2 py-0.5 text-[10px] font-700 uppercase tracking-[0.12em] ${
                     busy
                       ? 'border-amber-300/20 bg-amber-300/10 text-amber-100'
@@ -256,7 +271,7 @@ export function ChatInput({ streaming, busy, onSend, onStop, extensionChatAction
                     Stop
                   </button>
                 )}
-                {sessionId && visibleQueuedMessages.length > 1 && (
+                {sessionId && pendingQueuedMessages.length > 0 && (
                   <button
                     type="button"
                     onClick={() => { void clearQueuedMessagesForSession(sessionId) }}
@@ -268,21 +283,26 @@ export function ChatInput({ streaming, busy, onSend, onStop, extensionChatAction
               </div>
             </div>
             <div className="max-h-[184px] space-y-1.5 overflow-y-auto px-2.5 py-2.5">
-              {visibleQueuedMessages.map((item, index) => (
+              {displayedQueuedMessages.map((item, index) => (
                 <div
                   key={item.runId}
                   className={`group flex items-start gap-3 rounded-[12px] border px-3 py-2.5 transition-all ${
-                    index === 0
-                      ? 'border-amber-300/20 bg-amber-300/[0.07]'
-                      : 'border-white/[0.05] bg-white/[0.02]'
+                    item.sending
+                      ? 'border-sky-300/15 bg-sky-300/[0.06]'
+                      : item.runId === nextPendingRunId
+                        ? 'border-amber-300/20 bg-amber-300/[0.07]'
+                        : 'border-white/[0.05] bg-white/[0.02]'
                   }`}
                 >
                   <div className={`mt-0.5 flex h-6 min-w-6 items-center justify-center rounded-[8px] px-2 text-[10px] font-700 ${
-                    index === 0
-                      ? 'bg-amber-300/15 text-amber-100'
-                      : 'bg-white/[0.06] text-text-3'
-                  }`}>
-                    {index + 1}
+                    item.sending
+                      ? 'bg-sky-300/15 text-sky-100'
+                      : item.runId === nextPendingRunId
+                        ? 'bg-amber-300/15 text-amber-100'
+                      : 'border-white/[0.05] bg-white/[0.02]'
+                  }`}
+                >
+                    {item.sending ? '>' : pendingQueuedMessages.findIndex((candidate) => candidate.runId === item.runId) + 1}
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
@@ -290,7 +310,7 @@ export function ChatInput({ streaming, busy, onSend, onStop, extensionChatAction
                         <span className="rounded-pill border border-sky-300/15 bg-sky-300/10 px-2 py-0.5 text-[10px] font-700 uppercase tracking-[0.12em] text-sky-200 animate-pulse">
                           Sending
                         </span>
-                      ) : index === 0 && (
+                      ) : item.runId === nextPendingRunId && (
                         <span className="rounded-pill border border-amber-300/15 bg-amber-300/10 px-2 py-0.5 text-[10px] font-700 uppercase tracking-[0.12em] text-amber-100">
                           Next
                         </span>

@@ -188,6 +188,7 @@ export function MessageList({ messages, streaming, connectorFilter = null, loadi
   const snapUntilRef = useRef(0)
   const prevSessionIdRef = useRef<string | null>(null)
   const assistantRenderId = useChatStore((s) => s.assistantRenderId)
+  const thinkingStartTime = useChatStore((s) => s.thinkingStartTime)
   const hasLiveArtifacts = useChatStore(selectHasLiveArtifacts)
   const setMessages = useChatStore((s) => s.setMessages)
   const retryLastMessage = useChatStore((s) => s.retryLastMessage)
@@ -297,13 +298,46 @@ export function MessageList({ messages, streaming, connectorFilter = null, loadi
     return dedupeMessagesForDisplay(displayedMessages)
   }, [messages, showAlerts, showOk])
 
+  const latestPersistedStreamingMessage = useMemo(() => {
+    for (let i = baseDisplayedMessages.length - 1; i >= 0; i -= 1) {
+      const candidate = baseDisplayedMessages[i]
+      if (candidate.role === 'assistant' && candidate.streaming === true) {
+        return candidate
+      }
+    }
+    return null
+  }, [baseDisplayedMessages])
+
+  const currentRunHasCompletedAssistant = useMemo(
+    () => (
+      streaming
+      && thinkingStartTime > 0
+      && baseDisplayedMessages.some((message) => (
+        message.role === 'assistant'
+        && message.streaming !== true
+        && message.kind !== 'system'
+        && message.kind !== 'heartbeat'
+        && typeof message.time === 'number'
+        && message.time >= thinkingStartTime
+      ))
+    ),
+    [baseDisplayedMessages, streaming, thinkingStartTime],
+  )
+
+  const showLiveStreamRow = streaming
+    && !!assistantRenderId
+    && !currentRunHasCompletedAssistant
+    && (hasLiveArtifacts || !!latestPersistedStreamingMessage)
+
   const streamingAwareMessages = useMemo(() => (
     buildStreamingAwareMessageList(baseDisplayedMessages, {
       localStreaming: streaming,
       hasLiveArtifacts,
       assistantRenderId,
+      showLiveRow: showLiveStreamRow,
+      syntheticAssistant: latestPersistedStreamingMessage,
     })
-  ), [assistantRenderId, baseDisplayedMessages, hasLiveArtifacts, streaming])
+  ), [assistantRenderId, baseDisplayedMessages, hasLiveArtifacts, latestPersistedStreamingMessage, showLiveStreamRow, streaming])
 
   const filteredMessages = useMemo(() => {
     let nextMessages = bookmarkFilter
@@ -623,7 +657,7 @@ export function MessageList({ messages, streaming, connectorFilter = null, loadi
   }, [searchOpen])
 
   return (
-    <div className="relative flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden" data-testid="message-list">
+    <div className="relative flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden isolate" data-testid="message-list">
       <div className="shrink-0 px-4 md:px-12 lg:px-16 pt-3">
         <div className="flex flex-wrap items-center gap-2 rounded-[14px] border border-white/[0.06] bg-surface/55 px-3 py-2 backdrop-blur-sm">
           <button
@@ -853,7 +887,7 @@ export function MessageList({ messages, streaming, connectorFilter = null, loadi
           {transcriptNodes}
           <ApprovalCards agentId={agent?.id} />
           <LiveThinkingLane
-            show={streaming && !hasLiveArtifacts && !hasVisiblePersistedStreamingMessage}
+            show={streaming && !showLiveStreamRow && !hasLiveArtifacts && !hasVisiblePersistedStreamingMessage}
             assistantName={assistantName}
             agentAvatarSeed={agent?.avatarSeed}
             agentAvatarUrl={agent?.avatarUrl}

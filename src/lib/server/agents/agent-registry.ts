@@ -1,5 +1,7 @@
-import { loadAgents, loadTasks, loadSessions } from '@/lib/server/storage'
 import type { Agent, BoardTask } from '@/types'
+import { loadAgents } from '@/lib/server/agents/agent-repository'
+import { loadSessions } from '@/lib/server/sessions/session-repository'
+import { loadTasks } from '@/lib/server/tasks/task-repository'
 
 export interface AgentDirectoryEntry {
   id: string

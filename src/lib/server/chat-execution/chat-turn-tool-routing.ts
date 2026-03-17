@@ -12,7 +12,7 @@
 import path from 'node:path'
 import type { StructuredToolInterface } from '@langchain/core/tools'
 import type { AppSettings, MessageToolEvent, SSEEvent } from '@/types'
-import { loadAgents } from '@/lib/server/storage'
+import { getAgent } from '@/lib/server/agents/agent-repository'
 import { buildSessionTools } from '@/lib/server/session-tools'
 import { resolveConcreteToolPolicyBlock, type ExtensionPolicyDecision } from '@/lib/server/tool-capability-policy'
 import { resolveActiveProjectContext } from '@/lib/server/project-context'
@@ -350,7 +350,7 @@ export function resolveRequestedToolPreflightResponse(params: {
   const requestedToolNames = requestedToolNamesFromMessage(params.message)
   if (requestedToolNames.length === 0) return null
 
-  const agent = params.session?.agentId ? loadAgents()[params.session.agentId] : null
+  const agent = params.session?.agentId ? getAgent(params.session.agentId) : null
   const blockedResponses: string[] = []
   const unavailableResponses: string[] = []
   for (const toolName of requestedToolNames) {
@@ -361,8 +361,8 @@ export function resolveRequestedToolPreflightResponse(params: {
     }
     if (
       (toolName === 'delegate' || toolName.startsWith('delegate_to_'))
-      && agent
-      && agent.delegationEnabled !== true
+      && params.session?.agentId
+      && agent?.delegationEnabled !== true
     ) {
       unavailableResponses.push(buildToolUnavailableResponse(toolName, 'delegation is not enabled for this agent right now'))
       continue
@@ -407,7 +407,7 @@ async function invokeSessionTool(
     return { invoked: false, responseOverride: null }
   }
 
-  const agent = ctx.session.agentId ? loadAgents()[ctx.session.agentId] : null
+  const agent = ctx.session.agentId ? getAgent(ctx.session.agentId) : null
   const agentRecord = agent as Record<string, unknown> | null
   const activeProjectContext = resolveActiveProjectContext(ctx.session as unknown as { agentId?: string | null; cwd?: string | null; projectId?: string | null })
   const { tools, cleanup } = await buildSessionTools(ctx.session.cwd, ctx.enabledExtensions, {

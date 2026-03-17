@@ -1,27 +1,25 @@
 import { NextResponse } from 'next/server'
-import { loadStoredItem, upsertStoredItem, active } from '@/lib/server/storage'
 import { notFound } from '@/lib/server/collection-helpers'
 import { materializeStreamingAssistantArtifacts } from '@/lib/chat/chat-streaming-state'
 import { appendSessionNote } from '@/lib/server/session-note'
 import { getSessionRunState } from '@/lib/server/runtime/session-run-manager'
-import type { Message, Session } from '@/types'
+import { getSession, saveSession } from '@/lib/server/sessions/session-repository'
+import type { Message } from '@/types'
 import { safeParseBody } from '@/lib/server/safe-parse-body'
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const session = loadStoredItem('sessions', id) as Session | null
+  const session = getSession(id)
   if (!session) return notFound()
   session.messages = Array.isArray(session.messages) ? session.messages : []
 
-  // Check both persisted fields AND in-memory runtime state.
-  // The persisted session doesn't have active/currentRunId set during runs —
-  // those are only computed at runtime from the active map and run ledger.
+  // Use persisted fields plus the run ledger. Process-local execution state is
+  // intentionally excluded here so stale registry entries do not block cleanup.
   const sessionClaimsActive = session.active === true
     || (typeof session.currentRunId === 'string' && session.currentRunId.trim().length > 0)
-    || active.has(id)
     || !!getSessionRunState(id).runningRunId
   if (!sessionClaimsActive && materializeStreamingAssistantArtifacts(session.messages)) {
-    upsertStoredItem('sessions', id, session)
+    saveSession(id, session)
   }
 
   const url = new URL(req.url)
@@ -63,7 +61,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (error) return error
 
   if (body.kind === 'context-clear') {
-    const session = loadStoredItem('sessions', id) as Session | null
+    const session = getSession(id)
     if (!session) return notFound()
 
     session.messages.push({
@@ -72,7 +70,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       kind: 'context-clear',
       time: Date.now(),
     })
-    upsertStoredItem('sessions', id, session)
+    saveSession(id, session)
     return NextResponse.json({ ok: true })
   }
 
@@ -84,7 +82,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       kind: body.messageKind || 'system',
     })
     if (!inserted) {
-      const session = loadStoredItem('sessions', id) as Session | null
+      const session = getSession(id)
       if (!session) return notFound()
       return NextResponse.json({ error: 'Note text is required' }, { status: 400 })
     }
@@ -98,7 +96,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   const { id } = await params
   const { data: body, error } = await safeParseBody<{ messageIndex: number; bookmarked: boolean }>(req)
   if (error) return error
-  const session = loadStoredItem('sessions', id) as Session | null
+  const session = getSession(id)
   if (!session) return notFound()
 
   const { messageIndex, bookmarked } = body
@@ -107,7 +105,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   }
 
   session.messages[messageIndex].bookmarked = bookmarked
-  upsertStoredItem('sessions', id, session)
+  saveSession(id, session)
   return NextResponse.json(session.messages[messageIndex])
 }
 
@@ -115,7 +113,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
   const { id } = await params
   const { data: body, error } = await safeParseBody<{ messageIndex: number }>(req)
   if (error) return error
-  const session = loadStoredItem('sessions', id) as Session | null
+  const session = getSession(id)
   if (!session) return notFound()
 
   const { messageIndex } = body
@@ -129,6 +127,6 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
   }
 
   session.messages.splice(messageIndex, 1)
-  upsertStoredItem('sessions', id, session)
+  saveSession(id, session)
   return NextResponse.json({ ok: true })
 }

@@ -9,7 +9,8 @@
 import type { Session, Agent } from '@/types'
 import type { ActiveProjectContext } from '@/lib/server/project-context'
 import { buildIdentityContinuityContext } from '@/lib/server/identity-continuity'
-import { loadSkills, loadAgents } from '@/lib/server/storage'
+import { getAgent, listAgents } from '@/lib/server/agents/agent-repository'
+import { loadSkills } from '@/lib/server/skills/skill-repository'
 import { buildRuntimeSkillPromptBlocks, resolveRuntimeSkills } from '@/lib/server/skills/runtime-skill-resolver'
 import { resolveTeam } from '@/lib/server/agents/team-resolution'
 
@@ -127,8 +128,7 @@ export async function buildAgentAwarenessSection(
     // Load agent to get delegation settings so the awareness block respects them
     let delegationOpts: { delegationTargetMode?: 'all' | 'selected'; delegationTargetAgentIds?: string[] } | undefined
     try {
-      const agents = loadAgents() as Record<string, Agent>
-      const agent = agents[session.agentId]
+      const agent = getAgent(session.agentId)
       if (agent?.delegationTargetMode === 'selected') {
         delegationOpts = {
           delegationTargetMode: 'selected',
@@ -334,7 +334,7 @@ export function buildCoordinatorSection(
 ): string | null {
   if (!agent || agent.role !== 'coordinator') return null
 
-  const allAgents = loadAgents()
+  const allAgents = listAgents()
   const selfId = agent.id
 
   // Resolve which agents this coordinator can delegate to
@@ -511,8 +511,7 @@ export function buildCliDelegationContext(opts: {
   // Team roster summary
   if (opts.agent?.id) {
     try {
-      const agents = loadAgents() as Record<string, Agent>
-      const team = resolveTeam(opts.agent.id, agents)
+      const team = resolveTeam(opts.agent.id, listAgents())
       if (team.mode === 'team') {
         const teammates = [
           ...(team.coordinator ? [`${team.coordinator.name} (coordinator)`] : []),
