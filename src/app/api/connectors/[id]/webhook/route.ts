@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { loadConnectors } from '@/lib/server/storage'
+import { loadConnectors } from '@/lib/server/connectors/connector-repository'
 
 export const dynamic = 'force-dynamic'
 

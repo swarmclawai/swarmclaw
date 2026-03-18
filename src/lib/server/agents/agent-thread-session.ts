@@ -2,9 +2,10 @@ import { genId } from '@/lib/id'
 import type { Agent, Session } from '@/types'
 import { applyResolvedRoute, resolvePrimaryAgentRoute } from '@/lib/server/agents/agent-runtime-config'
 import { isAgentDisabled } from '@/lib/server/agents/agent-availability'
+import { loadAgent, loadAgents, upsertAgent } from '@/lib/server/agents/agent-repository'
 import { WORKSPACE_DIR } from '@/lib/server/data-dir'
-import { loadAgents, loadSession, loadSessions, upsertAgent, upsertStoredItem } from '@/lib/server/storage'
 import { getEnabledCapabilitySelection } from '@/lib/capability-selection'
+import { loadSession, loadSessions, upsertSession } from '@/lib/server/sessions/session-repository'
 
 function buildEmptyDelegateResumeIds(): NonNullable<Session['delegateResumeIds']> {
   return {
@@ -108,7 +109,7 @@ function shouldHealAgentCredentialId(agent: Agent, session: Session): boolean {
 }
 
 export function ensureAgentThreadSession(agentId: string, user = 'default', preloadedAgent?: Agent): Session | null {
-  const agent = preloadedAgent ?? (loadAgents()[agentId] as Agent | undefined)
+  const agent = preloadedAgent ?? loadAgent(agentId) ?? (loadAgents()[agentId] as Agent | undefined)
   if (!agent) return null
 
   const now = Date.now()
@@ -124,7 +125,7 @@ export function ensureAgentThreadSession(agentId: string, user = 'default', prel
         agent.updatedAt = now
         upsertAgent(agentId, agent)
       }
-      upsertStoredItem('sessions', existingId, session)
+      upsertSession(existingId, session)
       return session
     }
     // Session was deleted — fall through to legacy search / creation
@@ -147,7 +148,7 @@ export function ensureAgentThreadSession(agentId: string, user = 'default', prel
     }
     agent.updatedAt = now
     upsertAgent(agentId, agent)
-    upsertStoredItem('sessions', legacySession.id, session)
+    upsertSession(legacySession.id, session)
     return session
   }
 
@@ -158,7 +159,7 @@ export function ensureAgentThreadSession(agentId: string, user = 'default', prel
   if (shouldHealAgentCredentialId(agent, session)) {
     agent.credentialId = session.credentialId ?? null
   }
-  upsertStoredItem('sessions', sessionId, session)
+  upsertSession(sessionId, session)
 
   agent.threadSessionId = sessionId
   agent.updatedAt = now

@@ -1,13 +1,6 @@
 import { NextResponse } from 'next/server'
-import { genId } from '@/lib/id'
 import { perf } from '@/lib/server/runtime/perf'
-import { loadAgents, loadSessions, loadUsage, logActivity, upsertStoredItem } from '@/lib/server/storage'
-import { normalizeProviderEndpoint } from '@/lib/openclaw/openclaw-endpoint'
-import { notify } from '@/lib/server/ws-hub'
-import { getAgentSpendWindows } from '@/lib/server/cost'
-import { resolveAgentToolSelection } from '@/lib/agent-default-tools'
-import { normalizeAgentSandboxConfig } from '@/lib/agent-sandbox-defaults'
-import { normalizeOrchestratorConfig } from '@/lib/orchestrator-config'
+import { listAgentsForApi, createAgent } from '@/lib/server/agents/agent-service'
 import { AgentCreateSchema, formatZodError } from '@/lib/validation/schemas'
 import { z } from 'zod'
 import { safeParseBody } from '@/lib/server/safe-parse-body'
@@ -21,25 +14,7 @@ async function ensureDaemonIfNeeded(source: string) {
 
 export async function GET(req: Request) {
   const endPerf = perf.start('api', 'GET /api/agents')
-  const agents = loadAgents()
-  const sessions = loadSessions()
-  const usage = loadUsage()
-  // Enrich agents that have spend limits with current spend windows
-  for (const agent of Object.values(agents)) {
-    if (
-      (typeof agent.monthlyBudget === 'number' && agent.monthlyBudget > 0)
-      || (typeof agent.dailyBudget === 'number' && agent.dailyBudget > 0)
-      || (typeof agent.hourlyBudget === 'number' && agent.hourlyBudget > 0)
-    ) {
-      const spend = getAgentSpendWindows(agent.id, Date.now(), {
-        sessions: sessions as unknown as Record<string, Record<string, unknown>>,
-        usage,
-      })
-      if (typeof agent.monthlyBudget === 'number' && agent.monthlyBudget > 0) agent.monthlySpend = spend.monthly
-      if (typeof agent.dailyBudget === 'number' && agent.dailyBudget > 0) agent.dailySpend = spend.daily
-      if (typeof agent.hourlyBudget === 'number' && agent.hourlyBudget > 0) agent.hourlySpend = spend.hourly
-    }
-  }
+  const agents = listAgentsForApi()
 
   const { searchParams } = new URL(req.url)
   const limitParam = searchParams.get('limit')
@@ -65,91 +40,6 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     return NextResponse.json(formatZodError(parsed.error as z.ZodError), { status: 400 })
   }
-  const body = parsed.data
-  const orchestratorConfig = normalizeOrchestratorConfig({
-    provider: body.provider,
-    orchestratorEnabled: body.orchestratorEnabled,
-    orchestratorMission: body.orchestratorMission,
-    orchestratorWakeInterval: body.orchestratorWakeInterval,
-    orchestratorGovernance: body.orchestratorGovernance,
-    orchestratorMaxCyclesPerDay: body.orchestratorMaxCyclesPerDay,
-  })
-  const capabilitySelection = resolveAgentToolSelection({
-    hasExplicitTools: Boolean(rawRecord && Object.prototype.hasOwnProperty.call(rawRecord, 'tools')),
-    hasExplicitExtensions: Boolean(rawRecord && Object.prototype.hasOwnProperty.call(rawRecord, 'extensions')),
-    tools: body.tools,
-    extensions: body.extensions,
-  })
-  const id = genId()
-  const now = Date.now()
-  const agent = {
-    id,
-    name: body.name,
-    description: body.description,
-    soul: body.soul || undefined,
-    systemPrompt: body.systemPrompt,
-    provider: body.provider,
-    model: body.model,
-    ollamaMode: body.provider === 'ollama' ? (body.ollamaMode || 'local') : null,
-    credentialId: body.credentialId,
-    fallbackCredentialIds: body.fallbackCredentialIds,
-    apiEndpoint: normalizeProviderEndpoint(body.provider, body.apiEndpoint || null),
-    gatewayProfileId: body.gatewayProfileId,
-    preferredGatewayTags: body.preferredGatewayTags,
-    preferredGatewayUseCase: body.preferredGatewayUseCase,
-    routingStrategy: body.routingStrategy,
-    routingTargets: body.routingTargets?.map((target) => ({
-      ...target,
-      ollamaMode: target.provider === 'ollama' ? (target.ollamaMode || 'local') : null,
-      apiEndpoint: normalizeProviderEndpoint(target.provider, target.apiEndpoint || null),
-    })),
-    delegationEnabled: body.delegationEnabled ?? false,
-    delegationTargetMode: body.delegationTargetMode ?? 'all',
-    delegationTargetAgentIds: (body.delegationTargetMode === 'selected' ? body.delegationTargetAgentIds : []).filter(Boolean),
-    tools: capabilitySelection.tools,
-    extensions: capabilitySelection.extensions,
-    skills: body.skills,
-    skillIds: body.skillIds,
-    mcpServerIds: body.mcpServerIds,
-    mcpDisabledTools: body.mcpDisabledTools?.length ? body.mcpDisabledTools : undefined,
-    capabilities: body.capabilities,
-    thinkingLevel: body.thinkingLevel || undefined,
-    autoRecovery: body.autoRecovery || false,
-    disabled: body.disabled || false,
-    heartbeatEnabled: body.heartbeatEnabled ?? true,
-    heartbeatInterval: body.heartbeatInterval,
-    heartbeatIntervalSec: body.heartbeatIntervalSec,
-    heartbeatModel: body.heartbeatModel,
-    heartbeatPrompt: body.heartbeatPrompt,
-    orchestratorEnabled: orchestratorConfig.orchestratorEnabled,
-    orchestratorMission: orchestratorConfig.orchestratorMission,
-    orchestratorWakeInterval: orchestratorConfig.orchestratorWakeInterval,
-    orchestratorGovernance: orchestratorConfig.orchestratorGovernance,
-    orchestratorMaxCyclesPerDay: orchestratorConfig.orchestratorMaxCyclesPerDay,
-    elevenLabsVoiceId: body.elevenLabsVoiceId,
-    monthlyBudget: body.monthlyBudget ?? null,
-    dailyBudget: body.dailyBudget ?? null,
-    hourlyBudget: body.hourlyBudget ?? null,
-    budgetAction: body.budgetAction || 'warn',
-    identityState: body.identityState ?? null,
-    memoryScopeMode: body.memoryScopeMode,
-    memoryTierPreference: body.memoryTierPreference,
-    proactiveMemory: body.proactiveMemory ?? true,
-    autoDraftSkillSuggestions: body.autoDraftSkillSuggestions,
-    projectId: body.projectId,
-    avatarSeed: body.avatarSeed,
-    avatarUrl: body.avatarUrl,
-    sessionResetMode: body.sessionResetMode ?? null,
-    sessionIdleTimeoutSec: body.sessionIdleTimeoutSec ?? null,
-    sessionMaxAgeSec: body.sessionMaxAgeSec ?? null,
-    sessionDailyResetAt: body.sessionDailyResetAt ?? null,
-    sessionResetTimezone: body.sessionResetTimezone ?? null,
-    sandboxConfig: normalizeAgentSandboxConfig(body.sandboxConfig),
-    createdAt: now,
-    updatedAt: now,
-  }
-  upsertStoredItem('agents', id, agent)
-  logActivity({ entityType: 'agent', entityId: id, action: 'created', actor: 'user', summary: `Agent created: "${agent.name}"` })
-  notify('agents')
+  const agent = createAgent({ body: parsed.data as unknown as Record<string, unknown>, rawRecord })
   return NextResponse.json(agent)
 }

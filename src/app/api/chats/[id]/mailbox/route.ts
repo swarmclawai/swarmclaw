@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { ackMailboxEnvelope, clearMailbox, listMailbox, sendMailboxEnvelope } from '@/lib/server/chatrooms/session-mailbox'
-import { loadSessions } from '@/lib/server/storage'
+import { getSession } from '@/lib/server/sessions/session-repository'
 
 function parseIntParam(value: string | null, fallback: number, min: number, max: number): number {
   const parsed = value ? Number.parseInt(value, 10) : Number.NaN
@@ -16,8 +16,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   try {
     const envelopes = listMailbox(id, { limit, includeAcked })
     return NextResponse.json({ sessionId: id, count: envelopes.length, envelopes })
-  } catch (err: any) {
-    return NextResponse.json({ error: err?.message || 'Failed to load mailbox.' }, { status: 404 })
+  } catch (err: unknown) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : 'Failed to load mailbox.' }, { status: 404 })
   }
 }
 
@@ -25,8 +25,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const { id } = await params
   const body = await req.json().catch(() => ({}))
   const action = typeof body?.action === 'string' ? body.action : 'send'
-  const sessions = loadSessions()
-  const current = sessions[id]
+  const current = getSession(id)
   if (!current) return NextResponse.json({ error: `Session not found: ${id}` }, { status: 404 })
 
   try {
@@ -63,8 +62,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     }
 
     return NextResponse.json({ error: `Unsupported action: ${action}` }, { status: 400 })
-  } catch (err: any) {
-    return NextResponse.json({ error: err?.message || 'Mailbox operation failed.' }, { status: 500 })
+  } catch (err: unknown) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : 'Mailbox operation failed.' }, { status: 500 })
   }
 }
-

@@ -1,64 +1,37 @@
 import { NextResponse } from 'next/server'
-import { loadConnectors, loadConnectorHealth } from '@/lib/server/storage'
 import { notFound } from '@/lib/server/collection-helpers'
+import { getConnectorHealthForApi } from '@/lib/server/connectors/connector-service'
 import type { ConnectorHealthEvent } from '@/types'
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const connectors = loadConnectors()
-  if (!connectors[id]) return notFound()
-
+  const result = getConnectorHealthForApi(id)
+  if (!result) return notFound()
   const url = new URL(req.url)
   const since = url.searchParams.get('since')
-
-  const allHealth = loadConnectorHealth()
-  const events: ConnectorHealthEvent[] = []
-
-  for (const raw of Object.values(allHealth)) {
-    const entry = raw as ConnectorHealthEvent
-    if (entry.connectorId !== id) continue
-    if (since && entry.timestamp < since) continue
-    events.push(entry)
-  }
-
-  // Sort by timestamp ascending
-  events.sort((a, b) => a.timestamp.localeCompare(b.timestamp))
-
-  // Compute uptime percentage
-  const uptimePercent = computeUptime(events)
-
-  return NextResponse.json({ events, uptimePercent })
+  const events = since ? result.events.filter((entry) => entry.timestamp >= since) : result.events
+  return NextResponse.json({ events, uptimePercent: computeUptime(events) })
 }
 
 function computeUptime(events: ConnectorHealthEvent[]): number {
   if (events.length === 0) return 0
-
   const firstTime = new Date(events[0].timestamp).getTime()
   const now = Date.now()
   const totalMs = now - firstTime
   if (totalMs <= 0) return 100
-
   let uptimeMs = 0
   let lastUpAt: number | null = null
-
-  for (const ev of events) {
-    const t = new Date(ev.timestamp).getTime()
-    if (ev.event === 'started' || ev.event === 'reconnected') {
-      if (lastUpAt === null) {
-        lastUpAt = t
-      }
-    } else if (ev.event === 'stopped' || ev.event === 'error' || ev.event === 'disconnected') {
+  for (const event of events) {
+    const time = new Date(event.timestamp).getTime()
+    if (event.event === 'started' || event.event === 'reconnected') {
+      if (lastUpAt === null) lastUpAt = time
+    } else if (event.event === 'stopped' || event.event === 'error' || event.event === 'disconnected') {
       if (lastUpAt !== null) {
-        uptimeMs += t - lastUpAt
+        uptimeMs += time - lastUpAt
         lastUpAt = null
       }
     }
   }
-
-  // If still up, count time until now
-  if (lastUpAt !== null) {
-    uptimeMs += now - lastUpAt
-  }
-
+  if (lastUpAt !== null) uptimeMs += now - lastUpAt
   return Math.round((uptimeMs / totalMs) * 10000) / 100
 }

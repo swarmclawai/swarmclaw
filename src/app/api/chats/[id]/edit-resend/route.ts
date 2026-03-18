@@ -1,21 +1,15 @@
 import { NextResponse } from 'next/server'
-import { loadSession, upsertSession } from '@/lib/server/storage'
+import { editAndResendChatTurn } from '@/lib/server/chats/chat-session-service'
 import { notFound } from '@/lib/server/collection-helpers'
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const body = await req.json().catch(() => ({})) as { messageIndex: number; newText: string }
-  const session = loadSession(id)
-  if (!session) return notFound()
-
-  const { messageIndex, newText } = body
-  if (typeof messageIndex !== 'number' || messageIndex < 0 || messageIndex >= session.messages.length) {
-    return NextResponse.json({ error: 'Invalid message index' }, { status: 400 })
+  const result = editAndResendChatTurn(id, body.messageIndex, body.newText)
+  if (!result.ok) {
+    return result.status === 404
+      ? notFound()
+      : NextResponse.json({ error: result.error }, { status: result.status })
   }
-
-  // Truncate messages to messageIndex (discard that msg + everything after)
-  session.messages = session.messages.slice(0, messageIndex)
-  upsertSession(id, session)
-
-  return NextResponse.json({ message: newText })
+  return NextResponse.json({ message: result.message })
 }

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
-import { loadTasks, loadAgents } from '@/lib/server/storage'
+import { loadAgents } from '@/lib/server/agents/agent-repository'
+import { loadTasks } from '@/lib/server/tasks/task-repository'
 
 type Range = '24h' | '7d' | '30d'
 

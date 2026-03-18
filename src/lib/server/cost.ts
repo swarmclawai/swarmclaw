@@ -1,4 +1,4 @@
-import type { Agent, UsageRecord, ExtensionDefinitionCost } from '@/types'
+import type { Agent, Session, UsageRecord, ExtensionDefinitionCost } from '@/types'
 import type { StructuredToolInterface } from '@langchain/core/tools'
 import { loadSessions, loadUsage } from './storage'
 
@@ -26,8 +26,7 @@ const MODEL_COSTS: Record<string, [number, number]> = {
 const ONE_HOUR_MS = 60 * 60 * 1000
 const WARNING_RATIO = 0.8
 
-type GenericRecord = Record<string, unknown>
-type SessionsMap = Record<string, GenericRecord>
+type SessionsMap = Record<string, Session | Record<string, unknown>>
 type UsageMap = Record<string, unknown>
 
 function parsePositiveBudget(value: unknown): number | null {

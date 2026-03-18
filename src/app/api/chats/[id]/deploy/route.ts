@@ -1,16 +1,15 @@
 import { NextResponse } from 'next/server'
 import { execSync } from 'child_process'
-import { loadSessions } from '@/lib/server/storage'
 import { notFound } from '@/lib/server/collection-helpers'
 import { safeParseBody } from '@/lib/server/safe-parse-body'
 import { log } from '@/lib/server/logger'
+import { getSession } from '@/lib/server/sessions/session-repository'
 
 const TAG = 'api-deploy'
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const sessions = loadSessions()
-  const session = sessions[id]
+  const session = getSession(id)
   if (!session) return notFound()
 
   const { data: body, error } = await safeParseBody<{ message?: string }>(req)

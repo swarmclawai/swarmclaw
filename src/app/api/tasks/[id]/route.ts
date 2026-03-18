@@ -1,221 +1,35 @@
 import { NextResponse } from 'next/server'
 import { safeParseBody } from '@/lib/server/safe-parse-body'
-import { loadAgents, loadSettings, loadTasks, logActivity, upsertStoredItems, upsertTask } from '@/lib/server/storage'
 import { notFound } from '@/lib/server/collection-helpers'
-import { disableSessionHeartbeat, enqueueTask, recoverStalledRunningTasks, validateCompletedTasksQueue } from '@/lib/server/runtime/queue'
-import { pushMainLoopEventToMainSessions } from '@/lib/server/agents/main-agent-loop'
-import { notify } from '@/lib/server/ws-hub'
-import { createNotification } from '@/lib/server/create-notification'
-import { enqueueSystemEvent } from '@/lib/server/runtime/system-events'
-import { dispatchWake } from '@/lib/server/runtime/wake-dispatcher'
-import { validateDag, cascadeUnblock } from '@/lib/server/dag-validation'
-import { getExtensionManager } from '@/lib/server/extensions'
-import { getEnabledCapabilityIds } from '@/lib/capability-selection'
+import { loadTask } from '@/lib/server/tasks/task-repository'
 import {
-  applyTaskPatch,
-} from '@/lib/server/tasks/task-service'
-import type { BoardTask } from '@/types'
-import { ensureMissionForTask, enrichTaskWithMissionSummary, noteMissionTaskFinished } from '@/lib/server/missions/mission-service'
-import '@/lib/server/builtin-extensions'
+  archiveTaskFromRoute,
+  prepareTasksForListing,
+  updateTaskFromRoute,
+} from '@/lib/server/tasks/task-route-service'
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  // Keep completed queue integrity even if daemon is not running.
-  validateCompletedTasksQueue()
-  recoverStalledRunningTasks()
-
   const { id } = await params
-  const tasks = loadTasks()
+  const tasks = prepareTasksForListing()
   if (!tasks[id]) return notFound()
-  return NextResponse.json(enrichTaskWithMissionSummary(tasks[id]))
+  return NextResponse.json(tasks[id])
 }
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const { data: body, error } = await safeParseBody<Record<string, unknown>>(req)
   if (error) return error
-  const settings = loadSettings()
-  const tasks = loadTasks()
-  if (!tasks[id]) return notFound()
-
-  const prevStatus = tasks[id].status
-
-  // DAG validation: reject if proposed blockedBy would create a cycle
-  if (Array.isArray(body.blockedBy)) {
-    const dagResult = validateDag(tasks, id, body.blockedBy)
-    if (!dagResult.valid) {
-      return NextResponse.json(
-        { error: 'Dependency cycle detected', cycle: dagResult.cycle },
-        { status: 400 },
-      )
-    }
-  }
-
-  // Support atomic comment append to avoid race conditions
-  if (body.appendComment) {
-    if (!tasks[id].comments) tasks[id].comments = []
-    tasks[id].comments.push(body.appendComment)
-    tasks[id].updatedAt = Date.now()
-  } else {
-    applyTaskPatch({
-      task: tasks[id],
-      patch: body as Record<string, unknown>,
-      now: Date.now(),
-      settings,
-      preserveCompletedAt: true,
-      clearProjectIdWhenNull: true,
-      invalidCompletionCommentAuthor: 'System',
-    })
-  }
-  tasks[id].id = id // prevent id overwrite
-
-  // Maintain parent/child subtask links
-  if (typeof body.parentTaskId === 'string' || body.parentTaskId === null) {
-    const oldParentId = tasks[id].parentTaskId
-    const newParentId = typeof body.parentTaskId === 'string' && body.parentTaskId.trim() ? body.parentTaskId.trim() : null
-    // Remove from old parent's subtaskIds
-    if (oldParentId && oldParentId !== newParentId && tasks[oldParentId]) {
-      const oldSubs = Array.isArray(tasks[oldParentId].subtaskIds) ? tasks[oldParentId].subtaskIds : []
-      tasks[oldParentId].subtaskIds = oldSubs.filter((s: string) => s !== id)
-      tasks[oldParentId].updatedAt = Date.now()
-      upsertTask(oldParentId, tasks[oldParentId])
-    }
-    // Add to new parent's subtaskIds
-    if (newParentId && tasks[newParentId]) {
-      const newSubs = Array.isArray(tasks[newParentId].subtaskIds) ? tasks[newParentId].subtaskIds : []
-      if (!newSubs.includes(id)) {
-        tasks[newParentId].subtaskIds = [...newSubs, id]
-        tasks[newParentId].updatedAt = Date.now()
-        upsertTask(newParentId, tasks[newParentId])
-      }
-    }
-    tasks[id].parentTaskId = newParentId
-  }
-
-  // Set archivedAt when transitioning to archived
-  if (prevStatus !== 'archived' && tasks[id].status === 'archived') {
-    tasks[id].archivedAt = Date.now()
-  }
-
-  upsertTask(id, tasks[id])
-  const mission = ensureMissionForTask(tasks[id], { source: 'manual' })
-  if (tasks[id].status === 'completed' || tasks[id].status === 'failed' || tasks[id].status === 'cancelled') {
-    noteMissionTaskFinished(tasks[id], tasks[id].status, tasks[id].id)
-  }
-  logActivity({ entityType: 'task', entityId: id, action: 'updated', actor: 'user', summary: `Task updated: "${tasks[id].title}" (${prevStatus} → ${tasks[id].status})` })
-  if (prevStatus !== tasks[id].status) {
-    pushMainLoopEventToMainSessions({
-      type: 'task_status_changed',
-      text: `Task "${tasks[id].title}" (${id}) moved ${prevStatus} → ${tasks[id].status}.`,
-    })
-  }
-
-  if (prevStatus !== tasks[id].status && tasks[id].status === 'cancelled') {
-    disableSessionHeartbeat(tasks[id].sessionId)
-    notify('tasks')
-    return NextResponse.json(enrichTaskWithMissionSummary({
-      ...tasks[id],
-      missionId: mission?.id || tasks[id].missionId || null,
-    }))
-  }
-
-  // If task is manually transitioned to a terminal status, disable session heartbeat.
-  if (prevStatus !== tasks[id].status && (tasks[id].status === 'completed' || tasks[id].status === 'failed')) {
-    disableSessionHeartbeat(tasks[id].sessionId)
-    createNotification({
-      type: tasks[id].status === 'completed' ? 'success' : 'error',
-      title: `Task ${tasks[id].status}: "${tasks[id].title}"`,
-      message: tasks[id].status === 'failed' ? tasks[id].error?.slice(0, 200) : undefined,
-      entityType: 'task',
-      entityId: id,
-    })
-    
-    if (tasks[id].status === 'completed') {
-      const agentExtensions = tasks[id].agentId ? getEnabledCapabilityIds(loadAgents()[tasks[id].agentId]) : []
-      getExtensionManager().runHook(
-        'onTaskComplete',
-        { taskId: id, result: tasks[id].result },
-        { enabledIds: agentExtensions },
-      )
-    }
-
-    // Enqueue system event + heartbeat wake
-    if (tasks[id].sessionId) {
-      enqueueSystemEvent(tasks[id].sessionId, `Task ${tasks[id].status}: ${tasks[id].title}`)
-    }
-    if (tasks[id].agentId) {
-      dispatchWake({
-        mode: 'immediate',
-        agentId: tasks[id].agentId,
-        sessionId: tasks[id].sessionId || undefined,
-        eventId: `task:${id}:${tasks[id].status}`,
-        reason: 'task-completed',
-        source: `task:${id}`,
-        resumeMessage: `Task ${tasks[id].status}: ${tasks[id].title}`,
-        detail: tasks[id].status === 'failed'
-          ? String(tasks[id].error || '').slice(0, 400)
-          : JSON.stringify(tasks[id].result || '').slice(0, 400),
-      })
-    }
-  }
-
-  // Dependency check: cannot queue a task if any blocker is incomplete
-  if (tasks[id].status === 'queued') {
-    const blockers = Array.isArray(tasks[id].blockedBy) ? tasks[id].blockedBy : []
-    const incompleteBlocker = blockers.find((bid: string) => tasks[bid] && tasks[bid].status !== 'completed')
-    if (incompleteBlocker) {
-      // Revert status change and reject
-      tasks[id].status = prevStatus
-      tasks[id].updatedAt = Date.now()
-      upsertTask(id, tasks[id])
-      return NextResponse.json(
-        { error: 'Cannot queue: blocked by incomplete tasks', blockedBy: incompleteBlocker },
-        { status: 409 },
-      )
-    }
-  }
-
-  // When a task is completed, cascade unblock dependent tasks
-  if (tasks[id].status === 'completed') {
-    const unblockedIds = cascadeUnblock(tasks, id)
-    if (unblockedIds.length > 0) {
-      upsertStoredItems('tasks', [
-        [id, tasks[id]],
-        ...unblockedIds.map((uid) => [uid, tasks[uid]] as [string, BoardTask]),
-      ])
-      for (const uid of unblockedIds) {
-        enqueueTask(uid)
-      }
-    }
-  }
-
-  // If status changed to 'queued', enqueue it
-  if (prevStatus !== 'queued' && tasks[id].status === 'queued') {
-    enqueueTask(id)
-  }
-
-  notify('tasks')
-  return NextResponse.json(enrichTaskWithMissionSummary({
-    ...tasks[id],
-    missionId: mission?.id || tasks[id].missionId || null,
-  }))
+  const result = updateTaskFromRoute(id, body)
+  if (!result.ok && result.status === 404) return notFound()
+  return result.ok
+    ? NextResponse.json(result.payload)
+    : NextResponse.json(result.payload, { status: result.status })
 }
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const tasks = loadTasks()
-  if (!tasks[id]) return notFound()
-
-  // Soft delete: move to archived status instead of hard delete
-  tasks[id].status = 'archived'
-  tasks[id].archivedAt = Date.now()
-  tasks[id].updatedAt = Date.now()
-  upsertTask(id, tasks[id])
-  logActivity({ entityType: 'task', entityId: id, action: 'deleted', actor: 'user', summary: `Task archived: "${tasks[id].title}"` })
-  pushMainLoopEventToMainSessions({
-    type: 'task_archived',
-    text: `Task archived: "${tasks[id].title}" (${id}).`,
-  })
-
-  notify('tasks')
-  return NextResponse.json(tasks[id])
+  if (!loadTask(id)) return notFound()
+  const result = archiveTaskFromRoute(id)
+  if (!result.ok) return notFound()
+  return NextResponse.json(result.payload)
 }

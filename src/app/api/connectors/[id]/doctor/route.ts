@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
-import { loadConnectors } from '@/lib/server/storage'
 import { notFound } from '@/lib/server/collection-helpers'
 import { buildConnectorDoctorPreview, buildConnectorDoctorReport, type ConnectorDoctorPreviewInput } from '@/lib/server/connectors/doctor'
+import { loadConnectors } from '@/lib/server/connectors/connector-repository'
 
 export const dynamic = 'force-dynamic'
 
