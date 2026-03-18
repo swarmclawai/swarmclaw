@@ -1,4 +1,4 @@
-import fs from 'node:fs'
+﻿import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { spawn, type ChildProcess } from 'node:child_process'
@@ -381,7 +381,7 @@ const GoogleWorkspaceExtension: Extension = {
         },
         required: ['args'],
       },
-      execute: async (args) => executeGoogleWorkspaceAction(args),
+      execute: async (args) => executeGoogleWorkspaceAction(args as Record<string, unknown>),
     },
   ],
 }

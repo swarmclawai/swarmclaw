@@ -1,4 +1,4 @@
-import { z } from 'zod'
+﻿import { z } from 'zod'
 import { tool, type StructuredToolInterface } from '@langchain/core/tools'
 import type { Extension, ExtensionHooks } from '@/types'
 import type { ToolBuildContext } from './context'
@@ -254,7 +254,7 @@ const HumanLoopExtension: Extension = {
         },
         required: ['action'],
       },
-      execute: async (args, context) => executeHumanLoopAction(args, {
+      execute: async (args, context) => executeHumanLoopAction(args as Record<string, unknown>, {
         sessionId: context.session.id,
         agentId: context.session.agentId || null,
       }),
@@ -268,7 +268,7 @@ export function buildHumanLoopTools(bctx: ToolBuildContext): StructuredToolInter
   if (!bctx.hasExtension('ask_human')) return []
   return [
     tool(
-      async (args) => executeHumanLoopAction(args, {
+      async (args) => executeHumanLoopAction(args as Record<string, unknown>, {
         sessionId: bctx.ctx?.sessionId || null,
         agentId: bctx.ctx?.agentId || null,
       }),

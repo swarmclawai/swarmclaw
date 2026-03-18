@@ -1,4 +1,4 @@
-import { z } from 'zod'
+﻿import { z } from 'zod'
 import { tool, type StructuredToolInterface } from '@langchain/core/tools'
 import type { ToolBuildContext } from './context'
 import { registerNativeCapability } from '../native-capabilities'
@@ -184,7 +184,7 @@ const MonitorExtension: Extension = {
         },
         required: ['action']
       },
-      execute: async (args, context) => executeMonitorAction(args, {
+      execute: async (args, context) => executeMonitorAction(args as Record<string, unknown>, {
         cwd: context.session.cwd || process.cwd(),
         sessionId: context.session.id,
         agentId: context.session.agentId,
@@ -199,7 +199,7 @@ export function buildMonitorTools(bctx: ToolBuildContext): StructuredToolInterfa
   if (!bctx.hasExtension('monitor')) return []
   return [
     tool(
-      async (args) => executeMonitorAction(args, {
+      async (args) => executeMonitorAction(args as Record<string, unknown>, {
         cwd: bctx.cwd,
         sessionId: bctx.ctx?.sessionId || undefined,
         agentId: bctx.ctx?.agentId || undefined,

@@ -1,4 +1,4 @@
-import { z } from 'zod'
+﻿import { z } from 'zod'
 import { tool, type StructuredToolInterface } from '@langchain/core/tools'
 import { buildCrudTools } from './crud'
 import type { ToolBuildContext } from './context'
@@ -242,7 +242,7 @@ const PlatformExtension: Extension = {
         },
         required: ['resource', 'action']
       },
-      execute: async (args, context) => executePlatformAction(args, buildPlatformContextFromSession(context.session))
+      execute: async (args, context) => executePlatformAction(args as Record<string, unknown>, buildPlatformContextFromSession(context.session))
     }
   ]
 }
@@ -257,7 +257,7 @@ export function buildPlatformTools(bctx: ToolBuildContext): StructuredToolInterf
 
   return [
     tool(
-      async (args) => executePlatformAction(args, bctx),
+      async (args) => executePlatformAction(args as Record<string, unknown>, bctx),
       {
         name: 'manage_platform',
         description: PlatformExtension.tools![0].description,

@@ -1,4 +1,4 @@
-import { z } from 'zod'
+﻿import { z } from 'zod'
 import { tool, type StructuredToolInterface } from '@langchain/core/tools'
 import type { ToolBuildContext } from './context'
 import { getExtensionManager, normalizeMarketplaceExtensionUrl } from '../extensions'
@@ -256,7 +256,7 @@ const DiscoveryExtension: Extension = {
         },
         required: ['action', 'reason']
       },
-      execute: async (args) => executeDiscoveryAction(args)
+      execute: async (args) => executeDiscoveryAction(args as Record<string, unknown>)
     }
   ]
 }
@@ -267,7 +267,7 @@ export function buildDiscoveryTools(bctx: ToolBuildContext): StructuredToolInter
   // Always allow agents to discover what they can do
   return [
     tool(
-      async (args) => executeDiscoveryAction(args, bctx),
+      async (args) => executeDiscoveryAction(args as Record<string, unknown>, bctx),
       {
         name: 'manage_capabilities',
         description: DiscoveryExtension.tools![0].description,

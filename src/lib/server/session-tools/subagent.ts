@@ -1,4 +1,4 @@
-import { z } from 'zod'
+﻿import { z } from 'zod'
 import { tool, type StructuredToolInterface } from '@langchain/core/tools'
 import type { ToolBuildContext } from './context'
 import type { Extension, ExtensionHooks } from '@/types'
@@ -180,7 +180,7 @@ async function waitForJob(jobId: string, timeoutSec = 30): Promise<string> {
       sleep(timeoutMs).then(() => null),
     ])
     if (result) return JSON.stringify(result)
-    // Timed out — return current job state with explicit timeout indicator
+    // Timed out â€” return current job state with explicit timeout indicator
     const job = getDelegationJob(jobId)
     if (job) return JSON.stringify({ ...job, _timedOut: true })
     return `Error: delegation job "${jobId}" not found.`
@@ -263,7 +263,7 @@ async function handleBatch(args: Record<string, unknown>, ctx: ActionContext): P
     ? args.executionMode
     : 'auto'
 
-  // Use spawnSwarm internally — batch is a simplified interface
+  // Use spawnSwarm internally â€” batch is a simplified interface
   const swarm = await spawnSwarm({ tasks, executionMode }, { sessionId: ctx.sessionId, cwd: ctx.cwd })
   const jobIds = swarm.members
     .filter((m) => !m.spawnError && m.handle)
@@ -436,7 +436,7 @@ const ACTIONS: Record<string, ActionHandler> = {
 }
 
 /**
- * Core Subagent Execution Logic — powered by native subagent runtime.
+ * Core Subagent Execution Logic â€” powered by native subagent runtime.
  * Uses dispatch map instead of if-else chain for maintainability.
  */
 async function executeSubagentAction(args: unknown, context: ActionContext) {
@@ -469,12 +469,12 @@ const SubagentExtension: Extension = {
       + 'Background swarms return a swarmId you can pass to swarm_status, swarm_list, and swarm_cancel.',
     getOperatingGuidance: () => [
       'SUBAGENT DISPATCH RULES:',
-      '- Single task → action "start" with agentId + message.',
-      '- 2+ independent tasks → action "batch" with tasks array [{agentId, message}, ...]. Use `executionMode:"serial"` when local models are rate-limited.',
-      '- Background coordination example → `{"action":"swarm","tasks":[...],"background":true}` and then read the returned `swarmId` before calling `swarm_status` or `swarm_cancel`.',
+      '- Single task â†’ action "start" with agentId + message.',
+      '- 2+ independent tasks â†’ action "batch" with tasks array [{agentId, message}, ...]. Use `executionMode:"serial"` when local models are rate-limited.',
+      '- Background coordination example â†’ `{"action":"swarm","tasks":[...],"background":true}` and then read the returned `swarmId` before calling `swarm_status` or `swarm_cancel`.',
       '- If your final answer depends on all delegated results, set `waitForCompletion:true` and do not summarize early.',
       '- Prefer one coordinated `batch`/`swarm` call over mixing `start`, `delegate`, and follow-up retries for the same set of sibling tasks.',
-      '- DO NOT call "start" in a loop when tasks are independent — use "batch" or "swarm" instead.',
+      '- DO NOT call "start" in a loop when tasks are independent â€” use "batch" or "swarm" instead.',
       '- Only use subagents when the task genuinely requires another agent\'s specialization or parallel execution.',
       '- If you can answer directly from your own knowledge, do NOT spawn a subagent.',
     ],
@@ -532,7 +532,7 @@ const SubagentExtension: Extension = {
         },
         required: []
       },
-      execute: async (args, context) => executeSubagentAction(args, { sessionId: context.session.id, cwd: context.session.cwd || process.cwd() })
+      execute: async (args, context) => executeSubagentAction(args as Record<string, unknown>, { sessionId: context.session.id, cwd: context.session.cwd || process.cwd() })
     }
   ]
 }
@@ -561,7 +561,7 @@ export function buildSubagentTools(bctx: ToolBuildContext): StructuredToolInterf
 
   return [
     tool(
-      async (args) => executeSubagentAction(args, {
+      async (args) => executeSubagentAction(args as Record<string, unknown>, {
         sessionId: bctx.ctx?.sessionId || undefined,
         cwd: bctx.cwd,
         delegationTargetMode: bctx.ctx?.delegationTargetMode,

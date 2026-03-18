@@ -1,4 +1,4 @@
-import { z } from 'zod'
+﻿import { z } from 'zod'
 import { tool, type StructuredToolInterface } from '@langchain/core/tools'
 import { spawn, type ChildProcess } from 'child_process'
 import type { ToolBuildContext } from './context'
@@ -570,7 +570,7 @@ async function executeDelegateAction(args: Record<string, unknown>, bctx: Delega
   })
 }
 
-// stripEnvPrefixes removed — use buildCliEnv() from cli-utils instead
+// stripEnvPrefixes removed â€” use buildCliEnv() from cli-utils instead
 
 function parseCodexOutputText(ev: Record<string, unknown>): string | null {
   if (ev.type === 'item.content_part.delta') {
@@ -597,7 +597,7 @@ function parseCodexOutputText(ev: Record<string, unknown>): string | null {
 
 async function runCodexDelegate(binary: string, task: string, resume: boolean, resumeId: string, bctx: DelegateContext, runtime?: DelegateRuntimeState): Promise<string> {
   try {
-    // Build clean env — preserves user's CODEX_HOME for auth
+    // Build clean env â€” preserves user's CODEX_HOME for auth
     const env = buildCliEnv()
 
     // Auth probe BEFORE any temp CODEX_HOME override
@@ -936,7 +936,7 @@ const DelegateExtension: Extension = {
         },
         required: []
       },
-      execute: async (args, context) => executeDelegateAction(args, buildDelegateContextFromSessionish(context.session))
+      execute: async (args, context) => executeDelegateAction(args as Record<string, unknown>, buildDelegateContextFromSessionish(context.session))
     }
   ]
 }
@@ -953,7 +953,7 @@ export function buildDelegateTools(bctx: ToolBuildContext): StructuredToolInterf
   if (bctx.ctx?.delegationEnabled && hasExtension('delegate')) {
     tools.push(
       tool(
-        async (args) => executeDelegateAction(args, bctx),
+        async (args) => executeDelegateAction(args as Record<string, unknown>, bctx),
         {
           name: 'delegate',
           description: DelegateExtension.tools![0].description,

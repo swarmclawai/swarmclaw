@@ -1,4 +1,4 @@
-import { z } from 'zod'
+﻿import { z } from 'zod'
 import { tool, type StructuredToolInterface } from '@langchain/core/tools'
 import fs from 'fs'
 import path from 'path'
@@ -504,7 +504,7 @@ const FileExtension: Extension = {
         },
         required: ['action']
       },
-      execute: async (args, context) => executeFileAction(args, { cwd: context.session.cwd || process.cwd() })
+      execute: async (args, context) => executeFileAction(args as Record<string, unknown>, { cwd: context.session.cwd || process.cwd() })
     },
     {
       name: 'send_file',
@@ -542,7 +542,7 @@ export function buildFileTools(bctx: ToolBuildContext): StructuredToolInterface[
 
   return [
     tool(
-      async (args) => executeFileAction(args, { cwd: bctx.cwd, filesystemScope: bctx.filesystemScope }),
+      async (args) => executeFileAction(args as Record<string, unknown>, { cwd: bctx.cwd, filesystemScope: bctx.filesystemScope }),
       {
         name: 'files',
         description: FileExtension.tools![0].description,

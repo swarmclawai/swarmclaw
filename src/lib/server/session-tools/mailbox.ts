@@ -1,4 +1,4 @@
-import { z } from 'zod'
+﻿import { z } from 'zod'
 import { tool, type StructuredToolInterface } from '@langchain/core/tools'
 import type { Extension, ExtensionHooks } from '@/types'
 import { getExtensionManager } from '../extensions'
@@ -234,7 +234,7 @@ const MailboxExtension: Extension = {
         },
         required: ['action'],
       },
-      execute: async (args, context) => executeMailboxAction(args, {
+      execute: async (args, context) => executeMailboxAction(args as Record<string, unknown>, {
         cwd: context.session.cwd || process.cwd(),
         sessionId: context.session.id,
         agentId: context.session.agentId || null,
@@ -262,7 +262,7 @@ export function buildMailboxTools(bctx: ToolBuildContext): StructuredToolInterfa
   if (!bctx.hasExtension('mailbox')) return []
   return [
     tool(
-      async (args) => executeMailboxAction(args, {
+      async (args) => executeMailboxAction(args as Record<string, unknown>, {
         cwd: bctx.cwd,
         sessionId: bctx.ctx?.sessionId || null,
         agentId: bctx.ctx?.agentId || null,

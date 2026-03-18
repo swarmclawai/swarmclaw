@@ -1,4 +1,4 @@
-import { z } from 'zod'
+﻿import { z } from 'zod'
 import { tool, type StructuredToolInterface } from '@langchain/core/tools'
 import { loadSessions, saveSessions } from '../storage'
 import { notify } from '../ws-hub'
@@ -80,7 +80,7 @@ const CanvasExtension: Extension = {
         },
         required: ['action']
       },
-      execute: async (args, context) => executeCanvasAction(args, { sessionId: context.session.id })
+      execute: async (args, context) => executeCanvasAction(args as Record<string, unknown>, { sessionId: context.session.id })
     }
   ]
 }
@@ -94,7 +94,7 @@ export function buildCanvasTools(bctx: ToolBuildContext): StructuredToolInterfac
   if (!bctx.hasExtension('canvas')) return []
   return [
     tool(
-      async (args) => executeCanvasAction(args, { sessionId: bctx.ctx?.sessionId || undefined }),
+      async (args) => executeCanvasAction(args as Record<string, unknown>, { sessionId: bctx.ctx?.sessionId || undefined }),
       {
         name: 'canvas',
         description: CanvasExtension.tools![0].description,

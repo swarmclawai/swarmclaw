@@ -1,4 +1,4 @@
-import { z } from 'zod'
+﻿import { z } from 'zod'
 import { tool, type StructuredToolInterface } from '@langchain/core/tools'
 import { loadChatrooms, saveChatrooms, loadAgents } from '../storage'
 import { genId } from '@/lib/id'
@@ -333,7 +333,7 @@ const ChatroomExtension: Extension = {
         },
         required: ['action'],
       },
-      execute: async (args, context) => executeChatroomAction(args, { agentId: context.session.agentId }),
+      execute: async (args, context) => executeChatroomAction(args as Record<string, unknown>, { agentId: context.session.agentId }),
     },
   ],
 }
@@ -347,7 +347,7 @@ export function buildChatroomTools(bctx: ToolBuildContext): StructuredToolInterf
   if (!bctx.hasExtension('manage_chatrooms')) return []
   return [
     tool(
-      async (args) => executeChatroomAction(args, { agentId: bctx.ctx?.agentId }),
+      async (args) => executeChatroomAction(args as Record<string, unknown>, { agentId: bctx.ctx?.agentId }),
       {
         name: 'manage_chatrooms',
         description: ChatroomExtension.tools![0].description,

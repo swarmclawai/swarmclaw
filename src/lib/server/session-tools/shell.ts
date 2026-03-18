@@ -1,4 +1,4 @@
-import { z } from 'zod'
+﻿import { z } from 'zod'
 import { tool } from '@langchain/core/tools'
 import fs from 'fs'
 import {
@@ -151,7 +151,7 @@ export function normalizeShellArgs(rawArgs: Record<string, unknown>): Record<str
 /**
  * Extract file path operands from common shell commands.
  * Covers cat, rm, cp, mv, tee, and redirections (>, >>).
- * Returns best-effort paths — won't catch variable expansion or complex pipelines.
+ * Returns best-effort paths â€” won't catch variable expansion or complex pipelines.
  */
 function extractShellFileTargets(command: string): string[] {
   const paths: string[] = []
@@ -380,7 +380,7 @@ const ShellExtension: Extension = {
   description: 'Execute shell commands and manage background processes. Use for git, curl, and other CLI tools.',
   hooks: {
     getCapabilityDescription: () => 'I can run shell commands with the unified `shell` tool. Use action `execute` for commands (including git, curl, and other CLI tools), `sandbox_exec` to run JS/TS in a sandboxed environment, and `list` / `status` / `poll` / `log` for long-lived processes.',
-    getOperatingGuidance: () => ['Shell: use `shell` with `{"action":"execute","command":"..."}` for servers, installs, scripts, git, and curl. Use `background=true` for long-lived processes.', 'Use `shell` with `{"action":"sandbox_exec","language":"javascript","code":"..."}` to run JS/TS in a Docker sandbox when available.', 'Verify servers with `shell` status/log actions and liveness probes before claiming success.', 'Resolve IPs/URLs via shell — never use placeholders. Retry path errors without workdir override.'],
+    getOperatingGuidance: () => ['Shell: use `shell` with `{"action":"execute","command":"..."}` for servers, installs, scripts, git, and curl. Use `background=true` for long-lived processes.', 'Use `shell` with `{"action":"sandbox_exec","language":"javascript","code":"..."}` to run JS/TS in a Docker sandbox when available.', 'Verify servers with `shell` status/log actions and liveness probes before claiming success.', 'Resolve IPs/URLs via shell â€” never use placeholders. Retry path errors without workdir override.'],
   } as ExtensionHooks,
   tools: [
     {
@@ -398,7 +398,7 @@ const ShellExtension: Extension = {
         },
         required: ['action']
       },
-      execute: async (args, context) => executeShellAction(args, { ...context.session, cwd: context.session.cwd || process.cwd() })
+      execute: async (args, context) => executeShellAction(args as Record<string, unknown>, { ...context.session, cwd: context.session.cwd || process.cwd() })
     }
   ]
 }
@@ -409,7 +409,7 @@ export function buildShellTools(bctx: ToolBuildContext) {
   if (!bctx.hasExtension('shell')) return []
   return [
     tool(
-      async (args) => executeShellAction(args, {
+      async (args) => executeShellAction(args as Record<string, unknown>, {
         ...bctx.ctx,
         cwd: bctx.cwd,
         resolveCurrentSession: bctx.resolveCurrentSession,

@@ -1,4 +1,4 @@
-import { z } from 'zod'
+﻿import { z } from 'zod'
 import { tool, type StructuredToolInterface } from '@langchain/core/tools'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
@@ -117,7 +117,7 @@ const WorkspaceExtension: Extension = {
         },
         required: ['action']
       },
-      execute: async (args) => executeWorkspaceAction(args)
+      execute: async (args) => executeWorkspaceAction(args as Record<string, unknown>)
     }
   ]
 }
@@ -131,7 +131,7 @@ export function buildOpenClawWorkspaceTools(bctx: ToolBuildContext): StructuredT
   if (!bctx.hasExtension('openclaw_workspace')) return []
   return [
     tool(
-      async (args) => executeWorkspaceAction(args),
+      async (args) => executeWorkspaceAction(args as Record<string, unknown>),
       {
         name: 'openclaw_workspace',
         description: WorkspaceExtension.tools![0].description,

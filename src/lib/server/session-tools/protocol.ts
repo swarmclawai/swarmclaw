@@ -1,4 +1,4 @@
-import { z } from 'zod'
+﻿import { z } from 'zod'
 import { tool, type StructuredToolInterface } from '@langchain/core/tools'
 import type { ToolBuildContext } from './context'
 import type { Extension, ExtensionHooks } from '@/types'
@@ -211,7 +211,7 @@ const ProtocolExtension: Extension = {
   description: 'Structured orchestration workflows: sequential, parallel, branching, looping, DAG, forEach, subflows, and swarm patterns.',
   hooks: {
     getCapabilityDescription: () =>
-      'I can run structured orchestration workflows (`manage_protocols`) — conditional branching, looping, DAG dependencies, dynamic parallel (forEach), subflows, and competitive swarm patterns.',
+      'I can run structured orchestration workflows (`manage_protocols`) â€” conditional branching, looping, DAG dependencies, dynamic parallel (forEach), subflows, and competitive swarm patterns.',
     getOperatingGuidance: () => [
       'Step kinds: present, collect_independent_inputs, round_robin, compare, decide, summarize, emit_tasks, wait, dispatch_task, dispatch_delegation, branch, repeat, parallel, join, complete, for_each, subflow, swarm_claim.',
       'Each step requires `id`, `kind`, `label`. Chain steps with `nextStepId`. Per-kind config: `branchCases[]` + `defaultNextStepId` (branch), `repeat` (repeat), `parallel` (parallel), `forEach` (for_each), `subflow` (subflow), `swarm` (swarm_claim).',
@@ -243,7 +243,7 @@ const ProtocolExtension: Extension = {
         required: ['action'],
       },
       execute: async (args, context) =>
-        executeProtocolAction(args, { sessionId: (context.session as unknown as Record<string, unknown>).sessionId as string | undefined }),
+        executeProtocolAction(args as Record<string, unknown>, { sessionId: (context.session as unknown as Record<string, unknown>).sessionId as string | undefined }),
     },
   ],
 }
@@ -257,7 +257,7 @@ export function buildProtocolTools(bctx: ToolBuildContext): StructuredToolInterf
   if (!bctx.hasExtension('manage_protocols')) return []
   return [
     tool(
-      async (args) => executeProtocolAction(args, { sessionId: bctx.ctx?.sessionId }),
+      async (args) => executeProtocolAction(args as Record<string, unknown>, { sessionId: bctx.ctx?.sessionId }),
       {
         name: 'manage_protocols',
         description: ProtocolExtension.tools![0].description,

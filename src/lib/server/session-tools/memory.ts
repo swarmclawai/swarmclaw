@@ -1,4 +1,4 @@
-import { z } from 'zod'
+﻿import { z } from 'zod'
 import { tool } from '@langchain/core/tools'
 import fs from 'fs'
 import { genId } from '@/lib/id'
@@ -496,7 +496,7 @@ export async function executeMemoryAction(input: unknown, ctx: MemoryActionConte
 
   const formatEntry = (m: MemoryEntry) => {
     let line = `[${m.id}] (${m.agentId ? `agent:${m.agentId}` : 'shared'}) ${m.category}/${m.title}: ${m.content}`
-    if (m.reinforcementCount) line += ` (reinforced ×${m.reinforcementCount})`
+    if (m.reinforcementCount) line += ` (reinforced Ã—${m.reinforcementCount})`
     if (m.references?.length) {
       line += `\n  refs: ${m.references.map((r: MemoryReference) => `${r.type}:${r.path || r.title || r.type}`).join(', ')}`
     }
@@ -724,7 +724,7 @@ const MemoryExtension: Extension = {
 
       const pinnedLines = pinned.filter(dedup).map(formatMemoryLine)
 
-      // Fetch identity/* category memories — only in private (DM/peer) contexts
+      // Fetch identity/* category memories â€” only in private (DM/peer) contexts
       const identityMemories = isPrivateContext
         ? allRecent.filter((m) => m.category?.startsWith('identity/') && dedup(m))
         : []
@@ -863,7 +863,7 @@ const MemoryExtension: Extension = {
         '- What I\'ve discovered about projects, codebases, or environments',
         '- Problems I\'ve hit and how I solved them',
         '- Who people are and how they relate to each other',
-        '- Contact details: phone numbers, emails, platform IDs — use category "contacts"',
+        '- Contact details: phone numbers, emails, platform IDs â€” use category "contacts"',
         '- Configuration details and environment specifics that I\'ll need again',
         '',
         '**Not worth cluttering my memory with:**',
@@ -872,20 +872,20 @@ const MemoryExtension: Extension = {
         '- Things already in my system prompt',
         '- Something I\'ve already stored',
         '',
-        '**Categories** — pick the one that fits best when storing:',
-        '- `identity/preferences` — Likes, dislikes, style choices, timezone, pronouns, and personal preferences',
-        '- `identity/relationships` — Who people are and how they relate to each other',
-        '- `identity/contacts` — Phone numbers, emails, platform IDs for matching senders',
-        '- `identity/routines` — Recurring patterns: "picks up kids at 3pm", "checks in every morning"',
-        '- `identity/goals` — What the user is working toward: "launch MVP by Q2", "learn Spanish"',
-        '- `identity/events` — Significant life events: illness, birth, wedding, promotion, loss',
-        '- `knowledge/instructions` — Standing directives: "always respond in English", "use metric units"',
-        '- `knowledge/facts` — General knowledge, references, documentation',
-        '- `projects/decisions` — Decisions made and why',
-        '- `projects/learnings` — Lessons learned, solved problems, post-mortems',
-        '- `projects/context` — Project details, milestones, roadmap',
-        '- `operations/environment` — Config, credentials, endpoints, infrastructure',
-        '- `working/scratch` — Temporary notes that\'ll change soon',
+        '**Categories** â€” pick the one that fits best when storing:',
+        '- `identity/preferences` â€” Likes, dislikes, style choices, timezone, pronouns, and personal preferences',
+        '- `identity/relationships` â€” Who people are and how they relate to each other',
+        '- `identity/contacts` â€” Phone numbers, emails, platform IDs for matching senders',
+        '- `identity/routines` â€” Recurring patterns: "picks up kids at 3pm", "checks in every morning"',
+        '- `identity/goals` â€” What the user is working toward: "launch MVP by Q2", "learn Spanish"',
+        '- `identity/events` â€” Significant life events: illness, birth, wedding, promotion, loss',
+        '- `knowledge/instructions` â€” Standing directives: "always respond in English", "use metric units"',
+        '- `knowledge/facts` â€” General knowledge, references, documentation',
+        '- `projects/decisions` â€” Decisions made and why',
+        '- `projects/learnings` â€” Lessons learned, solved problems, post-mortems',
+        '- `projects/context` â€” Project details, milestones, roadmap',
+        '- `operations/environment` â€” Config, credentials, endpoints, infrastructure',
+        '- `working/scratch` â€” Temporary notes that\'ll change soon',
         '',
         '**Good habits:**',
         '- Give memories clear titles ("User prefers dark mode" not "Note 1")',
@@ -912,7 +912,7 @@ const MemoryExtension: Extension = {
       const MAX_MEMORY_INJECTION_CHARS = 8000
       const combined = parts.join('\n\n')
       if (combined.length > MAX_MEMORY_INJECTION_CHARS) {
-        // Keep whole parts within budget — drop lowest-priority parts entirely rather than slicing mid-content
+        // Keep whole parts within budget â€” drop lowest-priority parts entirely rather than slicing mid-content
         let budget = MAX_MEMORY_INJECTION_CHARS
         const prioritized: string[] = []
         for (const part of parts) {
@@ -920,7 +920,7 @@ const MemoryExtension: Extension = {
             prioritized.push(part)
             budget -= part.length
           } else if (budget > 0 && prioritized.length === 0) {
-            // First part exceeds budget — truncate at last newline within budget to avoid mid-word cuts
+            // First part exceeds budget â€” truncate at last newline within budget to avoid mid-word cuts
             const truncAt = part.lastIndexOf('\n', budget)
             prioritized.push(truncAt > 0 ? part.slice(0, truncAt) : part.slice(0, budget))
             budget = 0
@@ -998,9 +998,9 @@ const MemoryExtension: Extension = {
         ctx.session.lastAutoMemoryAt = now
       } catch { /* auto-memory is best-effort */ }
     },
-    getCapabilityDescription: () => 'I have long-term memory (`memory_search`, `memory_get`, `memory_store`, `memory_update`, `memory_tool`) — I can remember things across conversations and recall them when needed.',
+    getCapabilityDescription: () => 'I have long-term memory (`memory_search`, `memory_get`, `memory_store`, `memory_update`, `memory_tool`) â€” I can remember things across conversations and recall them when needed.',
     getOperatingGuidance: () => [
-      'Memory: use narrow memory tools first. For past-conversation recall, prefer `memory_search` then `memory_get`. For direct writes or corrections, prefer `memory_store` or `memory_update`. Keep `memory_tool` for list/delete/link/doctor or when you truly need the generic surface. NEVER use memory tools to create files, CSV data, code, or documents — always use the `files` tool for those.',
+      'Memory: use narrow memory tools first. For past-conversation recall, prefer `memory_search` then `memory_get`. For direct writes or corrections, prefer `memory_store` or `memory_update`. Keep `memory_tool` for list/delete/link/doctor or when you truly need the generic surface. NEVER use memory tools to create files, CSV data, code, or documents â€” always use the `files` tool for those.',
       'For info already in the current conversation, respond directly without calling any memory tool.',
       'For questions about prior work, decisions, dates, people, preferences, or todos from earlier conversations: start with one durable `memory_search`, then use `memory_get` only if you need a more targeted read. Only use archive/session history when the user explicitly needs transcript-level detail or the durable search is insufficient.',
       'When the user directly says to remember, store, or correct a fact, do one `memory_store` or `memory_update` call immediately. Treat the newest direct user statement as authoritative.',
@@ -1008,7 +1008,7 @@ const MemoryExtension: Extension = {
       'If someone says "remember this", write it down; do not rely on RAM alone.',
       'Memory writes merge canonical memories and retire superseded variants. After a successful store/update, do not keep re-searching unless the user explicitly asked you to verify.',
       'By default, memory searches focus on durable memories. Only include archives or working execution notes when you explicitly need transcript or run-history context.',
-      'For open goals, form a hypothesis and execute — do not keep re-asking broad questions.',
+      'For open goals, form a hypothesis and execute â€” do not keep re-asking broad questions.',
     ],
   } as ExtensionHooks,
   tools: [
@@ -1032,7 +1032,7 @@ const MemoryExtension: Extension = {
         required: ['action']
       },
       execute: async (args, context) => {
-        return executeMemoryAction(args, context.session)
+        return executeMemoryAction(args as Record<string, unknown>, context.session)
       },
       planning: {
         capabilities: ['memory.search', 'memory.write'],
@@ -1084,7 +1084,7 @@ const MemoryExtension: Extension = {
     },
     {
       name: 'memory_store',
-      description: 'Store a durable fact, preference, decision, or correction from the user. Use this immediately when the user says to remember something. If several related facts arrive in one request, prefer one canonical write over many near-duplicate calls. NOT for writing files, documents, code, or data exports — use the files tool for those.',
+      description: 'Store a durable fact, preference, decision, or correction from the user. Use this immediately when the user says to remember something. If several related facts arrive in one request, prefer one canonical write over many near-duplicate calls. NOT for writing files, documents, code, or data exports â€” use the files tool for those.',
       parameters: {
         type: 'object',
         properties: {
@@ -1119,7 +1119,7 @@ const MemoryExtension: Extension = {
         const looksLikeCode = /^(import |export |function |const |let |var |class |interface |type |def |from |#include|package |using )/m.test(value)
         const looksLikeCsv = lineCount >= 3 && (value.match(/,/g) || []).length >= lineCount * 2
         const looksLikeStructuredData = lineCount >= 5 && (/^\s*[\[{]/m.test(value) || looksLikeCsv)
-        const redirectMsg = 'Error: memory_store is only for remembering facts, preferences, and decisions — NOT for creating files, CSV data, code, or documents. To write a file, use the `files` tool: files({action:"write", files:[{path:"path/to/file", content:"..."}]})'
+        const redirectMsg = 'Error: memory_store is only for remembering facts, preferences, and decisions â€” NOT for creating files, CSV data, code, or documents. To write a file, use the `files` tool: files({action:"write", files:[{path:"path/to/file", content:"..."}]})'
         if (hasFileExtension || hasFilePath || (mentionsFileOp && (!value || value.length > 200))) {
           return redirectMsg
         }
@@ -1164,7 +1164,7 @@ export function buildMemoryTools(bctx: ToolBuildContext) {
   
   return [
     tool(
-      async (args) => executeMemoryAction(args, bctx.ctx),
+      async (args) => executeMemoryAction(args as Record<string, unknown>, bctx.ctx),
       {
         name: 'memory_tool',
         description: MemoryExtension.tools![0].description,

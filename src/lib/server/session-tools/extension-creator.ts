@@ -1,4 +1,4 @@
-import { z } from 'zod'
+﻿import { z } from 'zod'
 import { tool, type StructuredToolInterface } from '@langchain/core/tools'
 import fs from 'fs'
 import path from 'path'
@@ -158,7 +158,7 @@ Key rules:
 - Export SwarmClaw hooks/tools. Add register(api) too if you want OpenClaw compatibility.
 - SwarmClaw checks hooks/tools first; OpenClaw checks register()
 - Tools must have name, description, parameters (JSON Schema), and execute function
-- Hooks are optional — only include the ones you need
+- Hooks are optional â€” only include the ones you need
 - If your extension needs npm/pnpm/yarn/bun packages, include a packageJson object during scaffold or call install_dependencies later.
 - Dependency installs are run by the extension manager inside a per-extension workspace using the selected package manager with scripts disabled.
 - Extension settings are declared through ui.settingsFields and stored per extension ID
@@ -251,7 +251,7 @@ export function buildExtensionCreatorTools(bctx: ToolBuildContext): StructuredTo
   if (!bctx.hasExtension('extension_creator')) return []
   return [
     tool(
-      async (args) => executeExtensionCreatorAction(args, bctx),
+      async (args) => executeExtensionCreatorAction(args as Record<string, unknown>, bctx),
       {
         name: 'extension_creator_tool',
         description: ExtensionCreatorExtension.tools![0].description,

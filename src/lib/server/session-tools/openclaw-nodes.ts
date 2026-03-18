@@ -1,4 +1,4 @@
-import { z } from 'zod'
+﻿import { z } from 'zod'
 import { randomUUID } from 'crypto'
 import { tool, type StructuredToolInterface } from '@langchain/core/tools'
 import type { ToolBuildContext } from './context'
@@ -136,7 +136,7 @@ const NodesExtension: Extension = {
         },
         required: ['action']
       },
-      execute: async (args) => executeNodesAction(args)
+      execute: async (args) => executeNodesAction(args as Record<string, unknown>)
     }
   ]
 }
@@ -150,7 +150,7 @@ export function buildOpenClawNodeTools(bctx: ToolBuildContext): StructuredToolIn
   if (!bctx.hasExtension('openclaw_nodes')) return []
   return [
     tool(
-      async (args) => executeNodesAction(args),
+      async (args) => executeNodesAction(args as Record<string, unknown>),
       {
         name: 'openclaw_nodes',
         description: NodesExtension.tools![0].description,

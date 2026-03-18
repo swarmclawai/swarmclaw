@@ -1,4 +1,4 @@
-import { z } from 'zod'
+﻿import { z } from 'zod'
 import { tool, type StructuredToolInterface } from '@langchain/core/tools'
 import crypto from 'node:crypto'
 
@@ -1284,7 +1284,7 @@ const WalletExtension: Extension = {
         },
         required: ['action'],
       },
-      execute: async (args, context) => executeWalletAction(args, { agentId: context.session.agentId, sessionId: context.session.id }),
+      execute: async (args, context) => executeWalletAction(args as Record<string, unknown>, { agentId: context.session.agentId, sessionId: context.session.id }),
     },
   ],
 }
@@ -1295,7 +1295,7 @@ export function buildWalletTools(bctx: ToolBuildContext): StructuredToolInterfac
   if (!bctx.hasExtension('wallet')) return []
   return [
     tool(
-      async (args) => executeWalletAction(args, { agentId: bctx.ctx?.agentId, sessionId: bctx.ctx?.sessionId }),
+      async (args) => executeWalletAction(args as Record<string, unknown>, { agentId: bctx.ctx?.agentId, sessionId: bctx.ctx?.sessionId }),
       {
         name: 'wallet_tool',
         description: WalletExtension.tools![0].description,

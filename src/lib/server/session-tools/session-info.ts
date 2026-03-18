@@ -1,4 +1,4 @@
-import { z } from 'zod'
+﻿import { z } from 'zod'
 import { tool, type StructuredToolInterface } from '@langchain/core/tools'
 import { genId } from '@/lib/id'
 import { loadSessions, saveSessions, loadAgents } from '../storage'
@@ -133,7 +133,7 @@ const SessionInfoExtension: Extension = {
   name: 'Core Session Info',
   description: 'Identify current session context and manage other agent sessions.',
   hooks: {
-    getCapabilityDescription: () => 'I can manage chat sessions (`sessions_tool`) — check my identity with action `identity`, look up past conversations, spawn sessions, and coordinate work.',
+    getCapabilityDescription: () => 'I can manage chat sessions (`sessions_tool`) â€” check my identity with action `identity`, look up past conversations, spawn sessions, and coordinate work.',
     getOperatingGuidance: () => 'Inspect existing chats before creating duplicates.',
   } as ExtensionHooks,
   tools: [
@@ -152,7 +152,7 @@ const SessionInfoExtension: Extension = {
         },
         required: ['action']
       },
-      execute: async (args, context) => executeSessionsAction(args, { sessionId: context.session.id, agentId: context.session.agentId ?? undefined, cwd: context.session.cwd || process.cwd() })
+      execute: async (args, context) => executeSessionsAction(args as Record<string, unknown>, { sessionId: context.session.id, agentId: context.session.agentId ?? undefined, cwd: context.session.cwd || process.cwd() })
     }
   ]
 }
@@ -166,7 +166,7 @@ export function buildSessionInfoTools(bctx: ToolBuildContext): StructuredToolInt
   if (!bctx.hasExtension('manage_sessions')) return []
   return [
     tool(
-      async (args) => executeSessionsAction(args, { sessionId: bctx.ctx?.sessionId || undefined, agentId: bctx.ctx?.agentId || undefined, cwd: bctx.cwd }),
+      async (args) => executeSessionsAction(args as Record<string, unknown>, { sessionId: bctx.ctx?.sessionId || undefined, agentId: bctx.ctx?.agentId || undefined, cwd: bctx.cwd }),
       { name: 'sessions_tool', description: SessionInfoExtension.tools![0].description, schema: z.object({}).passthrough() }
     )
   ]

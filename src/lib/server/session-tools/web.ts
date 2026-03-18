@@ -1,4 +1,4 @@
-import { z } from 'zod'
+﻿import { z } from 'zod'
 import { tool, type StructuredToolInterface } from '@langchain/core/tools'
 import fs from 'fs'
 import path from 'path'
@@ -87,7 +87,7 @@ type BrowserMcpClient = {
   close?: () => void | Promise<void>
 }
 
-// Stored on globalThis to survive HMR reloads in dev mode —
+// Stored on globalThis to survive HMR reloads in dev mode â€”
 // prevents orphaned Chromium processes when web.ts is edited.
 export const activeBrowsers: Map<string, BrowserRuntimeEntry> =
   hmrSingleton('__swarmclaw_active_browsers__', () => new Map<string, BrowserRuntimeEntry>())
@@ -282,7 +282,7 @@ const WebExtension: Extension = {
         },
         required: ['action']
       },
-      execute: async (args) => executeWebAction(args)
+      execute: async (args) => executeWebAction(args as Record<string, unknown>)
     }
   ]
 }
@@ -299,7 +299,7 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
   if (bctx.hasExtension('web')) {
     tools.push(
       tool(
-        async (args) => executeWebAction(args),
+        async (args) => executeWebAction(args as Record<string, unknown>),
         {
           name: 'web',
           description: WebExtension.tools![0].description,
@@ -953,7 +953,7 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
         const buttonSelector = 'button, a[role="button"], [role="button"], input[type="button"], input[type="submit"]';
         const rejectRe = /^(reject|reject all|decline|decline all|deny|deny all|refuse|no,? thanks|only necessary|necessary only|use necessary cookies only)$/i;
         const acceptRe = /^(accept|accept all|allow all|agree|i agree|okay|ok|got it|continue|consent)$/i;
-        const closeRe = /^(close|dismiss|skip|not now|x|×)$/i;
+        const closeRe = /^(close|dismiss|skip|not now|x|Ã—)$/i;
         const clickMatching = (matcher, label) => {
           for (const root of allRoots) {
             let buttons = [];
