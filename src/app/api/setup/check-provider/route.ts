@@ -327,8 +327,16 @@ export async function POST(req: Request) {
         return NextResponse.json(result)
       }
       default: {
-        const { loadProviderConfigs } = await import('@/lib/server/storage')
-        const configs = loadProviderConfigs() as Record<string, { name?: string; baseUrl?: string; isEnabled?: boolean }>
+        let configs: Record<string, { name?: string; baseUrl?: string; isEnabled?: boolean }>
+        try {
+          const storage = await import('@/lib/server/storage')
+          configs = storage.loadProviderConfigs() as Record<string, { name?: string; baseUrl?: string; isEnabled?: boolean }>
+        } catch {
+          return NextResponse.json(
+            { ok: false, message: `Failed to load provider configurations while checking ${provider}.` },
+            { status: 500 },
+          )
+        }
         const custom = configs[provider]
         if (custom?.baseUrl) {
           const result = await checkOpenAiCompatible(

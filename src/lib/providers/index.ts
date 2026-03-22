@@ -286,7 +286,8 @@ function getCustomProviders(): Record<string, CustomProviderConfig> {
     return Object.fromEntries(
       Object.entries(configs).filter(([, config]) => config?.type === 'custom'),
     )
-  } catch {
+  } catch (err) {
+    log.warn(TAG, 'Failed to load custom providers from storage', errorMessage(err))
     return {}
   }
 }
@@ -325,6 +326,7 @@ export function getProviderList(): ProviderInfo[] {
       defaultModels: c.models,
       supportsModelDiscovery: false,
       requiresApiKey: c.requiresApiKey,
+      optionalApiKey: !c.requiresApiKey,
       requiresEndpoint: false as boolean,
       defaultEndpoint: c.baseUrl,
     }))
@@ -348,26 +350,47 @@ export function getProviderList(): ProviderInfo[] {
   return [...builtins, ...customs, ...extensionProviders]
 }
 
+function buildCustomProviderConfig(custom: CustomProviderConfig): BuiltinProviderConfig {
+  return {
+    id: custom.id as ProviderId,
+    name: custom.name,
+    models: custom.models,
+    requiresApiKey: custom.requiresApiKey,
+    optionalApiKey: !custom.requiresApiKey,
+    requiresEndpoint: false,
+    defaultEndpoint: custom.baseUrl,
+    handler: {
+      streamChat: async (opts) => {
+        const patchedSession = { ...opts.session, apiEndpoint: custom.baseUrl }
+        const { streamOpenAiChat } = await import('./openai')
+        return streamOpenAiChat({ ...opts, session: patchedSession })
+      },
+    },
+  }
+}
+
 export function getProvider(id: string): BuiltinProviderConfig | null {
   if (PROVIDERS[id]) return PROVIDERS[id]
-  
+
   // Check custom providers
   const customs = getCustomProviders()
   const custom = customs[id]
   if (custom?.isEnabled) {
-    return {
-      id: custom.id as ProviderId,
-      name: custom.name,
-      models: custom.models,
-      requiresApiKey: custom.requiresApiKey,
-      requiresEndpoint: false,
-      handler: {
-        streamChat: async (opts) => {
-          const patchedSession = { ...opts.session, apiEndpoint: custom.baseUrl }
-          const { streamOpenAiChat } = await import('./openai')
-          return streamOpenAiChat({ ...opts, session: patchedSession })
-        },
-      },
+    return buildCustomProviderConfig(custom)
+  }
+
+  // Fallback: direct single-item DB lookup for custom-* providers
+  if (id.startsWith('custom-') && !custom) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { loadStoredItem } = require('@/lib/server/storage') as typeof import('@/lib/server/storage')
+      const directConfig = loadStoredItem('provider_configs', id) as CustomProviderConfig | null
+      if (directConfig?.type === 'custom' && directConfig.isEnabled) {
+        log.info(TAG, `Resolved custom provider '${id}' via direct DB lookup (batch load missed it)`)
+        return buildCustomProviderConfig(directConfig)
+      }
+    } catch (err) {
+      log.warn(TAG, `Direct DB lookup failed for provider '${id}'`, errorMessage(err))
     }
   }
 
