@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "generatedAt": "2026-03-19T15:33:09.408Z",
-  "totalIssues": 393,
-  "uniqueIssues": 130,
+  "generatedAt": "2026-03-22T13:08:27.646Z",
+  "totalIssues": 377,
+  "uniqueIssues": 124,
   "issues": [
     {
       "filePath": "bin/worker-cmd.js",
@@ -19,25 +19,11 @@
       "count": 1
     },
     {
-      "filePath": "src/app/api/documents/route.ts",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 3
-    },
-    {
       "filePath": "src/app/api/external-agents/route.test.ts",
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
       "count": 1
-    },
-    {
-      "filePath": "src/app/api/external-agents/route.ts",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 3
     },
     {
       "filePath": "src/app/api/knowledge/upload/route.ts",
@@ -54,13 +40,6 @@
       "count": 2
     },
     {
-      "filePath": "src/app/api/mcp-servers/[id]/tools/route.ts",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 4
-    },
-    {
       "filePath": "src/app/api/mcp-servers/route.ts",
       "ruleId": "@typescript-eslint/no-unused-vars",
       "severity": 1,
@@ -73,13 +52,6 @@
       "severity": 1,
       "message": "'_req' is defined but never used.",
       "count": 1
-    },
-    {
-      "filePath": "src/app/api/providers/ollama/route.ts",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 2
     },
     {
       "filePath": "src/app/api/providers/route.ts",
@@ -124,13 +96,6 @@
       "count": 1
     },
     {
-      "filePath": "src/app/api/setup/openclaw-device/route.ts",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 1
-    },
-    {
       "filePath": "src/app/api/version/route.ts",
       "ruleId": "@typescript-eslint/no-unused-vars",
       "severity": 1,
@@ -143,13 +108,6 @@
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
       "count": 5
-    },
-    {
-      "filePath": "src/app/api/webhooks/[id]/history/route.ts",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 3
     },
     {
       "filePath": "src/app/api/webhooks/route.test.ts",

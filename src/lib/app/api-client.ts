@@ -1,12 +1,12 @@
 import { fetchWithTimeout, isAbortError, isTimeoutError } from '@/lib/fetch-timeout'
 import { safeStorageGet, safeStorageSet, safeStorageRemove } from './safe-storage'
-import { sleep } from '@/lib/shared-utils'
+import { sleep, hmrSingleton } from '@/lib/shared-utils'
 
 const ACCESS_KEY_STORAGE = 'sc_access_key'
 const DEFAULT_API_TIMEOUT_MS = 12_000
 const DEFAULT_GET_RETRIES = 2
 const RETRY_DELAY_BASE_MS = 300
-const inflightGetRequests = new Map<string, Promise<unknown>>()
+const inflightGetRequests = hmrSingleton('apiClient_inflightGetRequests', () => new Map<string, Promise<unknown>>())
 
 export function getStoredAccessKey(): string {
   return safeStorageGet(ACCESS_KEY_STORAGE) || ''

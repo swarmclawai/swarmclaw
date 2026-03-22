@@ -213,7 +213,7 @@ export function updateChatSession(sessionId: string, updates: Record<string, unk
   }) : null
 
   if (updates.name !== undefined) session.name = updates.name
-  if (updates.cwd !== undefined) session.cwd = updates.cwd
+  if (updates.cwd !== undefined) session.cwd = normalizeCwd(updates.cwd)
   if (updates.provider !== undefined) session.provider = updates.provider
   else if (agentIdUpdateProvided && linkedAgent?.provider) session.provider = linkedAgent.provider
   if (updates.model !== undefined) session.model = updates.model
@@ -284,6 +284,7 @@ export function updateChatSession(sessionId: string, updates: Record<string, unk
   if (!Array.isArray(session.messages)) session.messages = []
 
   saveSession(sessionId, original)
+  notify('sessions')
   return enrichSessionWithMissionSummary(original)
 }
 
@@ -293,6 +294,7 @@ export function deleteChatSession(sessionId: string): boolean {
   cleanupSessionProcesses(sessionId)
   deleteSessionMessages(sessionId)
   deleteSession(sessionId)
+  notify('sessions')
   return true
 }
 
@@ -362,6 +364,7 @@ export function clearChatMessages(sessionId: string): boolean {
   session.opencodeSessionId = null
   session.delegateResumeIds = emptyDelegateResumeIds()
   saveSession(sessionId, session)
+  notify('sessions')
   return true
 }
 

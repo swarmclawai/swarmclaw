@@ -197,8 +197,12 @@ The building blocks are the same: **agents, tools, memory, delegation, schedules
 - **RunContext**: persistent structured context tracks session lineage, delegation chain, and accumulated working memory across run lifecycle.
 - **Unified message flow**: consolidated message handling and execution routing into a single coherent pipeline.
 - **Delegation advisory**: new advisory layer for structured capability analysis during delegation decisions.
+- **Real-time session sync**: session create, update, and delete events now push over WebSocket, replacing poll-only refresh for the chat list.
+- **HMR resilience**: module-level state in the WebSocket client, fallback polling, and API request dedup now survives Next.js hot-module reloads.
+- **Type safety sweep**: eliminated 16 `any` types across 7 API routes with proper narrowing and error guards.
 - **Bug fix — setup wizard crash**: replaced client-side `crypto.randomUUID()` with browser-safe alternative, fixing fresh-install failures with Ollama and other providers.
 - **Bug fix — custom provider validation**: connection-test endpoint now recognizes custom providers from storage instead of rejecting them as "Unsupported provider."
+- **Bug fix — session cwd normalization**: `updateChatSession` now expands `~` paths consistently with session creation.
 
 ### v1.2.4 Highlights
 

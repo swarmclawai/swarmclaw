@@ -87,10 +87,19 @@ export function LiveQuerySync() {
         }}
       />
       <LiveQueryTopicSubscription
+        topic="sessions"
+        fallbackMs={15_000}
+        onEvent={() => {
+          void queryClient.invalidateQueries({ queryKey: chatQueryKeys.all })
+        }}
+      />
+      <LiveQueryTopicSubscription
         topic="messages"
         fallbackMs={5_000}
         onEvent={() => {
-          void queryClient.invalidateQueries({ queryKey: chatQueryKeys.messages('') })
+          void queryClient.invalidateQueries({
+            predicate: (q) => q.queryKey[0] === 'chats' && q.queryKey[2] === 'messages',
+          })
         }}
       />
       <LiveQueryTopicSubscription

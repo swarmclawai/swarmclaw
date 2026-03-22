@@ -15,5 +15,12 @@ export async function POST(req: Request) {
   if (!provider || !apiKey) {
     return NextResponse.json({ error: 'provider and apiKey are required' }, { status: 400 })
   }
-  return NextResponse.json(createCredentialRecord({ provider, name, apiKey }))
+  try {
+    return NextResponse.json(createCredentialRecord({ provider, name, apiKey }))
+  } catch (err: unknown) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : 'Failed to create credential' },
+      { status: 500 },
+    )
+  }
 }

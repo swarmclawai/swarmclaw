@@ -9,22 +9,22 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const config = servers[id]
   if (!config) return notFound()
 
-  let client: any
-  let transport: any
+  let client: Awaited<ReturnType<typeof connectMcpServer>>['client'] | null = null
+  let transport: Awaited<ReturnType<typeof connectMcpServer>>['transport'] | null = null
   try {
     const conn = await connectMcpServer(config)
     client = conn.client
     transport = conn.transport
     const { tools } = await client.listTools()
     return NextResponse.json(
-      tools.map((t: any) => ({
+      tools.map((t: { name: string; description?: string; inputSchema?: unknown }) => ({
         name: t.name,
         description: t.description ?? '',
         inputSchema: t.inputSchema ?? {},
       }))
     )
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 502 })
+  } catch (err: unknown) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : 'MCP connection failed' }, { status: 502 })
   } finally {
     if (client && transport) {
       await disconnectMcpServer(client, transport)

@@ -1,4 +1,4 @@
-import { jitteredBackoff } from '@/lib/shared-utils'
+import { jitteredBackoff, hmrSingleton } from '@/lib/shared-utils'
 
 type WsCallback = () => void
 
@@ -7,9 +7,9 @@ let wsEnabled = false
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 let reconnectAttempt = 0
 const MAX_RECONNECT_DELAY = 30_000
-const listeners = new Map<string, Set<WsCallback>>()
+const listeners = hmrSingleton('wsClient_listeners', () => new Map<string, Set<WsCallback>>())
 let connected = false
-const connectionStateListeners = new Set<() => void>()
+const connectionStateListeners = hmrSingleton('wsClient_connectionStateListeners', () => new Set<() => void>())
 
 function getWsUrl(): string {
   if (typeof window === 'undefined') return 'ws://localhost:3457/ws'

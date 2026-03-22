@@ -26,9 +26,10 @@ export async function GET(req: Request) {
   const terms = q.split(/\s+/).filter(Boolean)
   const limit = normalizeLimit(searchParams.get('limit'), 10, 100)
   const rows = Object.values(docs)
-    .map((doc: any) => {
-      const title = String(doc.title || '')
-      const content = String(doc.content || '')
+    .map((doc) => {
+      const d = doc as Record<string, unknown>
+      const title = String(d.title || '')
+      const content = String(d.content || '')
       const hay = `${title}\n${content}`.toLowerCase()
       if (!terms.every((term) => hay.includes(term))) return null
 
@@ -48,18 +49,18 @@ export async function GET(req: Request) {
       const snippet = content.slice(snippetStart, snippetEnd).replace(/\s+/g, ' ').trim()
 
       return {
-        id: doc.id,
-        title: doc.title,
-        fileName: doc.fileName,
-        sourcePath: doc.sourcePath,
-        textLength: doc.textLength || content.length,
-        updatedAt: doc.updatedAt,
+        id: d.id,
+        title: d.title,
+        fileName: d.fileName,
+        sourcePath: d.sourcePath,
+        textLength: (d.textLength as number) || content.length,
+        updatedAt: d.updatedAt,
         score,
         snippet,
       }
     })
     .filter(Boolean)
-    .sort((a: any, b: any) => b.score - a.score)
+    .sort((a, b) => (b as { score: number }).score - (a as { score: number }).score)
     .slice(0, limit)
 
   return NextResponse.json(rows)

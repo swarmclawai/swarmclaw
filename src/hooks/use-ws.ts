@@ -2,14 +2,15 @@
 
 import { useEffect, useRef } from 'react'
 import { subscribeWs, unsubscribeWs, isWsConnected, onWsStateChange, offWsStateChange } from '@/lib/ws-client'
+import { hmrSingleton } from '@/lib/shared-utils'
 import { usePageActive } from './use-page-active'
 
 /** Shared fallback intervals keyed by topic — multiple useWs instances share one interval. */
-const sharedFallbacks = new Map<string, {
+const sharedFallbacks = hmrSingleton('useWs_sharedFallbacks', () => new Map<string, {
   interval: ReturnType<typeof setInterval> | null
   handlers: Set<() => void>
   ms: number
-}>()
+}>())
 
 function runAllHandlers(topic: string): void {
   const entry = sharedFallbacks.get(topic)

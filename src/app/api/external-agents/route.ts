@@ -3,7 +3,7 @@ import { genId } from '@/lib/id'
 import { formatZodError, ExternalAgentRegisterSchema } from '@/lib/validation/schemas'
 import { loadExternalAgents, loadGatewayProfiles, saveExternalAgents } from '@/lib/server/storage'
 import { notify } from '@/lib/server/ws-hub'
-import type { ExternalAgentRuntime } from '@/types'
+import type { ExternalAgentRuntime, GatewayProfile } from '@/types'
 import { z } from 'zod'
 export const dynamic = 'force-dynamic'
 
@@ -14,9 +14,9 @@ function withDerivedStatus(record: ExternalAgentRuntime): ExternalAgentRuntime {
   if (!lastSeenAt) return { ...record, status: record.status || 'offline' }
   if (record.status === 'offline') return record
   const gateways = loadGatewayProfiles()
-  const gateway = record.gatewayProfileId ? gateways[record.gatewayProfileId] as any : undefined
+  const gateway = record.gatewayProfileId ? gateways[record.gatewayProfileId] as GatewayProfile | undefined : undefined
   const gatewayTags = Array.isArray(gateway?.tags)
-    ? (gateway as any)?.tags?.filter((tag: any): tag is string => typeof tag === 'string' && tag.trim().length > 0)
+    ? gateway.tags.filter((tag): tag is string => typeof tag === 'string' && tag.trim().length > 0)
     : []
   const gatewayUseCase = gateway?.deployment && typeof gateway.deployment === 'object' && typeof (gateway.deployment as Record<string, unknown>).useCase === 'string'
     ? (gateway.deployment as Record<string, unknown>).useCase as string
