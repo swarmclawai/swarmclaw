@@ -8,6 +8,7 @@ import { protocolQueryKeys } from '@/features/protocols/queries'
 import { providerQueryKeys } from '@/features/providers/queries'
 import { gatewayQueryKeys } from '@/features/gateways/queries'
 import { externalAgentQueryKeys } from '@/features/external-agents/queries'
+import { chatQueryKeys } from '@/features/chats/queries'
 import { connectorQueryKeys } from '@/features/connectors/queries'
 import { skillQueryKeys, skillSuggestionQueryKeys } from '@/features/skills/queries'
 
@@ -83,6 +84,13 @@ export function LiveQuerySync() {
         fallbackMs={15_000}
         onEvent={() => {
           void queryClient.invalidateQueries({ queryKey: connectorQueryKeys.all })
+        }}
+      />
+      <LiveQueryTopicSubscription
+        topic="messages"
+        fallbackMs={5_000}
+        onEvent={() => {
+          void queryClient.invalidateQueries({ queryKey: chatQueryKeys.messages('') })
         }}
       />
       <LiveQueryTopicSubscription

@@ -7,7 +7,8 @@ import { genId } from '@/lib/id'
 import type { ApprovalRequest, MessageToolEvent, Session } from '@/types'
 import { dedup } from '@/lib/shared-utils'
 import { submitDecision } from '../approvals'
-import { executeSessionChatTurn, type ExecuteChatTurnResult } from '@/lib/server/chat-execution/chat-execution'
+import type { ExecuteChatTurnResult } from '@/lib/server/chat-execution/chat-execution'
+import { executeExecutionChatTurn } from '@/lib/server/execution-engine/chat-turn'
 import { WORKSPACE_DIR } from '../data-dir'
 import { getExtensionManager } from '../extensions'
 import { sendMailboxEnvelope, listMailbox } from '@/lib/server/chatrooms/session-mailbox'
@@ -1009,7 +1010,7 @@ async function runTurn(ctx: ScenarioContext, message: string): Promise<ExecuteCh
   let result: ExecuteChatTurnResult
   try {
     result = await Promise.race([
-      executeSessionChatTurn({
+      executeExecutionChatTurn({
         sessionId: ctx.sessionId,
         message,
         internal: true,

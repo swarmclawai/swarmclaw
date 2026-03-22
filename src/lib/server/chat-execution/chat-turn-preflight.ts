@@ -1,5 +1,6 @@
 import { notify } from '@/lib/server/ws-hub'
 import { getSession, saveSession } from '@/lib/server/sessions/session-repository'
+import { appendMessage } from '@/lib/server/messages/message-repository'
 import type { MessageToolEvent, SSEEvent } from '@/types'
 import type { ExecuteChatTurnResult } from './chat-execution-types'
 import {
@@ -47,8 +48,7 @@ async function completeSyntheticAssistantTurn(params: {
       isSynthetic: true,
     })
     if (nextAssistantMessage) {
-      session.messages = Array.isArray(session.messages) ? session.messages : []
-      session.messages.push(nextAssistantMessage)
+      appendMessage(params.sessionId, nextAssistantMessage)
       session.lastActiveAt = Date.now()
       saveSession(params.sessionId, session)
       if (params.notifyMessages) notify(`messages:${params.sessionId}`)

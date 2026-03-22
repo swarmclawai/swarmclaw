@@ -10,6 +10,7 @@ import { normalizeToolInputArgs } from './normalize-tool-args'
 import { safeJsonParseObject } from '../json-utils'
 import { tryResolvePathWithinBaseDir } from '../path-utils'
 import { dedup, errorMessage } from '@/lib/shared-utils'
+import { getMessages } from '@/lib/server/messages/message-repository'
 import { isDirectConnectorSession } from '../connectors/session-kind'
 import {
   prepareConnectorVoiceNotePayload,
@@ -135,9 +136,10 @@ function pruneOldConnectorToolState(now: number): void {
 }
 
 function parseLatestUserTurn(
-  session: { messages?: Array<Record<string, unknown>> } | null | undefined,
+  sessionId: string | null | undefined,
 ): { text: string; time: number } {
-  const msgs = Array.isArray(session?.messages) ? session.messages : []
+  if (!sessionId) return { text: '', time: 0 }
+  const msgs = getMessages(sessionId)
   for (let i = msgs.length - 1; i >= 0; i -= 1) {
     const msg = msgs[i]
     if (String(msg?.role || '') !== 'user') continue
@@ -435,10 +437,10 @@ function trimToString(value: unknown): string {
 
 function resolveSessionConnectorTargets(
   session: {
+    id?: string
     user?: string
     name?: string
     connectorContext?: Record<string, unknown>
-    messages?: Array<Record<string, unknown>>
   } | null | undefined,
   connectorId: string,
 ): Array<{ channelId: string; senderId?: string; senderName?: string }> {
@@ -463,7 +465,8 @@ function resolveSessionConnectorTargets(
       : null)
   }
 
-  const messages = Array.isArray(session?.messages) ? session.messages : []
+  const sessionId = typeof session?.id === 'string' ? session.id : ''
+  const messages = sessionId ? getMessages(sessionId) : []
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     if (messages[i]?.historyExcluded === true) continue
     const source = messages[i]?.source as Record<string, unknown> | undefined
@@ -485,10 +488,10 @@ function pickChannelTarget(params: {
   connectorId: string
   to?: string
   currentSession?: {
+    id?: string
     user?: string
     name?: string
     connectorContext?: Record<string, unknown>
-    messages?: Array<Record<string, unknown>>
   } | null
 }): { channelId: string; error?: string } {
   let channelId = params.to?.trim() || ''
@@ -694,7 +697,7 @@ async function executeConnectorAction(input: ConnectorActionInput, bctx: Connect
     const currentSession = bctx.resolveCurrentSession?.()
     const sessionId = bctx.ctx?.sessionId || currentSession?.id || undefined
     const connectorScopedSessionId = isDirectConnectorSession(currentSession) ? sessionId : undefined
-    const latestUserTurn = parseLatestUserTurn(currentSession)
+    const latestUserTurn = parseLatestUserTurn(sessionId)
     const turnKey = buildConnectorActionKey([sessionId, latestUserTurn.time || 'no-user-turn'])
 
     if (actionName === 'list_running' || actionName === 'list_targets') {

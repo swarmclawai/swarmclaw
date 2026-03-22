@@ -589,8 +589,9 @@ export interface Session {
     opencode?: string | null
     gemini?: string | null
   }
+  /** @deprecated Messages are stored in session_messages table. Use message-repository. */
   messages: Message[]
-  /** Lightweight summary fields used by list/index APIs to avoid shipping full transcripts. */
+  /** Pre-computed message count (kept in sync by message-repository). */
   messageCount?: number
   lastMessageSummary?: Message | null
   lastAssistantAt?: number | null
@@ -2344,6 +2345,23 @@ export interface AppNotification {
 // --- Session Runs ---
 
 export type SessionRunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
+export type ExecutionKind =
+  | 'session_turn'
+  | 'task_attempt'
+  | 'protocol_step'
+  | 'heartbeat_tick'
+  | 'schedule_wake'
+  | 'repair_turn'
+  | 'subagent_turn'
+
+export type ExecutionOwnerType =
+  | 'session'
+  | 'task'
+  | 'protocol_run'
+  | 'schedule'
+  | 'mission'
+  | 'agent'
+  | 'subagent'
 
 export interface SessionRunHeartbeatConfig {
   ackMaxChars: number
@@ -2373,6 +2391,11 @@ export interface SessionRunRecord {
   id: string
   sessionId: string
   missionId?: string | null
+  kind?: ExecutionKind
+  ownerType?: ExecutionOwnerType | null
+  ownerId?: string | null
+  parentExecutionId?: string | null
+  recoveryPolicy?: 'restart_recoverable' | 'ephemeral' | 'manual' | 'none'
   source: string
   internal: boolean
   mode: string
@@ -2419,6 +2442,10 @@ export interface RunEventRecord {
   id: string
   runId: string
   sessionId: string
+  kind?: ExecutionKind
+  ownerType?: ExecutionOwnerType | null
+  ownerId?: string | null
+  parentExecutionId?: string | null
   timestamp: number
   phase: 'status' | 'event'
   status?: SessionRunStatus

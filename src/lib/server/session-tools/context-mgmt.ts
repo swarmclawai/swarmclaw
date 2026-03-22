@@ -1,7 +1,6 @@
 import { z } from 'zod'
 import { tool, type StructuredToolInterface } from '@langchain/core/tools'
 import { HumanMessage } from '@langchain/core/messages'
-import { loadSessions, saveSessions } from '../storage'
 import { buildChatModel } from '../build-llm'
 import type { ToolBuildContext } from './context'
 import type { Extension, ExtensionHooks, Session } from '@/types'
@@ -9,6 +8,7 @@ import { registerNativeCapability } from '../native-capabilities'
 import { normalizeToolInputArgs } from './normalize-tool-args'
 import { errorMessage } from '@/lib/shared-utils'
 import { updateSessionRunContext } from '@/lib/server/run-context'
+import { getMessages, replaceAllMessages } from '@/lib/server/messages/message-repository'
 
 interface ContextToolContext {
   ctx?: { agentId?: string | null; sessionId?: string | null }
@@ -23,7 +23,7 @@ async function executeContextStatus(bctx: ContextToolContext) {
     const { getContextStatus } = await import('../context-manager')
     const session = bctx.resolveCurrentSession?.()
     if (!session) return 'Error: no current session context.'
-    const status = getContextStatus(session.messages || [], 2000, session.provider as string, session.model as string, {
+    const status = getContextStatus(getMessages(session.id), 2000, session.provider as string, session.model as string, {
       includeToolEvents: false,
     })
     return JSON.stringify(status)
@@ -37,7 +37,7 @@ async function executeContextSummarize(args: { keepLastN?: number }, bctx: Conte
     const session = bctx.resolveCurrentSession?.()
     if (!session || !bctx.ctx?.sessionId) return 'Error: no session context.'
     
-    const messages = session.messages || []
+    const messages = getMessages(session.id)
     const keepLastN = normalized.keepLastN as number | undefined
     const keep = Math.max(2, Math.min(keepLastN || 10, messages.length))
     if (messages.length <= keep) return JSON.stringify({ status: 'no_action' })
@@ -59,11 +59,7 @@ async function executeContextSummarize(args: { keepLastN?: number }, bctx: Conte
       provider: session.provider, model: session.model, generateSummary
     })
 
-    const sessions = loadSessions()
-    if (sessions[bctx.ctx.sessionId]) {
-      sessions[bctx.ctx.sessionId].messages = result.messages
-      saveSessions(sessions)
-    }
+    replaceAllMessages(bctx.ctx.sessionId ?? '', result.messages)
     return JSON.stringify({ status: 'compacted', remaining: result.messages.length })
   } catch (err: unknown) { return `Error: ${errorMessage(err)}` }
 }

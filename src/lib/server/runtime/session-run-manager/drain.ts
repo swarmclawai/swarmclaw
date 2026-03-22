@@ -1,4 +1,4 @@
-import { executeSessionChatTurn } from '@/lib/server/chat-execution/chat-execution'
+import { executeExecutionChatTurn } from '@/lib/server/execution-engine/chat-turn'
 import { log } from '@/lib/server/logger'
 import { isInternalHeartbeatRun } from '@/lib/server/runtime/heartbeat-source'
 import { notify } from '@/lib/server/ws-hub'
@@ -98,7 +98,7 @@ export async function drainExecution(
     }
 
     try {
-      const result = await executeSessionChatTurn({
+      const result = await executeExecutionChatTurn({
         sessionId: next.run.sessionId,
         message: next.message,
         imagePath: next.imagePath,

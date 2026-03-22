@@ -36,6 +36,7 @@ import { createNotification } from '@/lib/server/create-notification'
 import { foldReflectionIntoRunContext } from '@/lib/server/run-context'
 import { getSession, saveSession } from '@/lib/server/sessions/session-repository'
 import { cleanText } from '@/lib/server/text-normalization'
+import { getMessages, getMessageCount, getRecentMessages } from '@/lib/server/messages/message-repository'
 
 const TAG = 'supervisor-reflection'
 
@@ -183,9 +184,11 @@ function buildIncident(
 }
 
 function sessionContextPressure(session: Session | null): boolean {
-  if (!session || !Array.isArray(session.messages)) return false
-  if (session.messages.length >= 60) return true
-  const totalChars = session.messages.reduce((sum, message) => sum + String(message?.text || '').length, 0)
+  if (!session) return false
+  const msgCount = getMessageCount(session.id)
+  if (msgCount >= 60) return true
+  const messages = getMessages(session.id)
+  const totalChars = messages.reduce((sum, message) => sum + String(message?.text || '').length, 0)
   return totalChars >= 18_000
 }
 
@@ -422,7 +425,7 @@ export async function executeSupervisorAutoActions(params: {
 }
 
 function buildSessionTranscript(session: Session, maxMessages = DEFAULT_TRANSCRIPT_MESSAGES): string {
-  const messages = Array.isArray(session.messages) ? session.messages.slice(-maxMessages) : []
+  const messages = getRecentMessages(session.id, maxMessages)
   const lines: string[] = []
   for (const message of messages) {
     if (!message || message.suppressed) continue
@@ -541,8 +544,8 @@ function transcriptHasSemanticSignal(
   session: Session | null,
   signal: 'hasHumanSignals' | 'hasSignificantEvent',
 ): boolean {
-  if (!session || !Array.isArray(session.messages)) return false
-  const recentMessages = session.messages.slice(-8)
+  if (!session) return false
+  const recentMessages = getRecentMessages(session.id, 8)
   return recentMessages.some((message) => message?.role === 'user' && message?.semantics?.[signal] === true)
 }
 
@@ -663,8 +666,8 @@ function shouldReflectRun(params: {
   if (!surface || !runtimeScopeIncludes(params.runtimeScope, surface)) return false
   if (params.status === 'cancelled') return false
   if (surface === 'task') return Boolean(params.resultText.trim() || params.incidents.length > 0)
-  const meaningfulMessages = Array.isArray(params.session?.messages)
-    ? params.session.messages.filter((message) => message && !message.suppressed && (message.text || message.toolEvents?.length)).length
+  const meaningfulMessages = params.session
+    ? getMessages(params.session.id).filter((message) => message && !message.suppressed && (message.text || message.toolEvents?.length)).length
     : 0
   if (transcriptHasHumanSignals(params.session)) return true
   if (transcriptHasSignificantEvents(params.session)) return true

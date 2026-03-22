@@ -1,11 +1,12 @@
 import { createHash } from 'crypto'
 import fs from 'fs'
 import path from 'path'
-import type { Agent, MemoryEntry, MemoryReference, Session } from '@/types'
+import type { Agent, MemoryEntry, MemoryReference, Message, Session } from '@/types'
 import { getMemoryDb } from '@/lib/server/memory/memory-db'
 import { loadAgents, loadSessions, saveSessions } from '@/lib/server/storage'
 import { DATA_DIR } from '@/lib/server/data-dir'
 import { isDirectConnectorSession } from '@/lib/server/connectors/session-kind'
+import { getMessageCount, getRecentMessages } from '@/lib/server/messages/message-repository'
 
 const MAX_ARCHIVE_MESSAGES = 36
 const MAX_ARCHIVE_LINE_CHARS = 320
@@ -15,7 +16,7 @@ function toOneLine(value: unknown, maxChars: number): string {
   return String(value || '').replace(/\s+/g, ' ').trim().slice(0, maxChars)
 }
 
-function messageSpeaker(session: Session, agent: Partial<Agent> | null | undefined, message: Session['messages'][number]): string {
+function messageSpeaker(session: Session, agent: Partial<Agent> | null | undefined, message: Message): string {
   if (message.role === 'assistant') return agent?.name || 'assistant'
   return (isDirectConnectorSession(session) ? session.connectorContext?.senderName : null) || session.user || 'user'
 }
@@ -38,9 +39,10 @@ export function buildSessionArchivePayload(
   references: MemoryReference[]
   hash: string
 } | null {
-  if (!Array.isArray(session.messages) || session.messages.length < 2) return null
+  const messageCount = getMessageCount(session.id)
+  if (messageCount < 2) return null
 
-  const excerpt = session.messages.slice(-MAX_ARCHIVE_MESSAGES).map((message) => {
+  const excerpt = getRecentMessages(session.id, MAX_ARCHIVE_MESSAGES).map((message) => {
     const speaker = messageSpeaker(session, agent, message)
     const kind = message.kind && message.kind !== 'chat' ? ` [${message.kind}]` : ''
     const text = toOneLine(message.text, MAX_ARCHIVE_LINE_CHARS)
@@ -57,7 +59,7 @@ export function buildSessionArchivePayload(
     `session_type: ${toOneLine(session.sessionType || 'human', 32)}`,
     `agent_name: ${toOneLine(agent?.name || '', 80)}`,
     `last_active_iso: ${new Date(session.lastActiveAt || Date.now()).toISOString()}`,
-    `message_count: ${session.messages.length}`,
+    `message_count: ${messageCount}`,
     session.identityState?.personaLabel ? `persona_label: ${toOneLine(session.identityState.personaLabel, 120)}` : '',
     '',
     'Transcript excerpt:',
@@ -73,7 +75,7 @@ export function buildSessionArchivePayload(
       archiveHash: hash,
       sessionName: session.name,
       sessionType: session.sessionType || 'human',
-      messageCount: session.messages.length,
+      messageCount,
       lastActiveAt: session.lastActiveAt || Date.now(),
       personaLabel: session.identityState?.personaLabel || null,
     },
@@ -93,7 +95,7 @@ export function buildSessionArchiveMarkdown(
   payload: NonNullable<ReturnType<typeof buildSessionArchivePayload>>,
   agent?: Partial<Agent> | null,
 ): string {
-  const transcriptLines = session.messages.slice(-MAX_ARCHIVE_MESSAGES).map((message) => {
+  const transcriptLines = getRecentMessages(session.id, MAX_ARCHIVE_MESSAGES).map((message) => {
     const speaker = messageSpeaker(session, agent, message)
     const kind = message.kind && message.kind !== 'chat' ? ` (${message.kind})` : ''
     const toolSummary = Array.isArray(message.toolEvents) && message.toolEvents.length > 0
@@ -110,7 +112,7 @@ export function buildSessionArchiveMarkdown(
     `- Session Type: ${toOneLine(session.sessionType || 'human', 32)}`,
     `- Agent: ${toOneLine(agent?.name || session.agentId || 'unknown', 80)}`,
     `- Last Active: ${new Date(session.lastActiveAt || Date.now()).toISOString()}`,
-    `- Messages: ${session.messages.length}`,
+    `- Messages: ${getMessageCount(session.id)}`,
     session.identityState?.personaLabel ? `- Persona: ${toOneLine(session.identityState.personaLabel, 120)}` : '',
     '',
     '## Archive Snapshot',
@@ -168,7 +170,7 @@ export function syncSessionArchiveMemory(
       memoryId: session.sessionArchiveState?.memoryId || existing?.id || null,
       lastHash: payload.hash,
       lastSyncedAt: session.sessionArchiveState?.lastSyncedAt || existing?.updatedAt || null,
-      messageCount: session.messages.length,
+      messageCount: getMessageCount(session.id),
       exportPath: session.sessionArchiveState?.exportPath || null,
     }
     return { stored: false, memoryId: existing?.id || session.sessionArchiveState.memoryId || undefined, reason: 'unchanged' }
@@ -199,7 +201,7 @@ export function syncSessionArchiveMemory(
     memoryId: entry.id,
     lastHash: payload.hash,
     lastSyncedAt: Date.now(),
-    messageCount: session.messages.length,
+    messageCount: getMessageCount(session.id),
     exportPath,
   }
 

@@ -15,6 +15,7 @@ import { expandQuery } from '../query-expansion'
 import type { FileReference, MemoryEntry, MemoryImage, MemoryReference, Extension, ExtensionHooks, Session } from '@/types'
 import type { ToolBuildContext } from './context'
 import { registerNativeCapability } from '../native-capabilities'
+import { getMessages } from '@/lib/server/messages/message-repository'
 import { normalizeToolInputArgs } from './normalize-tool-args'
 import { getMemoryTier, partitionMemoriesByTier, shouldHideFromDurableRecall } from '@/lib/server/memory/memory-tiers'
 import { syncSessionArchiveMemory } from '@/lib/server/memory/session-archive-memory'
@@ -88,13 +89,14 @@ function isSessionContext(ctx: MemoryActionContext | null | undefined): ctx is S
   return !!ctx
     && typeof ctx.id === 'string'
     && typeof ctx.name === 'string'
-    && Array.isArray(ctx.messages)
+    && typeof ctx.provider === 'string'
 }
 
 function latestUserFactFromSession(session: Session | null): string {
-  if (!session || !Array.isArray(session.messages)) return ''
-  for (let index = session.messages.length - 1; index >= 0; index--) {
-    const message = session.messages[index]
+  if (!session) return ''
+  const messages = getMessages(session.id)
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const message = messages[index]
     if (message?.role !== 'user') continue
     const text = typeof message.text === 'string' ? message.text.replace(/\s+/g, ' ').trim() : ''
     if (text) return text

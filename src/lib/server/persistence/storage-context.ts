@@ -4,6 +4,7 @@ import { agentRepository } from '@/lib/server/agents/agent-repository'
 import { approvalRepository } from '@/lib/server/approvals/approval-repository'
 import { chatroomRepository } from '@/lib/server/chatrooms/chatroom-repository'
 import { connectorRepository } from '@/lib/server/connectors/connector-repository'
+import * as messageRepository from '@/lib/server/messages/message-repository'
 import { missionEventRepository, missionRepository } from '@/lib/server/missions/mission-repository'
 import { projectRepository } from '@/lib/server/projects/project-repository'
 import { scheduleRepository } from '@/lib/server/schedules/schedule-repository'
@@ -17,6 +18,7 @@ export interface StorageTxContext {
   approvals: typeof approvalRepository
   chatrooms: typeof chatroomRepository
   connectors: typeof connectorRepository
+  messages: typeof messageRepository
   missions: typeof missionRepository
   missionEvents: typeof missionEventRepository
   projects: typeof projectRepository
@@ -34,6 +36,7 @@ export function createStorageTxContext(): StorageTxContext {
     approvals: approvalRepository,
     chatrooms: chatroomRepository,
     connectors: connectorRepository,
+    messages: messageRepository,
     missions: missionRepository,
     missionEvents: missionEventRepository,
     projects: projectRepository,

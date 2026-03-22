@@ -21,6 +21,7 @@ import { log } from '@/lib/server/logger'
 import { WORKSPACE_DIR } from '@/lib/server/data-dir'
 import { drainSystemEvents, drainOrchestratorEvents } from '@/lib/server/runtime/system-events'
 import { buildMissionContextBlock } from '@/lib/server/missions/mission-service'
+import { getMessages, getRecentMessages, clearMessages } from '@/lib/server/messages/message-repository'
 import type { Agent, AppSettings, ApprovalRequest, Chatroom, Message, Session } from '@/types'
 import { isOrchestratorEligible } from '@/lib/orchestrator-config'
 import { buildIdentityContinuityContext } from '@/lib/server/identity-continuity'
@@ -384,7 +385,7 @@ export function buildAgentHeartbeatPrompt(
   const effectiveFileContent = isHeartbeatContentEffectivelyEmpty(strippedContent) ? '' : strippedContent
   if (effectiveFileContent) sections.push(`\nHEARTBEAT.md contents:\n${effectiveFileContent.slice(0, 2000)}`)
 
-  const recentMessages = (Array.isArray(session.messages) ? session.messages : []).slice(-5) as HeartbeatPromptMessage[]
+  const recentMessages = (session.id ? getRecentMessages(session.id, 5) : []) as HeartbeatPromptMessage[]
   const recentContext = recentMessages
     .map((m) => {
       const text = (m.text || '').slice(0, 200)
@@ -520,9 +521,10 @@ export function heartbeatConfigForSession(
 }
 
 function lastUserMessageAt(session: HeartbeatPromptSession): number {
-  if (!Array.isArray(session?.messages)) return 0
-  for (let i = session.messages.length - 1; i >= 0; i--) {
-    const msg = session.messages[i]
+  if (!session?.id) return 0
+  const messages = getMessages(session.id)
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i]
     if (msg?.role === 'user' && typeof msg.time === 'number' && msg.time > 0) {
       return msg.time
     }
@@ -742,9 +744,9 @@ export async function tickHeartbeats() {
     // Isolated mode: clear message history before each heartbeat for a fresh context
     const resetMode = session.sessionResetMode ?? agent?.sessionResetMode
     if (resetMode === 'isolated') {
+      clearMessages(session.id)
       patchSession(session.id, (s) => {
         if (!s) return s
-        s.messages = []
         s.updatedAt = Date.now()
         return s
       })

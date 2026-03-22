@@ -1,4 +1,5 @@
 import { hmrSingleton } from '@/lib/shared-utils'
+import { getMessages } from '@/lib/server/messages/message-repository'
 import type { GoalContract, Message, MessageToolEvent, Session } from '@/types'
 import { mergeGoalContracts, parseGoalContractFromText, parseMainLoopPlan, parseMainLoopReview } from '@/lib/server/agents/autonomy-contract'
 import {
@@ -389,7 +390,7 @@ function hydrateStateFromSession(sessionId: string): MainLoopState | null {
   const session = sessions[sessionId]
   if (!session || !isMainSession(session)) return null
 
-  const messages = Array.isArray(session.messages) ? session.messages : []
+  const messages = getMessages(sessionId)
   const hydrated = defaultState()
   hydrated.autonomyMode = session.heartbeatEnabled === true ? 'autonomous' : 'assist'
   hydrated.updatedAt = typeof session.lastActiveAt === 'number' ? session.lastActiveAt : now()

@@ -1,5 +1,6 @@
 import type { Agent, AppSettings, Session, SessionResetMode, SessionResetType } from '@/types'
 import { isDirectConnectorSession } from '@/lib/server/connectors/session-kind'
+import { clearMessages, getMessageCount } from '@/lib/server/messages/message-repository'
 
 export interface ResolvedSessionResetPolicy {
   type: SessionResetType
@@ -190,7 +191,7 @@ export function evaluateSessionFreshness(params: {
   const now = typeof params.now === 'number' ? params.now : Date.now()
   const session = params.session
   const policy = params.policy
-  const messageCount = Array.isArray(session?.messages) ? session.messages.length : 0
+  const messageCount = typeof session?.id === 'string' ? getMessageCount(session.id) : 0
   const createdAt = typeof session?.createdAt === 'number' ? session.createdAt : now
   const lastActiveAt = typeof session?.lastActiveAt === 'number' ? session.lastActiveAt : createdAt
   const idleExpiresAt = typeof policy.idleTimeoutSec === 'number' && policy.idleTimeoutSec > 0
@@ -275,9 +276,9 @@ export function resetSessionRuntime(
   opts?: { now?: number },
 ): number {
   const now = typeof opts?.now === 'number' ? opts.now : Date.now()
-  const cleared = Array.isArray(session.messages) ? session.messages.length : 0
+  const cleared = getMessageCount(session.id)
 
-  session.messages = []
+  clearMessages(session.id)
   session.claudeSessionId = null
   session.codexThreadId = null
   session.opencodeSessionId = null

@@ -23,6 +23,7 @@ import {
   upsertLearnedSkill,
 } from '@/lib/server/skills/skill-repository'
 import { loadSession } from '@/lib/server/sessions/session-repository'
+import { getMessages, getMessageCount } from '@/lib/server/messages/message-repository'
 import { buildSessionTranscript } from './skill-suggestions'
 import { normalizeSkillPayload } from './skills-normalize'
 import { onNextIdleWindow } from '@/lib/server/runtime/idle-window'
@@ -170,7 +171,7 @@ function ensureHeading(name: string, content: string): string {
 }
 
 function collectRecentUserText(session: Session): string {
-  return session.messages
+  return getMessages(session.id)
     .filter((message) => message?.role === 'user' && !message.suppressed && typeof message.text === 'string')
     .slice(-3)
     .map((message) => message.text)
@@ -264,7 +265,7 @@ function buildFailureSourceHash(input: {
 
 function buildObservation(input: ObserveLearnedSkillRunInput, session: Session): Observation | null {
   if (input.status === 'cancelled' || input.status === 'queued' || input.status === 'running') return null
-  if (!Array.isArray(session.messages) || session.messages.length < 2) return null
+  if (getMessageCount(session.id) < 2) return null
 
   const toolEvents = Array.isArray(input.toolEvents) ? input.toolEvents : []
   const sourceSnippet = trimText(buildSessionTranscript(session), 700)
@@ -308,7 +309,7 @@ function buildDraftPrompt(params: {
   reflection: RunReflection | null
   existingSkillNames: string[]
 }): string {
-  const toolSummary = params.session.messages
+  const toolSummary = getMessages(params.session.id)
     .flatMap((message) => message?.toolEvents || [])
     .slice(-8)
     .map((event) => `- ${event.name} (${event.error ? 'error' : 'ok'})`)

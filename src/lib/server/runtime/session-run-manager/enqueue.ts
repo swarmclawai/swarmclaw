@@ -6,6 +6,7 @@ import { log } from '@/lib/server/logger'
 import { isInternalHeartbeatRun } from '@/lib/server/runtime/heartbeat-source'
 import { getEnabledToolIds } from '@/lib/capability-selection'
 import { isAllEstopEngaged, isAutonomyEstopEngaged } from '@/lib/server/runtime/estop'
+import { isRestartRecoverableSource } from '@/lib/server/runtime/run-ledger'
 import { getActiveSessionProcess } from '@/lib/server/runtime/runtime-state'
 
 import { cancelPendingForSession } from './cancellation'
@@ -215,6 +216,11 @@ export function enqueueSessionRun(
     id: runId,
     sessionId: input.sessionId,
     missionId: input.missionId ?? getSession(input.sessionId)?.missionId ?? null,
+    kind: 'session_turn',
+    ownerType: 'session',
+    ownerId: input.sessionId,
+    parentExecutionId: null,
+    recoveryPolicy: isRestartRecoverableSource(source) ? 'restart_recoverable' : 'ephemeral',
     source,
     internal,
     mode,

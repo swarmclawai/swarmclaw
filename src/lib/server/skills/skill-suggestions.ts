@@ -10,6 +10,7 @@ import {
 import {
   loadSession,
 } from '@/lib/server/sessions/session-repository'
+import { getMessages, getRecentMessages } from '@/lib/server/messages/message-repository'
 import {
   loadSkill,
   loadSkillSuggestion,
@@ -97,7 +98,7 @@ function ensureHeading(name: string, content: string): string {
 }
 
 export function buildSessionTranscript(session: Session, maxMessages = DEFAULT_TRANSCRIPT_MESSAGES): string {
-  const messages = Array.isArray(session.messages) ? session.messages.slice(-maxMessages) : []
+  const messages = getRecentMessages(session.id, maxMessages)
   const lines: string[] = []
   for (const message of messages) {
     if (!message || message.suppressed) continue
@@ -115,9 +116,8 @@ export function buildSessionTranscript(session: Session, maxMessages = DEFAULT_T
 }
 
 function getSessionMessageCount(session: Session): number {
-  return Array.isArray(session.messages)
-    ? session.messages.filter((message) => message && !message.suppressed && (message.text || message.toolEvents?.length)).length
-    : 0
+  return getMessages(session.id)
+    .filter((message) => message && !message.suppressed && (message.text || message.toolEvents?.length)).length
 }
 
 function buildSuggestionPrompt(params: {

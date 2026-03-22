@@ -2,6 +2,7 @@ import { getProvider } from '@/lib/providers'
 import type { Connector } from '@/types'
 import { loadAgents } from '@/lib/server/agents/agent-repository'
 import { syncSessionArchiveMemory } from '@/lib/server/memory/session-archive-memory'
+import { getMessages, replaceAllMessages } from '@/lib/server/messages/message-repository'
 import { getEnabledCapabilityIds } from '@/lib/capability-selection'
 import { resolvePairingAccess } from './access'
 import {
@@ -189,9 +190,9 @@ export async function handleConnectorCommand(params: {
 
   if (command.name === 'status') {
     const policy = resolveConnectorSessionPolicy(connector, msg, session)
-    const all = Array.isArray(session.messages) ? session.messages : []
-    const userCount = all.filter((message: { role?: string }) => message?.role === 'user').length
-    const assistantCount = all.filter((message: { role?: string }) => message?.role === 'assistant').length
+    const all = getMessages(session.id)
+    const userCount = all.filter((message) => message?.role === 'user').length
+    const assistantCount = all.filter((message) => message?.role === 'assistant').length
     const toolsCount = getEnabledCapabilityIds(session).length
     const statusText = [
       `Status for ${connector.platform} / ${connector.name}:`,
@@ -232,7 +233,7 @@ export async function handleConnectorCommand(params: {
   if (command.name === 'compact') {
     const keepParsed = Number.parseInt(command.args, 10)
     const keepLastN = Number.isFinite(keepParsed) ? Math.max(4, Math.min(50, keepParsed)) : 10
-    const history = Array.isArray(session.messages) ? session.messages : []
+    const history = getMessages(session.id)
     if (history.length <= keepLastN) {
       const text = `Nothing to compact. Current history has ${history.length} message(s), keepLastN=${keepLastN}.`
       pushSessionMessage(session, 'user', inboundText)
@@ -249,7 +250,7 @@ export async function handleConnectorCommand(params: {
       time: Date.now(),
       kind: 'system' as const,
     }
-    session.messages = [summaryMessage, ...recentMessages]
+    replaceAllMessages(session.id, [summaryMessage, ...recentMessages])
     session.lastActiveAt = Date.now()
     const text = `Compacted ${oldMessages.length} message(s). Kept ${recentMessages.length} recent message(s) plus a summary.`
     pushSessionMessage(session, 'assistant', text)

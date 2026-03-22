@@ -10,6 +10,7 @@ import { UPLOAD_DIR } from '@/lib/server/upload-path'
 import { errorMessage } from '@/lib/shared-utils'
 import { isMainSession } from '@/lib/server/agents/main-agent-loop'
 import { log } from '@/lib/server/logger'
+import { getMessages } from '@/lib/server/messages/message-repository'
 
 const TAG = 'task-followups'
 
@@ -293,9 +294,10 @@ export function resolveTaskOriginConnectorFollowupTarget(params: {
   const ownerSessionTarget = resolveMainSessionOwnerTarget()
   if (ownerSessionTarget) return ownerSessionTarget
 
-  if (!isMainSession(sourceSession) && Array.isArray(sourceSession.messages)) {
-    for (let index = sourceSession.messages.length - 1; index >= 0; index -= 1) {
-      const message = sourceSession.messages[index]
+  const sourceMessages = typeof sourceSession.id === 'string' ? getMessages(sourceSession.id) : []
+  if (!isMainSession(sourceSession) && sourceMessages.length > 0) {
+    for (let index = sourceMessages.length - 1; index >= 0; index -= 1) {
+      const message = sourceMessages[index]
       if (!message || message.role !== 'user') continue
       if (message.historyExcluded === true) continue
 
@@ -410,14 +412,15 @@ export function taskAlreadyDeliveredToConnectorTarget(params: {
       : ''
   if (!taskSessionId) return false
   const session = params.sessions[taskSessionId]
-  if (!session || !Array.isArray(session.messages)) return false
+  if (!session) return false
 
+  const sessionMessages = typeof session.id === 'string' ? getMessages(session.id) : []
   const connector = params.connectors[params.target.connectorId]
   const normalizedTargetChannel = normalizeFollowupChannelForConnector(connector, params.target.channelId)
   if (!normalizedTargetChannel) return false
 
-  for (let index = session.messages.length - 1; index >= 0; index -= 1) {
-    const message = session.messages[index]
+  for (let index = sessionMessages.length - 1; index >= 0; index -= 1) {
+    const message = sessionMessages[index]
     if (!message || message.role !== 'assistant' || !Array.isArray(message.toolEvents)) continue
     for (const event of message.toolEvents) {
       const delivered = extractDeliveredConnectorTarget(event as MessageToolEvent)

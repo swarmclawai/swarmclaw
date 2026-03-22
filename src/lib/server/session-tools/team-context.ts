@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { tool, type StructuredToolInterface } from '@langchain/core/tools'
 import { loadAgents, loadTasks, loadSessions } from '../storage'
+import { getRecentMessages } from '@/lib/server/messages/message-repository'
 import { resolveTeam, resolveReachableAgentIds } from '../agents/team-resolution'
 import { getAgentDirectory } from '../agents/agent-registry'
 import { normalizeToolInputArgs } from './normalize-tool-args'
@@ -139,12 +140,12 @@ async function formatPeerContext(agentId: string, peerId: string): Promise<strin
   try {
     const sessions = allSessions || loadSessions()
     const peerSessions = Object.values(sessions)
-      .filter((s) => s.agentId === peerId && Array.isArray(s.messages) && s.messages.length > 0)
+      .filter((s) => s.agentId === peerId && (s.messageCount ?? 0) > 0)
       .sort((a, b) => (b.lastActiveAt || 0) - (a.lastActiveAt || 0))
 
     const latestSession = peerSessions.length > 0 ? peerSessions[0] : null
-    if (latestSession?.messages) {
-      const recentMessages = latestSession.messages
+    if (latestSession) {
+      const recentMessages = getRecentMessages(latestSession.id, 20)
         .filter((m) => m.role === 'assistant' && Array.isArray(m.toolEvents) && m.toolEvents.length > 0)
         .slice(-MAX_RECENT_ACTIVITY)
       result.recentActivity = recentMessages.map((m) => {

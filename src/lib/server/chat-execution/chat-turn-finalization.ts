@@ -34,7 +34,14 @@ import { isHeartbeatSource } from '@/lib/server/runtime/heartbeat-source'
 import { perf } from '@/lib/server/runtime/perf'
 import { getAgent } from '@/lib/server/agents/agent-repository'
 import { isDirectConnectorSession } from '@/lib/server/connectors/session-kind'
-import { getSession, getSessionMessages, saveSession } from '@/lib/server/sessions/session-repository'
+import { getSession, saveSession } from '@/lib/server/sessions/session-repository'
+import {
+  getMessages,
+  getMessageCount,
+  appendMessage,
+  replaceMessageAt,
+  replaceAllMessages,
+} from '@/lib/server/messages/message-repository'
 import { appendUsage } from '@/lib/server/usage/usage-repository'
 import { synchronizeWorkingStateForTurn } from '@/lib/server/working-state/service'
 import { notify } from '@/lib/server/ws-hub'
@@ -194,7 +201,7 @@ export async function finalizeChatTurn(params: {
     const totalTokens = inputTokens + outputTokens
     if (totalTokens > 0) {
       const cost = estimateCost(sessionForRun.model, inputTokens, outputTokens)
-      const history = getSessionMessages(sessionId)
+      const history = getMessages(sessionId)
       const usageRecord: UsageRecord = {
         sessionId,
         messageIndex: history.length,
@@ -355,15 +362,17 @@ export async function finalizeChatTurn(params: {
   const current = getSession(sessionId)
   let assistantPersisted = false
   if (current) {
-    current.messages = Array.isArray(current.messages) ? current.messages : []
+    // Load messages from relational table (lazy-migrates from blob on first access)
+    const messages = getMessages(sessionId)
+    let messagesPruned = false
     if (!isDirectConnectorSession(current) && current.connectorContext) {
       current.connectorContext = undefined
     }
     const currentAgent = current.agentId ? getAgent(current.agentId) : null
-    pruneStreamingAssistantArtifacts(current.messages, {
+    if (pruneStreamingAssistantArtifacts(messages, {
       minIndex: runMessageStartIndex,
       minTime: runStartedAt,
-    })
+    })) messagesPruned = true
     const persistField = (key: string, value: unknown) => {
       const normalized = normalizeResumeId(value)
       if ((current as unknown as Record<string, unknown>)[key] !== normalized) {
@@ -393,6 +402,8 @@ export async function finalizeChatTurn(params: {
       }
     }
 
+    let persistedAssistantMsg: Message | null = null
+    let replacedLast = false
     if (shouldPersistAssistant) {
       const persistedKind = isHeartbeatRun ? 'heartbeat' : 'chat'
       const nowTs = Date.now()
@@ -411,7 +422,7 @@ export async function finalizeChatTurn(params: {
         runId: lifecycleRunId,
       })
       if (nextAssistantMessage) {
-        const previous = current.messages.at(-1)
+        const previous = messages.at(-1)
         const nextToolEvents = nextAssistantMessage.toolEvents || []
         const nextKind = nextAssistantMessage.kind || persistedKind
         if (shouldSuppressRedundantConnectorDeliveryFollowup({
@@ -434,11 +445,14 @@ export async function finalizeChatTurn(params: {
           nextKind,
           now: nowTs,
         })) {
-          current.messages[current.messages.length - 1] = nextAssistantMessage
+          messages[messages.length - 1] = nextAssistantMessage
           assistantPersisted = true
+          replacedLast = true
+          persistedAssistantMsg = nextAssistantMessage
         } else {
-          current.messages.push(nextAssistantMessage)
+          messages.push(nextAssistantMessage)
           assistantPersisted = true
+          persistedAssistantMsg = nextAssistantMessage
         }
         persistedResponseForHooks = nextAssistantMessage.text
         if (assistantPersisted) {
@@ -535,13 +549,25 @@ export async function finalizeChatTurn(params: {
       }
     }
     if (isHeartbeatRun && heartbeatClassification === 'suppress') {
-      pruneSuppressedHeartbeatStreamMessage(current.messages)
+      if (pruneSuppressedHeartbeatStreamMessage(messages)) messagesPruned = true
     }
 
     if (isHeartbeatRun) {
-      const pruned = pruneOldHeartbeatMessages(current.messages)
+      const pruned = pruneOldHeartbeatMessages(messages)
       if (pruned > 0) {
+        messagesPruned = true
         log.info('heartbeat', `Pruned ${pruned} old heartbeat message(s) from session ${sessionId}`)
+      }
+    }
+
+    // Persist messages: use O(1) append/replace when no pruning, O(n) replaceAll when pruned
+    if (messagesPruned) {
+      replaceAllMessages(sessionId, messages)
+    } else if (assistantPersisted && persistedAssistantMsg) {
+      if (replacedLast) {
+        replaceMessageAt(sessionId, getMessageCount(sessionId) - 1, persistedAssistantMsg)
+      } else {
+        appendMessage(sessionId, persistedAssistantMsg)
       }
     }
 
@@ -630,7 +656,7 @@ export async function finalizeChatTurn(params: {
       isHeartbeatRun,
       agentAutoDraftSetting: currentAgent?.autoDraftSkillSuggestions === true,
       toolEventCount: persistedToolEvents.length,
-      messageCount: current.messages.length,
+      messageCount: messages.length,
     })) {
       try {
         const { createSkillSuggestionFromSession } = await import('@/lib/server/skills/skill-suggestions')

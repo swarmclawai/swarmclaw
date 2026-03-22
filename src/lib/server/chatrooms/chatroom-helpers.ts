@@ -12,6 +12,7 @@ import { loadSettings } from '@/lib/server/settings/settings-repository'
 import { buildRuntimeSkillPromptBlocks, resolveRuntimeSkills } from '@/lib/server/skills/runtime-skill-resolver'
 import { loadSkills } from '@/lib/server/skills/skill-repository'
 import { loadSession, patchSession, saveSession } from '@/lib/server/sessions/session-repository'
+import { appendMessage } from '@/lib/server/messages/message-repository'
 import type { Chatroom, ChatroomMember, Agent, Session, Message, ChatroomMessage } from '@/types'
 import { getEnabledCapabilityIds, getEnabledToolIds } from '@/lib/capability-selection'
 
@@ -362,21 +363,15 @@ export function appendSyntheticSessionMessage(
 ): void {
   const trimmed = String(text || '').trim()
   if (!trimmed) return
+  const timestamp = Date.now()
+  appendMessage(sessionId, {
+    role,
+    text: trimmed,
+    time: timestamp,
+  })
   patchSession(sessionId, (current) => {
     if (!current) return null
-    const timestamp = Date.now()
-    return {
-      ...current,
-      messages: [
-        ...(Array.isArray(current.messages) ? current.messages : []),
-        {
-          role,
-          text: trimmed,
-          time: timestamp,
-        },
-      ],
-      lastActiveAt: timestamp,
-    }
+    return { ...current, lastActiveAt: timestamp }
   })
 }
 

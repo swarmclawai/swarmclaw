@@ -73,6 +73,10 @@ export function listPersistedRuns(params?: {
 export function appendPersistedRunEvent(input: {
   runId: string
   sessionId: string
+  kind?: RunEventRecord['kind']
+  ownerType?: RunEventRecord['ownerType']
+  ownerId?: RunEventRecord['ownerId']
+  parentExecutionId?: RunEventRecord['parentExecutionId']
   phase: 'status' | 'event'
   status?: SessionRunStatus
   event: SSEEvent
@@ -86,6 +90,10 @@ export function appendPersistedRunEvent(input: {
     id: genId(12),
     runId: input.runId,
     sessionId: input.sessionId,
+    kind: input.kind,
+    ownerType: input.ownerType,
+    ownerId: input.ownerId,
+    parentExecutionId: input.parentExecutionId,
     timestamp,
     phase: input.phase,
     status: input.status,

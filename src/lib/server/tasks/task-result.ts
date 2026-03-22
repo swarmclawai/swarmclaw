@@ -49,10 +49,6 @@ interface MessageLike {
   toolEvents?: Array<{ name?: string; output?: string }>
 }
 
-interface SessionLike {
-  messages?: MessageLike[]
-}
-
 interface ExtractTaskResultOptions {
   sinceTime?: number | null
 }
@@ -62,12 +58,12 @@ interface ExtractTaskResultOptions {
 // ---------------------------------------------------------------------------
 
 /**
- * Walk a session's messages and extract all artifacts + a clean summary.
+ * Walk messages and extract all artifacts + a clean summary.
  * Replaces the old regex-based `extractLatestUploadUrl` and
  * `summarizeScheduleTaskResult` with a single Zod-validated pass.
  */
 export function extractTaskResult(
-  session: SessionLike | null | undefined,
+  messages: MessageLike[] | null | undefined,
   rawResultText: string | null | undefined,
   options?: ExtractTaskResultOptions,
 ): TaskResult {
@@ -85,9 +81,9 @@ export function extractTaskResult(
     artifacts.push({ url, type: classifyArtifact(filename), filename })
   }
 
-  // Walk session messages to collect all artifact URLs
-  if (Array.isArray(session?.messages)) {
-    for (const msg of session.messages) {
+  // Walk messages to collect all artifact URLs
+  if (Array.isArray(messages)) {
+    for (const msg of messages) {
       if (sinceTime !== null) {
         const msgTime = typeof msg.time === 'number' && Number.isFinite(msg.time) ? msg.time : null
         if (msgTime === null || msgTime < sinceTime) continue

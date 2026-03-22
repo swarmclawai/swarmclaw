@@ -428,6 +428,7 @@ const COMMAND_GROUPS = {
       delete: { description: 'Delete one chat', method: 'DELETE', path: '/chats/:id', params: ['id'] },
       'delete-many': { description: 'Delete multiple chats (body: {"ids":[...]})', method: 'DELETE', path: '/chats' },
       'heartbeat-disable-all': { description: 'Disable all chat heartbeats and cancel queued heartbeat runs', method: 'POST', path: '/chats/heartbeat' },
+      'migrate-messages': { description: 'Migrate messages from session blobs to relational table', method: 'POST', path: '/chats/migrate-messages' },
       messages: { description: 'Get chat message history', method: 'GET', path: '/chats/:id/messages', params: ['id'] },
       'messages-update': { description: 'Update chat message metadata (e.g. bookmark)', method: 'PUT', path: '/chats/:id/messages', params: ['id'] },
       'messages-send': { description: 'Append a user/system message to a chat', method: 'POST', path: '/chats/:id/messages', params: ['id'] },

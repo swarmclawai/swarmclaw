@@ -18,6 +18,12 @@ import {
   getSessionRunState,
 } from '@/lib/server/runtime/session-run-manager'
 import { deleteSession, getSession, listSessions, saveSession } from '@/lib/server/sessions/session-repository'
+import {
+  clearMessages,
+  deleteSessionMessages,
+  getMessages,
+  truncateAfter,
+} from '@/lib/server/messages/message-repository'
 import { deleteSessionWorkingState } from '@/lib/server/working-state/service'
 import { normalizeProviderEndpoint } from '@/lib/openclaw/openclaw-endpoint'
 import { serviceFail, serviceOk } from '@/lib/server/service-result'
@@ -165,6 +171,7 @@ export function deleteChats(ids: string[]): { deleted: number; requested: number
     stopActiveSessionProcess(id)
     deleteSessionWorkingState(id)
     clearMainLoopStateForSession(id)
+    deleteSessionMessages(id)
     deleteSession(id)
     deleted += 1
   }
@@ -284,6 +291,7 @@ export function deleteChatSession(sessionId: string): boolean {
   if (!getSession(sessionId)) return false
   stopActiveSessionProcess(sessionId)
   cleanupSessionProcesses(sessionId)
+  deleteSessionMessages(sessionId)
   deleteSession(sessionId)
   return true
 }
@@ -347,6 +355,7 @@ export function cancelQueuedChatMessages(sessionId: string, runId?: string): Ser
 export function clearChatMessages(sessionId: string): boolean {
   const session = getSession(sessionId)
   if (!session) return false
+  clearMessages(sessionId)
   session.messages = []
   session.claudeSessionId = null
   session.codexThreadId = null
@@ -359,28 +368,40 @@ export function clearChatMessages(sessionId: string): boolean {
 export function retryChatTurn(sessionId: string): ServiceResult<{ message: string; imagePath: string | null }> {
   const session = getSession(sessionId)
   if (!session) return serviceFail(404, 'Session not found')
-  const msgs = session.messages
+  const msgs = getMessages(sessionId)
+  // Remove trailing assistant messages
   while (msgs.length && msgs[msgs.length - 1].role === 'assistant') {
     msgs.pop()
   }
   if (!msgs.length) {
+    clearMessages(sessionId)
     return serviceOk({ message: '', imagePath: null })
   }
   const lastUser = msgs[msgs.length - 1]
   const message = lastUser.text
   const imagePath = lastUser.imagePath || null
   msgs.pop()
-  saveSession(sessionId, session)
+  // Truncate to the new length (keep seq 0..msgs.length-1)
+  if (msgs.length === 0) {
+    clearMessages(sessionId)
+  } else {
+    truncateAfter(sessionId, msgs.length - 1)
+  }
   return serviceOk({ message, imagePath })
 }
 
 export function editAndResendChatTurn(sessionId: string, messageIndex: number, newText: string): ServiceResult<{ message: string }> {
   const session = getSession(sessionId)
   if (!session) return serviceFail(404, 'Not found')
-  if (typeof messageIndex !== 'number' || messageIndex < 0 || messageIndex >= session.messages.length) {
+  const msgCount = getMessages(sessionId).length
+  if (typeof messageIndex !== 'number' || messageIndex < 0 || messageIndex >= msgCount) {
     return serviceFail(400, 'Invalid message index')
   }
-  session.messages = session.messages.slice(0, messageIndex)
-  saveSession(sessionId, session)
+  // Keep messages up to but not including messageIndex
+  if (messageIndex === 0) {
+    clearMessages(sessionId)
+  } else {
+    truncateAfter(sessionId, messageIndex - 1)
+  }
   return serviceOk({ message: newText })
 }

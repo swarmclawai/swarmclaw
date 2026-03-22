@@ -6,7 +6,7 @@ import { getScenario, EVAL_SCENARIOS } from './scenarios'
 import { scoreCriteria } from './scorer'
 import { saveEvalRun } from './store'
 import { loadSessions, saveSessions, loadAgents, loadCredentials, decryptKey } from '../storage'
-import { executeSessionChatTurn } from '@/lib/server/chat-execution/chat-execution'
+import { executeExecutionChatTurn } from '@/lib/server/execution-engine/chat-turn'
 import { WORKSPACE_DIR } from '../data-dir'
 import type { Session } from '@/types'
 import { errorMessage } from '@/lib/shared-utils'
@@ -64,7 +64,7 @@ export async function runEvalScenario(scenarioId: string, agentId: string): Prom
   saveSessions(sessions)
 
   try {
-    const result = await executeSessionChatTurn({
+    const result = await executeExecutionChatTurn({
       sessionId,
       message: scenario.userMessage,
       internal: true,

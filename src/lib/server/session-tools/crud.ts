@@ -15,6 +15,7 @@ import {
   encryptKey,
   decryptKey,
 } from '../storage'
+import { getMessages } from '@/lib/server/messages/message-repository'
 import { resolveScheduleName } from '@/lib/schedules/schedule-name'
 import type { ScheduleLike } from '@/lib/schedules/schedule-dedupe'
 import {
@@ -307,7 +308,7 @@ function deriveScheduleFollowupTarget(sessionId: string | null | undefined): {
 
   if (isMainSession(session)) return {}
 
-  const messages = Array.isArray(session.messages) ? session.messages : []
+  const messages = getMessages(normalizedSessionId)
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const message = messages[i]
     if ((typeof message?.role === 'string' ? message.role : '') !== 'user') continue

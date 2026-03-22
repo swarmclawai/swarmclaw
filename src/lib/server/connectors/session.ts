@@ -5,6 +5,10 @@ import { WORKSPACE_DIR } from '../data-dir'
 import { ensureAgentThreadSession } from '@/lib/server/agents/agent-thread-session'
 import { resolveEffectiveSessionMemoryScopeMode } from '@/lib/server/memory/session-memory-scope'
 import { syncSessionArchiveMemory } from '@/lib/server/memory/session-archive-memory'
+import {
+  appendMessage,
+  getLastMessage,
+} from '@/lib/server/messages/message-repository'
 import { loadAgents, loadSessions, loadStoredItem, upsertStoredItem } from '../storage'
 import { notify } from '../ws-hub'
 import {
@@ -416,7 +420,7 @@ function mirrorConnectorMessageToAgentThread(
     : ensureAgentThreadSession(session.agentId)
   if (!threadSession || threadSession.id === session.id) return
 
-  const last = Array.isArray(threadSession.messages) ? threadSession.messages[threadSession.messages.length - 1] : null
+  const last = getLastMessage(threadSession.id)
   const source = message.source as MessageSource | undefined
   const lastSource = (last?.source || null) as MessageSource | null
   if (
@@ -431,17 +435,16 @@ function mirrorConnectorMessageToAgentThread(
     return
   }
 
-  if (!Array.isArray(threadSession.messages)) threadSession.messages = []
-  threadSession.messages.push({
+  const mirrorMsg = {
     ...message,
     time: typeof message.time === 'number' ? message.time : Date.now(),
     historyExcluded: true,
-  } as Session['messages'][number])
+  } as Session['messages'][number]
+  appendMessage(threadSession.id, mirrorMsg)
   threadSession.lastActiveAt = Date.now()
 
   upsertStoredItem('sessions', threadSession.id, threadSession)
   notify('sessions')
-  notify(`messages:${threadSession.id}`)
 }
 
 export function pushSessionMessage(
@@ -451,9 +454,8 @@ export function pushSessionMessage(
   extra: Record<string, unknown> = {},
 ): void {
   if (!text.trim()) return
-  if (!Array.isArray(session.messages)) session.messages = []
   const message = { role, text: text.trim(), time: Date.now(), ...extra }
-  session.messages.push(message)
+  appendMessage(session.id, message as Session['messages'][number])
   session.lastActiveAt = Date.now()
   mirrorConnectorMessageToAgentThread(session, message)
 }

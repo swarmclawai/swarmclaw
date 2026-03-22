@@ -3,7 +3,6 @@ import type { Message, Session } from '@/types'
 import {
   deleteSession as deleteStoredSession,
   disableAllSessionHeartbeats as disableAllStoredSessionHeartbeats,
-  getSessionMessages as getStoredSessionMessages,
   loadSession as loadStoredSession,
   loadSessions as loadStoredSessions,
   patchSession as patchStoredSession,
@@ -11,6 +10,7 @@ import {
   upsertSession as upsertStoredSession,
 } from '@/lib/server/storage'
 import { createRecordRepository } from '@/lib/server/persistence/repository-utils'
+import { getMessages } from '@/lib/server/messages/message-repository'
 
 export const sessionRepository = createRecordRepository<Session>(
   'sessions',
@@ -72,7 +72,7 @@ export function deleteSession(id: string): void {
 }
 
 export function getSessionMessages(sessionId: string): Message[] {
-  return getStoredSessionMessages(sessionId)
+  return getMessages(sessionId)
 }
 
 export function disableAllSessionHeartbeats(): number {

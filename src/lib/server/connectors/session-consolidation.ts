@@ -4,6 +4,7 @@
  */
 import { log } from '@/lib/server/logger'
 import { saveSession, loadSessions } from '@/lib/server/sessions/session-repository'
+import { getMessages, getMessageCount, replaceAllMessages } from '@/lib/server/messages/message-repository'
 import { loadSettings, saveSettings } from '../settings/settings-repository'
 import type { Session } from '@/types'
 import { isDirectConnectorSession } from './session-kind'
@@ -64,18 +65,20 @@ export function pruneThreadConnectorMirrors(): { cleanedSessions: number; remove
 
   for (const session of Object.values(sessions)) {
     if (isDirectConnectorSession(session)) continue
-    if (!Array.isArray(session.messages) || session.messages.length === 0) continue
+    const msgCount = getMessageCount(session.id)
+    if (msgCount === 0) continue
 
-    const filteredMessages = session.messages.filter((message) => !(
+    const allMessages = getMessages(session.id)
+    const filteredMessages = allMessages.filter((message) => !(
       message?.historyExcluded === true
       && typeof message?.source?.connectorId === 'string'
       && message.source.connectorId.trim().length > 0
     ))
 
-    const removed = session.messages.length - filteredMessages.length
+    const removed = allMessages.length - filteredMessages.length
     if (removed <= 0) continue
 
-    session.messages = filteredMessages
+    replaceAllMessages(session.id, filteredMessages)
     saveSession(session.id, session)
     cleanedSessions += 1
     removedMessages += removed

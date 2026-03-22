@@ -596,6 +596,7 @@ const COMMAND_GROUPS = [
         defaultBody: { action: 'status' },
       }),
       cmd('checkpoints', 'GET', '/chats/:id/checkpoints', 'List checkpoint history for a chat'),
+      cmd('migrate-messages', 'POST', '/chats/migrate-messages', 'Migrate messages from session blobs to relational table'),
     ],
   },
   {

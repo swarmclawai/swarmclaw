@@ -1,5 +1,6 @@
 import type { Connector, MessageSource } from '@/types'
 import { loadConnectors } from './connector-repository'
+import { getMessages, replaceMessageAt } from '@/lib/server/messages/message-repository'
 import { notify } from '../ws-hub'
 import { resolveConnectorSessionPolicy, shouldReplyToInboundMessage } from './policy'
 import { runningConnectors } from './runtime-state'
@@ -68,7 +69,7 @@ export async function recordConnectorOutboundDelivery(params: {
       lastOutboundMessageId: params.messageId || session.connectorContext?.lastOutboundMessageId || null,
       threadId: params.inbound.threadId || session.connectorContext?.threadId || null,
     }
-    const history = Array.isArray(session.messages) ? session.messages : []
+    const history = getMessages(session.id)
     for (let i = history.length - 1; i >= 0; i -= 1) {
       const entry = history[i]
       if (entry?.role !== 'assistant') continue
@@ -76,17 +77,21 @@ export async function recordConnectorOutboundDelivery(params: {
       if (source.connectorId !== connector.id) continue
       if (source.channelId !== params.inbound.channelId) continue
       if (!source.messageId && params.messageId) {
-        entry.source = {
-          platform: source.platform || connector.platform,
-          connectorId: source.connectorId || connector.id,
-          connectorName: source.connectorName || connector.name,
-          channelId: source.channelId || params.inbound.channelId,
-          senderId: source.senderId,
-          senderName: source.senderName,
-          messageId: params.messageId,
-          replyToMessageId: source.replyToMessageId || params.inbound.messageId,
-          threadId: source.threadId || params.inbound.threadId,
+        const updatedEntry = {
+          ...entry,
+          source: {
+            platform: source.platform || connector.platform,
+            connectorId: source.connectorId || connector.id,
+            connectorName: source.connectorName || connector.name,
+            channelId: source.channelId || params.inbound.channelId,
+            senderId: source.senderId,
+            senderName: source.senderName,
+            messageId: params.messageId,
+            replyToMessageId: source.replyToMessageId || params.inbound.messageId,
+            threadId: source.threadId || params.inbound.threadId,
+          },
         }
+        replaceMessageAt(session.id, i, updatedEntry)
       }
       break
     }

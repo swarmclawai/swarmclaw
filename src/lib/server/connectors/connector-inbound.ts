@@ -6,6 +6,7 @@ import {
   loadAgents, loadCredentials, decryptKey, loadSettings, loadSkills,
   loadChatrooms, saveChatrooms,
 } from '../storage'
+import { getMessages } from '@/lib/server/messages/message-repository'
 import { dedup, errorMessage, hmrSingleton } from '@/lib/shared-utils'
 import path from 'path'
 import { streamAgentChat } from '@/lib/server/chat-execution/stream-agent-chat'
@@ -1251,7 +1252,7 @@ If media sending fails, report the exact error and retry with a corrected path/t
             }
           }
         },
-        history: modelHistoryTailWithAttribution(session.messages, 50, 48_000),
+        history: modelHistoryTailWithAttribution(getMessages(session.id), 50, 48_000),
       })
       settledConnectorToolEvents = [
         ...pruneIncompleteToolEvents(streamedConnectorToolEvents),
@@ -1306,7 +1307,7 @@ If media sending fails, report the exact error and retry with a corrected path/t
         }
       },
       active: new Map(),
-      loadHistory: () => modelHistoryTailWithAttribution(session.messages, 50, 48_000),
+      loadHistory: () => modelHistoryTailWithAttribution(getMessages(session.id), 50, 48_000),
     })
     mediaExtractionText = fullText
   }

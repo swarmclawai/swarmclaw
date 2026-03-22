@@ -3,6 +3,7 @@ import {
   loadConnectors,
   loadSession, upsertSession,
 } from '../storage'
+import { getMessages, replaceMessageAt } from '@/lib/server/messages/message-repository'
 import { errorMessage } from '@/lib/shared-utils'
 import path from 'path'
 import { notify } from '../ws-hub'
@@ -247,7 +248,7 @@ export async function sendConnectorMessage(params: {
         lastOutboundAt: Date.now(),
         lastOutboundMessageId: result?.messageId || session.connectorContext?.lastOutboundMessageId || null,
       }
-      const history = Array.isArray(session.messages) ? session.messages : []
+      const history = getMessages(session.id)
       for (let i = history.length - 1; i >= 0; i -= 1) {
         const entry = history[i]
         if (entry?.role !== 'assistant') continue
@@ -255,17 +256,21 @@ export async function sendConnectorMessage(params: {
         if (source.connectorId !== connectorId) continue
         if (source.channelId !== channelId) continue
         if (!source.messageId && result?.messageId) {
-          entry.source = {
-            platform: source.platform || connector.platform,
-            connectorId: source.connectorId || connectorId,
-            connectorName: source.connectorName || connector.name,
-            channelId: source.channelId || channelId,
-            senderId: source.senderId,
-            senderName: source.senderName,
-            messageId: result.messageId,
-            threadId: source.threadId || params.threadId,
-            replyToMessageId: source.replyToMessageId || params.replyToMessageId,
+          const updatedEntry = {
+            ...entry,
+            source: {
+              platform: source.platform || connector.platform,
+              connectorId: source.connectorId || connectorId,
+              connectorName: source.connectorName || connector.name,
+              channelId: source.channelId || channelId,
+              senderId: source.senderId,
+              senderName: source.senderName,
+              messageId: result.messageId,
+              threadId: source.threadId || params.threadId,
+              replyToMessageId: source.replyToMessageId || params.replyToMessageId,
+            },
           }
+          replaceMessageAt(session.id, i, updatedEntry)
         }
         break
       }

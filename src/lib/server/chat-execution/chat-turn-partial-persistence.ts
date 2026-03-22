@@ -1,7 +1,7 @@
 import {
   getSession,
-  saveSession,
 } from '@/lib/server/sessions/session-repository'
+import { getMessages, replaceAllMessages } from '@/lib/server/messages/message-repository'
 import { notify } from '@/lib/server/ws-hub'
 import type { MessageToolEvent, SSEEvent } from '@/types'
 import { upsertStreamingAssistantArtifact } from '@/lib/chat/chat-streaming-state'
@@ -72,7 +72,7 @@ export function createPartialAssistantPersistence(input: {
     try {
       const current = getSession(prepared.sessionId)
       if (!current) return
-      current.messages = Array.isArray(current.messages) ? current.messages : []
+      const currentMessages = getMessages(prepared.sessionId)
       const partialMsg = await applyMessageLifecycleHooks({
         session: current,
         message: {
@@ -98,11 +98,11 @@ export function createPartialAssistantPersistence(input: {
       if (snapshotKey === lastPartialSnapshotKey) return
       lastPartialSnapshotKey = snapshotKey
       lastPartialSaveAt = Date.now()
-      upsertStreamingAssistantArtifact(current.messages, partialMsg, {
+      upsertStreamingAssistantArtifact(currentMessages, partialMsg, {
         minIndex: prepared.runMessageStartIndex,
         minTime: prepared.runStartedAt,
       })
-      saveSession(prepared.sessionId, current)
+      replaceAllMessages(prepared.sessionId, currentMessages)
       notify(`messages:${prepared.sessionId}`)
     } catch {
       // Partial persistence is best-effort.

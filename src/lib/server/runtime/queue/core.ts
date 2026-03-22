@@ -13,16 +13,17 @@ import { loadSessions, saveSessions } from '@/lib/server/sessions/session-reposi
 import { loadSettings } from '@/lib/server/settings/settings-repository'
 import { loadTasks, saveTasks } from '@/lib/server/tasks/task-repository'
 import { notify } from '@/lib/server/ws-hub'
+import { getMessages, getLastMessage, appendMessage } from '@/lib/server/messages/message-repository'
 import { perf } from '@/lib/server/runtime/perf'
 import { WORKSPACE_DIR } from '@/lib/server/data-dir'
 import { createAgentTaskSession } from '@/lib/server/agents/task-session'
 import { formatValidationFailure } from '@/lib/server/tasks/task-validation'
 import { pushMainLoopEventToMainSessions } from '@/lib/server/agents/main-agent-loop'
-import { executeSessionChatTurn, type ExecuteChatTurnResult } from '@/lib/server/chat-execution/chat-execution'
+import type { ExecuteChatTurnResult } from '@/lib/server/chat-execution/chat-execution-types'
 import { checkAgentBudgetLimits } from '@/lib/server/cost'
+import { enqueueExecution } from '@/lib/server/execution-engine'
 import { extractTaskResult, formatResultBody } from '@/lib/server/tasks/task-result'
 import {
-  assessAutonomyRun,
   classifyRuntimeFailure,
   observeAutonomyRunOutcome,
   recordSupervisorIncident,
@@ -40,7 +41,7 @@ import {
 } from '@/lib/server/tasks/task-followups'
 import { getCheckpointSaver } from '@/lib/server/langgraph-checkpoint'
 import { cascadeUnblock } from '@/lib/server/dag-validation'
-import { captureGuardianCheckpoint, prepareGuardianRecovery } from '@/lib/server/agents/guardian'
+import { prepareGuardianRecovery } from '@/lib/server/agents/guardian'
 import { notifyOrchestrators } from '@/lib/server/runtime/orchestrator-events'
 import type { Agent, BoardTask, Message, Session } from '@/types'
 import { buildAgentDisabledMessage, isAgentDisabled } from '@/lib/server/agents/agent-availability'
@@ -549,9 +550,9 @@ function collectTaskResultDeliveryData(
 ): TaskResultDeliveryData {
   const runSessionId = typeof task.sessionId === 'string' ? task.sessionId : ''
   const runSession = runSessionId ? sessions[runSessionId] : null
-  const fallbackText = runSession ? latestAssistantText(runSession) : ''
+  const fallbackText = runSessionId ? latestAssistantText(runSessionId) : ''
   const taskResult = extractTaskResult(
-    runSession,
+    runSessionId ? getMessages(runSessionId) : [],
     task.result || fallbackText || null,
     { sinceTime: typeof task.startedAt === 'number' ? task.startedAt : null },
   )
@@ -606,10 +607,11 @@ function buildTaskTerminalMessage(
   return parts.join('\n\n')
 }
 
-function latestAssistantText(session: SessionLike | null | undefined): string {
-  if (!Array.isArray(session?.messages)) return ''
-  for (let i = session.messages.length - 1; i >= 0; i--) {
-    const msg = session.messages[i]
+function latestAssistantText(sessionId: string | null | undefined): string {
+  if (!sessionId) return ''
+  const messages = getMessages(sessionId)
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i]
     if (msg?.role !== 'assistant') continue
     const text = typeof msg?.text === 'string' ? msg.text.trim() : ''
     if (!text) continue
@@ -617,23 +619,6 @@ function latestAssistantText(session: SessionLike | null | undefined): string {
     return text
   }
   return ''
-}
-
-// Task result extraction now uses Zod-validated structured data
-// from ./task-result.ts (extractTaskResult, formatResultBody)
-
-/** Check if a task result looks incomplete (agent stopped mid-objective). */
-function looksIncomplete(text: string): boolean {
-  if (!text) return false
-  const trimmed = text.trim()
-  // Ends with ellipsis or continuation signal
-  if (trimmed.endsWith('...') || trimmed.endsWith('…')) return true
-  // Ends with a step/phase header (agent was listing next steps)
-  if (/(?:^|\n)#{1,3}\s+(?:Step|Phase|Next)\s+\d/i.test(trimmed.slice(-200))) return true
-  // Contains forward-looking language at the end
-  const lastChunk = trimmed.slice(-300).toLowerCase()
-  if (/\b(?:next i(?:'ll| will)|now i(?:'ll| will)|let me (?:now|next)|moving on to|proceeding to)\b/.test(lastChunk)) return true
-  return false
 }
 
 function queueTaskAutonomyObservation(input: {
@@ -663,128 +648,6 @@ function queueTaskAutonomyObservation(input: {
   })
 }
 
-async function executeTaskRun(
-  task: BoardTask,
-  agent: Agent,
-  sessionId: string,
-): Promise<ExecuteChatTurnResult> {
-  if (agent.autoRecovery) {
-    const cwd = task.projectId
-      ? path.join(WORKSPACE_DIR, 'projects', task.projectId)
-      : WORKSPACE_DIR
-    captureGuardianCheckpoint(cwd, `task:${task.id}`)
-  }
-  const settings = loadSettings()
-  const basePrompt = task.description || task.title
-  const prompt = [
-    basePrompt,
-    '',
-    'Completion requirements:',
-    '- Execute the task before replying; do not reply with only a plan.',
-    '- Include concrete evidence in your final summary: changed file paths, commands run, and verification results.',
-    '- If blocked, state the blocker explicitly and what input or permission is missing.',
-  ].join('\n')
-  // All agents go through the unified chat execution path.
-  // Agents with delegation enabled get delegation tools automatically via session-tools.
-  let latestRun: ExecuteChatTurnResult = await executeSessionChatTurn({
-    sessionId,
-    message: prompt,
-    internal: false,
-    source: 'task',
-    runId: task.id,
-  })
-  let text = typeof latestRun.text === 'string' ? latestRun.text.trim() : ''
-  let previousSummary: string | null = null
-  let totalInputTokens = latestRun.inputTokens || 0
-  let totalOutputTokens = latestRun.outputTokens || 0
-  let totalEstimatedCost = Number(latestRun.estimatedCost || 0)
-  if (latestRun.error) {
-    return {
-      ...latestRun,
-      text,
-    }
-  }
-
-  const maxSupervisorFollowups = 2
-  for (let followupIndex = 0; followupIndex < maxSupervisorFollowups; followupIndex += 1) {
-    const sessions = loadSessions()
-    const session = sessions[sessionId] as unknown as Session | undefined
-    const assessment = assessAutonomyRun({
-      runId: `${task.id}:attempt-${(task.attempts || 0) + 1}:step-${followupIndex + 1}`,
-      sessionId,
-      taskId: task.id,
-      agentId: agent.id,
-      source: 'task',
-      status: latestRun.error ? 'failed' : 'completed',
-      resultText: text,
-      error: latestRun.error,
-      toolEvents: latestRun.toolEvents,
-      mainLoopState: {
-        followupChainCount: followupIndex + 1,
-        summary: previousSummary,
-        missionCostUsd: totalEstimatedCost,
-      },
-      session: session || null,
-      settings,
-    })
-    if (assessment.shouldBlock) break
-    if (assessment.autoActions?.length) {
-      const { executeSupervisorAutoActions } = await import('@/lib/server/autonomy/supervisor-reflection')
-      const result = await executeSupervisorAutoActions({
-        actions: assessment.autoActions,
-        sessionId,
-        agentId: agent?.id,
-      })
-      if (result.blocked) break
-    }
-    const followupMessage = assessment.interventionPrompt
-      || (text && looksIncomplete(text)
-        ? 'Continue and complete the remaining steps. Provide a final summary when done.'
-        : null)
-    if (!followupMessage) break
-
-    // Budget check before follow-up
-    const typedAgentForBudget = agent as Agent
-    if (typedAgentForBudget.monthlyBudget || typedAgentForBudget.dailyBudget || typedAgentForBudget.hourlyBudget) {
-      try {
-        const followupBudget = checkAgentBudgetLimits(typedAgentForBudget)
-        if (!followupBudget.ok) {
-          log.warn(TAG, `[queue] Budget exceeded for "${typedAgentForBudget.name}" during follow-up, stopping.`)
-          break
-        }
-      } catch {}
-    }
-
-    previousSummary = text || previousSummary
-    const followUp = await executeSessionChatTurn({
-      sessionId,
-      message: followupMessage,
-      internal: false,
-      source: 'task',
-    })
-    totalInputTokens += followUp.inputTokens || 0
-    totalOutputTokens += followUp.outputTokens || 0
-    totalEstimatedCost += Number(followUp.estimatedCost || 0)
-    text = typeof followUp.text === 'string' ? followUp.text.trim() : ''
-    latestRun = {
-      ...followUp,
-      text,
-      inputTokens: totalInputTokens,
-      outputTokens: totalOutputTokens,
-      estimatedCost: totalEstimatedCost,
-    }
-    if (latestRun.error) break
-  }
-
-  return {
-    ...latestRun,
-    text,
-    inputTokens: totalInputTokens,
-    outputTokens: totalOutputTokens,
-    estimatedCost: totalEstimatedCost,
-  }
-}
-
 function hasFinishedExecutionSession(session: SessionLike | Session | null | undefined): boolean {
   if (!session) return false
   return session.active === false && !session.currentRunId
@@ -810,7 +673,7 @@ export function reconcileFinishedRunningTasks(): { reconciled: number; deadLette
     const session = sessions[sessionId]
     if (!hasFinishedExecutionSession(session)) continue
 
-    const fallbackText = latestAssistantText(session)
+    const fallbackText = latestAssistantText(sessionId)
     if (!fallbackText && !task.result) {
       task.status = 'failed'
       task.result = 'Agent session finished without producing output.'
@@ -821,7 +684,7 @@ export function reconcileFinishedRunningTasks(): { reconciled: number; deadLette
 
     applyTaskPolicyDefaults(task)
     const taskResult = extractTaskResult(
-      session,
+      getMessages(sessionId),
       task.result || fallbackText || null,
       { sinceTime: typeof task.startedAt === 'number' ? task.startedAt : null },
     )
@@ -930,8 +793,7 @@ function pushUserFacingTaskResult(task: BoardTask, sessions: Record<string, Sess
   const taskLink = `[${task.title}](#task:${task.id})`
   const body = buildTaskTerminalMessage(`Task ${delivery.statusLabel}: **${taskLink}**`, task, delivery)
   const now = Date.now()
-  if (!Array.isArray(targetSession.messages)) targetSession.messages = []
-  const lastMsg = targetSession.messages.at(-1)
+  const lastMsg = getLastMessage(targetSessionId)
   if (lastMsg?.role === 'assistant' && lastMsg?.text === body && typeof lastMsg?.time === 'number' && now - lastMsg.time < 30_000) {
     return
   }
@@ -943,9 +805,7 @@ function pushUserFacingTaskResult(task: BoardTask, sessions: Record<string, Sess
     kind: 'system',
   }
   if (delivery.firstImage) message.imageUrl = delivery.firstImage.url
-  targetSession.messages.push(message)
-  targetSession.lastActiveAt = now
-  saveSessions(sessions as Record<string, Session>)
+  appendMessage(targetSessionId, message)
   notify(`messages:${targetSessionId}`)
 }
 
@@ -1455,32 +1315,33 @@ export async function processNext() {
       })
 
       // Save initial assistant message so user sees context when opening the session
-      const sessions = loadSessions()
-      if (sessions[sessionId]) {
-        const isDelegation = (task as unknown as Record<string, unknown>).sourceType === 'delegation'
-        let initialText: string
-        if (isDelegation) {
-          const delegatorId = (task as unknown as Record<string, unknown>).delegatedByAgentId as string | undefined
-          const delegator = delegatorId ? agents[delegatorId] : null
-          const prefix = `[delegation-source:${delegatorId || ''}:${delegator?.name || 'Agent'}:${delegator?.avatarSeed || ''}]`
-          initialText = `${prefix}\nDelegated by **${delegator?.name || 'another agent'}** | [${task.title}](#task:${task.id})\n\n${task.description || ''}\n\nWorking directory: \`${taskCwd}\`${buildTaskContinuationNote(Boolean(reusedExistingSession), resumeContext)}\n\nI'll begin working on this now.`
-        } else {
-          initialText = `Starting task: **${task.title}**\n\n${task.description || ''}\n\nWorking directory: \`${taskCwd}\`${buildTaskContinuationNote(Boolean(reusedExistingSession), resumeContext)}\n\nI'll begin working on this now.`
+      {
+        const sessionExists = Boolean(loadSessions()[sessionId])
+        if (sessionExists) {
+          const isDelegation = (task as unknown as Record<string, unknown>).sourceType === 'delegation'
+          let initialText: string
+          if (isDelegation) {
+            const delegatorId = (task as unknown as Record<string, unknown>).delegatedByAgentId as string | undefined
+            const delegator = delegatorId ? agents[delegatorId] : null
+            const prefix = `[delegation-source:${delegatorId || ''}:${delegator?.name || 'Agent'}:${delegator?.avatarSeed || ''}]`
+            initialText = `${prefix}\nDelegated by **${delegator?.name || 'another agent'}** | [${task.title}](#task:${task.id})\n\n${task.description || ''}\n\nWorking directory: \`${taskCwd}\`${buildTaskContinuationNote(Boolean(reusedExistingSession), resumeContext)}\n\nI'll begin working on this now.`
+          } else {
+            initialText = `Starting task: **${task.title}**\n\n${task.description || ''}\n\nWorking directory: \`${taskCwd}\`${buildTaskContinuationNote(Boolean(reusedExistingSession), resumeContext)}\n\nI'll begin working on this now.`
+          }
+          // Inject upstream task results context
+          if (Array.isArray(task.upstreamResults) && task.upstreamResults.length > 0) {
+            const upstreamBlock = task.upstreamResults
+              .map((ur) => `### ${ur.taskTitle}\n${ur.resultPreview || '(no result)'}`)
+              .join('\n\n')
+            initialText += `\n\n## Context from upstream tasks\n\n${upstreamBlock}`
+          }
+          appendMessage(sessionId, {
+            role: 'assistant',
+            text: initialText,
+            time: Date.now(),
+            ...(isDelegation ? { kind: 'system' as const } : {}),
+          })
         }
-        // Inject upstream task results context
-        if (Array.isArray(task.upstreamResults) && task.upstreamResults.length > 0) {
-          const upstreamBlock = task.upstreamResults
-            .map((ur) => `### ${ur.taskTitle}\n${ur.resultPreview || '(no result)'}`)
-            .join('\n\n')
-          initialText += `\n\n## Context from upstream tasks\n\n${upstreamBlock}`
-        }
-        sessions[sessionId].messages.push({
-          role: 'assistant',
-          text: initialText,
-          time: Date.now(),
-          ...(isDelegation ? { kind: 'system' as const } : {}),
-        })
-        saveSessions(sessions)
       }
 
       log.info(TAG, `[queue] Running task "${task.title}" (${taskId}) with ${agent.name}`)
@@ -1488,7 +1349,14 @@ export async function processNext() {
       try {
         const taskRunId = `${taskId}:attempt-${(task.attempts || 0) + 1}`
         const endTaskRunPerf = perf.start('queue', 'executeTaskRun', { taskId, agentName: agent.name })
-        const taskRun = await executeTaskRun(task, agent, sessionId)
+        const taskRunHandle = enqueueExecution({
+          kind: 'task_attempt',
+          task,
+          agent,
+          sessionId,
+          executionId: taskRunId,
+        })
+        const taskRun = await taskRunHandle.promise
         endTaskRunPerf()
         // Update lastActivityAt after execution completes (idle timeout tracking)
         {
@@ -1524,9 +1392,8 @@ export async function processNext() {
         if (t2[taskId]) {
           applyTaskPolicyDefaults(t2[taskId])
           // Structured extraction: Zod-validated result with typed artifacts
-          const runSessions = loadSessions()
           const taskResult = extractTaskResult(
-            runSessions[sessionId],
+            getMessages(sessionId),
             result || null,
             { sinceTime: typeof t2[taskId].startedAt === 'number' ? t2[taskId].startedAt : null },
           )
@@ -1723,13 +1590,17 @@ export async function processNext() {
               t2[taskId].repairRunId = repairRunId
               t2[taskId].lastRepairAttemptAt = Date.now()
               saveTasks(t2)
-              await executeSessionChatTurn({
-                sessionId: t2[taskId].sessionId!,
-                message: `[AUTO-REPAIR] ${failureClassification.repairPrompt}\n\nOriginal error: ${errMsg.slice(0, 300)}`,
-                internal: true,
-                source: 'task-repair',
-                runId: repairRunId,
-              })
+              await enqueueExecution({
+                kind: 'session_turn',
+                input: {
+                  sessionId: t2[taskId].sessionId!,
+                  message: `[AUTO-REPAIR] ${failureClassification.repairPrompt}\n\nOriginal error: ${errMsg.slice(0, 300)}`,
+                  internal: true,
+                  source: 'task-repair',
+                  mode: 'followup',
+                  dedupeKey: repairRunId,
+                },
+              }).promise
               log.info(TAG, `[queue] Repair turn completed for task "${task.title}" (${taskId})`)
             } catch (repairErr: unknown) {
               log.warn(TAG, `[queue] Repair turn failed for task "${task.title}":`, repairErr instanceof Error ? repairErr.message : String(repairErr))

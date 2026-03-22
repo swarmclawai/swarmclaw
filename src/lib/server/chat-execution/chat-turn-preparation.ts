@@ -9,6 +9,7 @@ import {
 } from '@/lib/server/credentials/credential-repository'
 import { getAgent } from '@/lib/server/agents/agent-repository'
 import { getSession, saveSession } from '@/lib/server/sessions/session-repository'
+import { getMessages, getMessageCount, appendMessage } from '@/lib/server/messages/message-repository'
 import { loadSettings } from '@/lib/server/settings/settings-repository'
 import { loadSkills } from '@/lib/server/skills/skill-repository'
 import { resolveImagePath } from '@/lib/server/resolve-image'
@@ -500,9 +501,8 @@ export async function prepareChatTurn(input: ExecuteChatTurnInput): Promise<Prep
 
   const session = getSession(sessionId)
   if (!session) throw new Error(`Session not found: ${sessionId}`)
-  session.messages = Array.isArray(session.messages) ? session.messages : []
   const runStartedAt = Date.now()
-  const runMessageStartIndex = session.messages.length
+  const runMessageStartIndex = getMessageCount(sessionId)
 
   const appSettings = loadSettings()
   const lifecycleRunId = runId || `${sessionId}:${runStartedAt}`
@@ -550,7 +550,7 @@ export async function prepareChatTurn(input: ExecuteChatTurnInput): Promise<Prep
         {
           sessionId: session.id,
           session,
-          messageCount: Array.isArray(session.messages) ? session.messages.length : 0,
+          messageCount: getMessageCount(sessionId),
           durationMs: Date.now() - (session.createdAt || runStartedAt),
           reason: freshness.reason || 'session_reset',
         },
@@ -728,7 +728,7 @@ export async function prepareChatTurn(input: ExecuteChatTurnInput): Promise<Prep
         sessionId,
         agentId: session.agentId || null,
         message,
-        history: session.messages,
+        history: getMessages(sessionId),
       })
         .then((classification) => toMessageSemanticsSummary(classification))
         .catch(() => undefined),
@@ -756,7 +756,7 @@ export async function prepareChatTurn(input: ExecuteChatTurnInput): Promise<Prep
       runId: lifecycleRunId,
     })
     if (nextUserMessage) {
-      session.messages.push(nextUserMessage)
+      appendMessage(sessionId, nextUserMessage)
       if (linkAnalysis.length > 0) {
         const linkAnalysisMessage = await applyMessageLifecycleHooks({
           session,
@@ -772,7 +772,7 @@ export async function prepareChatTurn(input: ExecuteChatTurnInput): Promise<Prep
           isSynthetic: true,
         })
         if (linkAnalysisMessage) {
-          session.messages.push(linkAnalysisMessage)
+          appendMessage(sessionId, linkAnalysisMessage)
         }
       }
       session.lastActiveAt = Date.now()

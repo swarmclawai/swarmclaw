@@ -18,6 +18,7 @@ import type {
   SessionQueuedTurn,
   SessionRunRecord,
 } from '@/types'
+import { getMessages } from '@/lib/server/messages/message-repository'
 import { loadApprovals } from '@/lib/server/approvals/approval-repository'
 import { loadDelegationJob } from '@/lib/server/agents/delegation-job-repository'
 import { logActivity } from '@/lib/server/activity/activity-log'
@@ -1569,7 +1570,7 @@ export async function resolveMissionForTurn(params: {
       sessionId: params.session.id,
       agentId: params.session.agentId || null,
       message: params.message,
-      recentMessages: Array.isArray(params.session.messages) ? params.session.messages : [],
+      recentMessages: getMessages(params.session.id),
       currentMission: currentMission ? buildMissionSummary(currentMission) : null,
       session: params.session,
     }, params.generateText ? { generateText: params.generateText } : undefined)
