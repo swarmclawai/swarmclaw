@@ -278,7 +278,7 @@ export function TaskSheet() {
   const handleAddComment = async () => {
     if (!editing || !commentText.trim()) return
     const c: TaskComment = {
-      id: crypto.randomUUID().slice(0, 8),
+      id: Math.random().toString(36).slice(2, 10),
       author: 'You',
       text: commentText.trim(),
       createdAt: Date.now(),

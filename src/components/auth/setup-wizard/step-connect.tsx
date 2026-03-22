@@ -216,7 +216,7 @@ export function StepConnect({
       }
 
       const configured: ConfiguredProvider = {
-        id: crypto.randomUUID(),
+        id: Math.random().toString(16).slice(2, 10),
         setupProvider: provider,
         provider: resolvedProvider,
         name: providerLabel.trim() || selectedProvider.name,

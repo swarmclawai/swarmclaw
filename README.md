@@ -190,6 +190,16 @@ The building blocks are the same: **agents, tools, memory, delegation, schedules
 
 ## Release Notes
 
+### v1.2.5 Highlights
+
+- **Working memory hierarchy**: agents maintain structured working state (facts, plans, decisions, blockers, evidence) that persists across turns and survives context compaction.
+- **Execution brief**: each chat turn receives a concise briefing document synthesized from working state for faster, more focused agent reasoning.
+- **RunContext**: persistent structured context tracks session lineage, delegation chain, and accumulated working memory across run lifecycle.
+- **Unified message flow**: consolidated message handling and execution routing into a single coherent pipeline.
+- **Delegation advisory**: new advisory layer for structured capability analysis during delegation decisions.
+- **Bug fix — setup wizard crash**: replaced client-side `crypto.randomUUID()` with browser-safe alternative, fixing fresh-install failures with Ollama and other providers.
+- **Bug fix — custom provider validation**: connection-test endpoint now recognizes custom providers from storage instead of rejecting them as "Unsupported provider."
+
 ### v1.2.4 Highlights
 
 - **Custom providers in agent config**: agent setup and inline model switching now merge saved custom provider configs into the selectable provider list, so custom providers show up reliably even when the built-in provider feed is stale or incomplete.

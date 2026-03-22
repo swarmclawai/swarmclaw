@@ -361,7 +361,7 @@ export function StepAgents({
                     />
                     <button
                       type="button"
-                      onClick={() => onUpdateDraft(draft.id, { avatarSeed: crypto.randomUUID().slice(0, 8), avatarUrl: null })}
+                      onClick={() => onUpdateDraft(draft.id, { avatarSeed: Math.random().toString(36).slice(2, 10), avatarUrl: null })}
                       className="inline-flex items-center gap-1.5 px-3 py-2 rounded-[10px] border border-white/[0.08] bg-transparent text-text-3 text-[12px] font-600 cursor-pointer transition-all hover:bg-white/[0.04] hover:text-text-2 active:scale-95 shrink-0"
                       title="Shuffle avatar"
                     >

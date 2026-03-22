@@ -119,7 +119,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
     if (!editingProviderId && draftAgents.length === 0) {
       const cp = configured
       setDraftAgents([{
-        id: `auto:${crypto.randomUUID().slice(0, 8)}`,
+        id: `auto:${Math.random().toString(36).slice(2, 10)}`,
         templateId: 'auto',
         name: 'Assistant',
         description: 'A helpful assistant.',
@@ -140,7 +140,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
         autoDraftSkillSuggestions: true,
         orchestratorEnabled: false,
         orchestratorMission: '',
-        avatarSeed: crypto.randomUUID().slice(0, 8),
+        avatarSeed: Math.random().toString(36).slice(2, 10),
         avatarUrl: null,
         enabled: true,
       }])
@@ -182,7 +182,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
   const addBlankAgent = () => {
     const defaultProvider = configuredProviders[0] || null
     const newAgent: StarterDraftAgent = {
-      id: `custom:${crypto.randomUUID().slice(0, 8)}`,
+      id: `custom:${Math.random().toString(36).slice(2, 10)}`,
       templateId: 'custom',
       name: `Agent ${draftAgents.length + 1}`,
       description: '',
@@ -203,7 +203,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
       autoDraftSkillSuggestions: true,
       orchestratorEnabled: false,
       orchestratorMission: '',
-      avatarSeed: crypto.randomUUID().slice(0, 8),
+      avatarSeed: Math.random().toString(36).slice(2, 10),
       avatarUrl: null,
       enabled: true,
     }

@@ -326,8 +326,22 @@ export async function POST(req: Request) {
         const result = await checkOpenClaw(apiKey, endpoint)
         return NextResponse.json(result)
       }
-      default:
+      default: {
+        const { loadProviderConfigs } = await import('@/lib/server/storage')
+        const configs = loadProviderConfigs() as Record<string, { name?: string; baseUrl?: string; isEnabled?: boolean }>
+        const custom = configs[provider]
+        if (custom?.baseUrl) {
+          const result = await checkOpenAiCompatible(
+            custom.name || 'Custom Provider',
+            apiKey || '',
+            endpoint || custom.baseUrl,
+            custom.baseUrl,
+            model
+          )
+          return NextResponse.json(result)
+        }
         return NextResponse.json({ ok: false, message: `Unsupported provider: ${provider}` }, { status: 400 })
+      }
     }
   } catch (err: unknown) {
     const message = err instanceof Error && err.name === 'TimeoutError'

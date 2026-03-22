@@ -1,6 +1,6 @@
 {
   "name": "@swarmclawai/swarmclaw",
-  "version": "1.2.4",
+  "version": "1.2.5",
   "description": "Self-hosted AI runtime for OpenClaw, delegation, autonomy, runtime skills, crypto wallets, and chat platform connectors.",
   "license": "MIT",
   "publishConfig": {

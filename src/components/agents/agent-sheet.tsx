@@ -447,7 +447,7 @@ export function AgentSheet() {
         }))
         setOpenclawEnabled(editing.provider === 'openclaw')
         setProjectId(editing.projectId)
-        setAvatarSeed(editing.avatarSeed || crypto.randomUUID().slice(0, 8))
+        setAvatarSeed(editing.avatarSeed || Math.random().toString(36).slice(2, 10))
         setAvatarUrl(editing.avatarUrl || null)
         setThinkingLevel(editing.thinkingLevel || '')
         setMemoryScopeMode(editing.memoryScopeMode || 'auto')
@@ -527,7 +527,7 @@ export function AgentSheet() {
         }))
         setOpenclawEnabled(src.provider === 'openclaw')
         setProjectId(src.projectId)
-        setAvatarSeed(crypto.randomUUID().slice(0, 8))
+        setAvatarSeed(Math.random().toString(36).slice(2, 10))
         setAvatarUrl(null)
         setThinkingLevel(src.thinkingLevel || '')
         setMemoryScopeMode(src.memoryScopeMode || 'auto')
@@ -725,7 +725,7 @@ export function AgentSheet() {
 
   const addRoutingTargetFromCurrent = () => {
     const nextTarget: AgentRoutingTarget = {
-      id: crypto.randomUUID(),
+      id: Math.random().toString(16).slice(2, 10),
       label: routingTargets.length === 0 ? 'Primary route' : `Route ${routingTargets.length + 1}`,
       role: routingTargets.length === 0 ? 'primary' : 'backup',
       provider,
@@ -1165,7 +1165,7 @@ export function AgentSheet() {
                   type="button"
                   onClick={() => {
                     setAvatarUrl(null)
-                    if (!avatarSeed) setAvatarSeed(crypto.randomUUID().slice(0, 8))
+                    if (!avatarSeed) setAvatarSeed(Math.random().toString(36).slice(2, 10))
                   }}
                   className="text-[11px] text-text-3 hover:text-red-400 transition-colors self-start cursor-pointer"
                 >
@@ -1186,7 +1186,7 @@ export function AgentSheet() {
             />
             <button
               type="button"
-              onClick={() => { setAvatarSeed(crypto.randomUUID().slice(0, 8)); setAvatarUrl(null) }}
+              onClick={() => { setAvatarSeed(Math.random().toString(36).slice(2, 10)); setAvatarUrl(null) }}
               className="inline-flex items-center gap-1.5 px-3 py-2 rounded-[10px] border border-white/[0.08] bg-transparent text-text-3 text-[12px] font-600 cursor-pointer transition-all hover:bg-white/[0.04] hover:text-text-2 active:scale-95 shrink-0"
               style={{ fontFamily: 'inherit' }}
               title="Shuffle avatar"
