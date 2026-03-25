@@ -169,7 +169,8 @@ export function buildDockerExecArgs(params: {
 
 export function getShellCommand(command: string, processId?: string, sandbox?: SandboxOptions): { shell: string; args: string[]; containerName?: string } {
   if (!sandbox) {
-    return { shell: '/bin/zsh', args: ['-lc', command] }
+    const shell = process.env.SHELL || '/bin/bash'
+    return { shell, args: ['-lc', command] }
   }
 
   if (sandbox.kind === 'persistent') {
