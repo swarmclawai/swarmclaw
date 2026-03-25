@@ -12,6 +12,9 @@ import {
   type ProcessStatus,
 } from '@/lib/server/runtime/process-manager'
 import { normalizeOpenClawEndpoint, deriveOpenClawWsUrl } from '@/lib/openclaw/openclaw-endpoint'
+import { createCredentialRecord } from '@/lib/server/credentials/credential-service'
+import { createGatewayProfile } from '@/lib/server/gateways/gateway-profile-service'
+import { loadGatewayProfiles } from '@/lib/server/gateways/gateway-profile-repository'
 import { probeOpenClawHealth, type OpenClawHealthResult } from './health'
 import { DATA_DIR } from '../data-dir'
 
@@ -1046,7 +1049,7 @@ export async function startOpenClawLocalDeploy(input?: {
   port?: number
   token?: string | null
   makePrimary?: boolean
-}): Promise<{ local: OpenClawLocalDeployStatus; locals: OpenClawLocalDeployStatus[]; token: string }> {
+}): Promise<{ local: OpenClawLocalDeployStatus; locals: OpenClawLocalDeployStatus[]; token: string; gatewayProfileId: string | null }> {
   const state = getRuntimeState()
   const port = sanitizeLocalPort(input?.port, DEFAULT_LOCAL_PORT)
   const requestedLocalId = typeof input?.localId === 'string' && input.localId.trim()
@@ -1145,11 +1148,38 @@ export async function startOpenClawLocalDeploy(input?: {
 
   await waitForLocalRuntime(result.processId)
 
+  // Auto-provision gateway profile so agents can connect immediately
+  const existingGateways = loadGatewayProfiles()
+  const existingProfile = Object.values(existingGateways).find(
+    (gw) => gw && gw.endpoint === endpoint,
+  )
+  let gatewayProfileId: string | null = null
+
+  if (existingProfile) {
+    gatewayProfileId = existingProfile.id
+  } else {
+    const deployName = current.name || 'Local OpenClaw'
+    const cred = createCredentialRecord({
+      provider: 'openclaw',
+      name: `${deployName} token`,
+      apiKey: token,
+    })
+    const profile = createGatewayProfile({
+      name: deployName,
+      endpoint,
+      credentialId: cred.id,
+      isDefault: Object.keys(existingGateways).length === 0,
+      deployment: { method: 'local', port, localId },
+    })
+    gatewayProfileId = profile.id
+  }
+
   const local = getOpenClawLocalDeployStatus(localId)
   return {
     local,
     locals: getOpenClawLocalDeployStatuses(),
     token,
+    gatewayProfileId,
   }
 }
 
@@ -1190,7 +1220,7 @@ export async function restartOpenClawLocalDeploy(input?: {
   port?: number
   token?: string | null
   makePrimary?: boolean
-}): Promise<{ local: OpenClawLocalDeployStatus; locals: OpenClawLocalDeployStatus[]; token: string }> {
+}): Promise<{ local: OpenClawLocalDeployStatus; locals: OpenClawLocalDeployStatus[]; token: string; gatewayProfileId: string | null }> {
   const state = getRuntimeState()
   const current = findLocalRuntimeState(state, {
     localId: input?.localId ?? null,
