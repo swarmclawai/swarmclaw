@@ -247,9 +247,12 @@ export async function startManagedProcess(opts: StartProcessOptions): Promise<St
   state.records.set(id, record)
 
   const { shell, args } = getShellCommand(opts.command, id, opts.sandbox)
-  // Strip SwarmClaw-specific env vars so agent child processes don't inherit
-  // our port binding or internal keys (e.g. npm dev servers defaulting to :3456)
-  const stripKeys = new Set(['PORT', 'ACCESS_KEY', 'NEXTAUTH_SECRET'])
+  // Strip env vars that should not leak into child processes:
+  // - PORT, ACCESS_KEY, NEXTAUTH_SECRET: SwarmClaw-specific bindings
+  // - npm_config_prefix: injected by npm when running scripts; conflicts with nvm
+  //   in login shell subprocesses (nvm refuses to initialize when this is set,
+  //   breaking node PATH resolution for all nvm users)
+  const stripKeys = new Set(['PORT', 'ACCESS_KEY', 'NEXTAUTH_SECRET', 'npm_config_prefix'])
   const cleanEnv = Object.fromEntries(Object.entries(process.env).filter(([k]) => !stripKeys.has(k))) as NodeJS.ProcessEnv
   const child = spawn(shell, args, {
     cwd: opts.sandbox ? undefined : opts.cwd,
