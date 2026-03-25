@@ -42,7 +42,7 @@ function commandExists(binary: string): boolean {
   pruneTTLCache(cliCheckCache, CLI_CHECK_TTL_MS, CLI_CHECK_CACHE_MAX)
   const probe = isWindows
     ? spawnSync('where', [binary], { timeout: 2000, stdio: 'pipe' })
-    : spawnSync('/bin/zsh', ['-lc', `command -v ${binary} >/dev/null 2>&1`], { timeout: 2000 })
+    : spawnSync(process.env.SHELL || '/bin/bash', ['-lc', `command -v ${binary} >/dev/null 2>&1`], { timeout: 2000 })
   const ok = (probe.status ?? 1) === 0
   cliCheckCache.set(binary, { at: now, ok })
   return ok

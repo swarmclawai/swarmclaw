@@ -190,7 +190,7 @@ export function findBinaryOnPath(binaryName: string): string | null {
   const { spawnSync } = require('child_process')
   const probe = isWindows
     ? spawnSync('where', [binaryName], { encoding: 'utf-8', timeout: 2000, stdio: 'pipe' })
-    : spawnSync('/bin/zsh', ['-lc', `command -v ${binaryName} 2>/dev/null`], { encoding: 'utf-8', timeout: 2000 })
+    : spawnSync(process.env.SHELL || '/bin/bash', ['-lc', `command -v ${binaryName} 2>/dev/null`], { encoding: 'utf-8', timeout: 2000 })
   const resolved = (probe.stdout || '').trim() || null
   binaryLookupCache.set(binaryName, { checkedAt: now, path: resolved })
   return resolved
