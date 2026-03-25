@@ -118,11 +118,14 @@ export function GatewaySheet() {
     setInvokeParamsText('{}')
   }, [open, editing, gatewayProfiles.length])
 
+  const refreshRef = useRef(refreshGatewayTopologyMutation)
+  refreshRef.current = refreshGatewayTopologyMutation
+
   const loadNodesAndDevices = useCallback(async (profileId: string) => {
     setNodesLoading(true)
     setNodesError('')
     try {
-      const result = await refreshGatewayTopologyMutation.mutateAsync(profileId)
+      const result = await refreshRef.current.mutateAsync(profileId)
       setNodes(result.nodes)
       setNodePairings(result.nodePairings)
       setDevicePairings(result.devicePairings)
@@ -136,7 +139,7 @@ export function GatewaySheet() {
     } finally {
       setNodesLoading(false)
     }
-  }, [refreshGatewayTopologyMutation])
+  }, [])
 
   useEffect(() => {
     if (!open || !editing?.id) return
