@@ -4,6 +4,7 @@ import { genId } from '@/lib/id'
 import { normalizeOpenClawEndpoint } from '@/lib/openclaw/openclaw-endpoint'
 import { listAgents, saveAgentMany } from '@/lib/server/agents/agent-repository'
 import { getGatewayProfiles } from '@/lib/server/agents/agent-runtime-config'
+import { deleteCredentialRecord } from '@/lib/server/credentials/credential-service'
 import {
   loadGatewayProfile,
   loadGatewayProfiles,
@@ -161,7 +162,9 @@ export function updateGatewayProfile(id: string, input: Record<string, unknown>)
 
 export function deleteGatewayProfileAndDetachAgents(id: string): boolean {
   const gateways = loadGatewayProfiles()
-  if (!gateways[id]) return false
+  const deleted = gateways[id]
+  if (!deleted) return false
+  const orphanCredentialId = deleted.credentialId || null
   delete gateways[id]
   saveGatewayProfiles(gateways)
 
@@ -195,6 +198,21 @@ export function deleteGatewayProfileAndDetachAgents(id: string): boolean {
   }
 
   if (changed.length > 0) saveAgentMany(changed)
+
+  // Clean up orphaned credential if no other gateway or agent references it
+  if (orphanCredentialId) {
+    const stillReferencedByGateway = Object.values(gateways).some(
+      (gw) => gw && gw.credentialId === orphanCredentialId,
+    )
+    const stillReferencedByAgent = !stillReferencedByGateway && Object.values(agents).some(
+      (a) => a.credentialId === orphanCredentialId
+        || (Array.isArray(a.fallbackCredentialIds) && a.fallbackCredentialIds.includes(orphanCredentialId)),
+    )
+    if (!stillReferencedByGateway && !stillReferencedByAgent) {
+      deleteCredentialRecord(orphanCredentialId)
+    }
+  }
+
   notify('gateways')
   return true
 }

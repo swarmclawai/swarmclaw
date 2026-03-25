@@ -129,6 +129,7 @@ export async function POST(req: Request) {
         locals: result.locals,
         localPrimaryId: result.locals.find((item) => item.isPrimary)?.id || result.local.id,
         token: result.token,
+        gatewayProfileId: result.gatewayProfileId,
       })
     }
 
@@ -156,6 +157,7 @@ export async function POST(req: Request) {
         locals: result.locals,
         localPrimaryId: result.locals.find((item) => item.isPrimary)?.id || result.local.id,
         token: result.token,
+        gatewayProfileId: result.gatewayProfileId,
       })
     }
 

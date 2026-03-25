@@ -190,6 +190,15 @@ The building blocks are the same: **agents, tools, memory, delegation, schedules
 
 ## Release Notes
 
+### v1.2.8 Highlights
+
+- **Linux/WSL compatibility**: subprocess spawning now uses `$SHELL` instead of hardcoded `/bin/zsh`, fixing `ENOENT` errors on Linux and WSL systems.
+- **nvm compatibility**: stripped `npm_config_prefix` from subprocess environment, fixing node PATH resolution for nvm users.
+- **Dev-mode daemon fix**: prevented duplicate daemon spawn failure when daemon runs in-process during development.
+- **Gateway sheet stability**: fixed infinite render loop when opening a gateway profile with a disconnected gateway.
+- **Auto-provision gateway on deploy**: "Deploy on this host" now automatically creates a gateway profile and credential, so agents can connect immediately without a manual save step.
+- **Credential cleanup on gateway delete**: deleting a gateway profile now cleans up its associated credential when no other gateway or agent references it.
+
 ### v1.2.7 Highlights
 
 - **Tool primitives**: consolidated 50+ narrow tools into 6 action-based primitives — `execute`, `files`, `memory`, `platform`, `skills`, and `credential-env` — with skill teach files so agents learn usage patterns on demand.
