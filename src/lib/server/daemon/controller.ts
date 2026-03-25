@@ -25,6 +25,7 @@ import type {
 } from '@/lib/server/daemon/types'
 import { DATA_DIR } from '@/lib/server/data-dir'
 import { loadEstopState } from '@/lib/server/runtime/estop'
+import { getDaemonStatus } from '@/lib/server/runtime/daemon-state/core'
 import { daemonAutostartEnvEnabled } from '@/lib/server/runtime/daemon-policy'
 import {
   releaseRuntimeLock,
@@ -344,6 +345,12 @@ export async function ensureDaemonProcessRunning(
   source: string,
   opts?: { manualStart?: boolean },
 ): Promise<boolean> {
+  // In dev mode, the daemon may already be running in-process (same Next.js server)
+  // without a daemon-admin.json file. Check in-process state first to avoid spawning
+  // a subprocess that fails to acquire the already-held lease.
+  const inProcessStatus = getDaemonStatus()
+  if (inProcessStatus.running) return false
+
   const manualStart = opts?.manualStart === true
   const record = loadDaemonStatusRecord()
   if (loadEstopState().level !== 'none') return false
