@@ -32,7 +32,6 @@ export const MessageClassificationSchema = z.object({
   isDeliverableTask: z.boolean(),
   isBroadGoal: z.boolean(),
   isLightweightDirectChat: z.boolean().optional().default(false),
-  walletIntent: z.enum(['none', 'read_only', 'transactional']),
   hasHumanSignals: z.boolean(),
   hasSignificantEvent: z.boolean(),
   isResearchSynthesis: z.boolean(),
@@ -49,7 +48,6 @@ export interface MessageClassification {
   isDeliverableTask: boolean
   isBroadGoal: boolean
   isLightweightDirectChat?: boolean
-  walletIntent: 'none' | 'read_only' | 'transactional'
   hasHumanSignals: boolean
   hasSignificantEvent: boolean
   isResearchSynthesis: boolean
@@ -105,7 +103,6 @@ function buildClassificationPrompt(message: string, recentHistory: string): stri
     '- isDeliverableTask (bool): The user wants a concrete artifact produced — a document, report, plan, proposal, landing page, dashboard, HTML file, markdown file, brief, copy, screenshots, or similar deliverable. NOT simple Q&A, code fixes, or single-command tasks.',
     '- isBroadGoal (bool): The message describes a broad, multi-step goal (50+ chars, no code blocks, no file paths, no numbered lists). Short questions ending with "?" are NOT broad goals.',
     '- isLightweightDirectChat (bool): This is a low-signal direct chat turn that should get a natural lightweight reply, such as a greeting, acknowledgment, check-in, or simple social/direct question that does NOT require research, file work, planning, delegation, or tool execution.',
-    '- walletIntent: "none" if no crypto/wallet/trading context. "read_only" if mentioning wallet/crypto but only for checking balances, viewing transactions, or research. "transactional" if the user wants to swap, trade, buy, sell, mint, claim, deposit, withdraw, bridge, or execute a transaction.',
     '- hasHumanSignals (bool): The message contains personal signals — preferences ("I prefer", "call me"), relationships ("my wife", "my partner", "my kid"), life events ("birthday", "wedding", "promotion", "moving", "graduation", "hospital"), or personal disclosures.',
     '- hasSignificantEvent (bool): The message mentions a notable life/work event or milestone (birthday, anniversary, wedding, graduation, promotion, new job, relocation, illness, funeral, travel, house, deadline, launch).',
     '- isResearchSynthesis (bool): The task requires gathering information from multiple sources and synthesizing it — research reports, competitive analysis, market overviews, literature reviews, multi-source comparisons. NOT simple factual lookups.',
@@ -120,12 +117,11 @@ function buildClassificationPrompt(message: string, recentHistory: string): stri
     '- Be conservative. When unsure, default to false/none/empty.',
     '- Mark isLightweightDirectChat true only when a short natural reply is enough and escalating into planning, delegation, or tool execution would be unnecessary.',
     '- A message can be both a deliverable task AND a broad goal.',
-    '- "walletIntent" should be "transactional" only if the user wants to execute a state-changing action, not just discuss crypto.',
     '- For "explicitToolRequests", only include tools the user explicitly mentions by name or clear synonym. Do not infer tool needs from the task type.',
     '- Prefer the most execution-relevant taskIntent. Example: "research this and send me a voice note" is "research", not "outreach".',
     '',
     'Output shape:',
-    '{"taskIntent":"coding|research|browsing|outreach|scheduling|general","isDeliverableTask":bool,"isBroadGoal":bool,"isLightweightDirectChat":bool,"walletIntent":"none|read_only|transactional","hasHumanSignals":bool,"hasSignificantEvent":bool,"isResearchSynthesis":bool,"workType":"coding|research|writing|review|operations|general","wantsScreenshots":bool,"wantsOutboundDelivery":bool,"wantsVoiceDelivery":bool,"explicitToolRequests":[],"confidence":0.0-1.0}',
+    '{"taskIntent":"coding|research|browsing|outreach|scheduling|general","isDeliverableTask":bool,"isBroadGoal":bool,"isLightweightDirectChat":bool,"hasHumanSignals":bool,"hasSignificantEvent":bool,"isResearchSynthesis":bool,"workType":"coding|research|writing|review|operations|general","wantsScreenshots":bool,"wantsOutboundDelivery":bool,"wantsVoiceDelivery":bool,"explicitToolRequests":[],"confidence":0.0-1.0}',
     '',
     recentHistory ? `Recent context:\n${recentHistory}\n` : '',
     `User message: ${JSON.stringify(message)}`,
@@ -276,7 +272,6 @@ export function toMessageSemanticsSummary(classification: MessageClassification 
   return {
     taskIntent: classification.taskIntent,
     workType: classification.workType || 'general',
-    walletIntent: classification.walletIntent,
     isDeliverableTask: classification.isDeliverableTask,
     isBroadGoal: classification.isBroadGoal,
     isResearchSynthesis: classification.isResearchSynthesis,
@@ -303,16 +298,6 @@ export function isDeliverableTask(classification: MessageClassification | null, 
 export function isBroadGoal(classification: MessageClassification | null, message?: string): boolean {
   void message
   return classification?.isBroadGoal === true
-}
-
-export function hasWalletIntent(classification: MessageClassification | null, message?: string): boolean {
-  void message
-  return classification?.walletIntent !== undefined && classification.walletIntent !== 'none'
-}
-
-export function hasTransactionalWalletIntent(classification: MessageClassification | null, message?: string): boolean {
-  void message
-  return classification?.walletIntent === 'transactional'
 }
 
 export function hasHumanSignals(classification: MessageClassification | null, transcript?: string): boolean {

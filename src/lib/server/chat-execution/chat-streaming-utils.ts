@@ -72,22 +72,14 @@ export function getExplicitRequiredToolNames(userMessage: string, enabledExtensi
   return required
 }
 
-export function shouldForceExternalServiceSummary(params: {
+export function shouldForceExternalServiceSummary(_params: {
   userMessage: string
   finalResponse: string
   hasToolCalls: boolean
   toolEventCount: number
   classification?: MessageClassification | null
 }): boolean {
-  const walletDetected = params.classification?.walletIntent !== undefined
-    && params.classification.walletIntent !== 'none'
-  if (!walletDetected) return false
-  if (!params.hasToolCalls || params.toolEventCount === 0) return false
-  const trimmed = params.finalResponse.trim()
-  if (!trimmed) return true
-  if (/\b(blocker|blocked|cannot|can't|requires|need|missing|last reversible step|next step)\b/i.test(trimmed)) return false
-  if (trimmed.length >= 240 && !/(let me|i'll|i will|checking|verify|promising|look into|explore|access their interface)/i.test(trimmed)) return false
-  return /:$/.test(trimmed) || /(let me|i'll|i will|checking|verify|promising|look into|explore|access their interface)/i.test(trimmed) || trimmed.length < 240
+  return false
 }
 
 export type TerminalToolBoundary =
@@ -144,26 +136,6 @@ export function resolveSuccessfulTerminalToolBoundary(params: {
   }
 
   return null
-}
-
-export function getWalletApprovalBoundaryAction(output: string): string | null {
-  if (!output.includes('extension_wallet_')) return null
-  if (/"type":"extension_wallet_transfer_request"/.test(output)) return 'send'
-  const actionMatch = output.match(/"action":"([^"]+)"/)
-  const action = actionMatch?.[1] || ''
-  if (!action) return null
-  const readOnlyActions = new Set([
-    'balance',
-    'address',
-    'transactions',
-    'encode_contract_call',
-    'simulate_transaction',
-  ])
-  return readOnlyActions.has(action) ? null : action
-}
-
-export function isWalletSimulationResult(toolName: string, output: string): boolean {
-  return toolName === 'wallet_tool' && /"status":"simulated"/.test(output)
 }
 
 export function updateStreamedToolEvents(

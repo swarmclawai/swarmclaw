@@ -2,17 +2,15 @@ import { listAgentIncidents } from '@/lib/server/autonomy/supervisor-incident-re
 import { listAgents } from '@/lib/server/agents/agent-repository'
 import { loadChatrooms } from '@/lib/server/chatrooms/chatroom-repository'
 import { loadConnectors } from '@/lib/server/connectors/connector-repository'
-import { loadMission } from '@/lib/server/missions/mission-repository'
 import { loadSchedules } from '@/lib/server/schedules/schedule-repository'
 import { loadTasks } from '@/lib/server/tasks/task-repository'
 import { loadUsage } from '@/lib/server/usage/usage-repository'
 import { listPersistedRuns } from '@/lib/server/runtime/run-ledger'
-import type { BoardTask, Mission, Schedule, SupervisorIncident, SessionRunRecord } from '@/types'
+import type { BoardTask, Schedule, SupervisorIncident, SessionRunRecord } from '@/types'
 
 export interface SituationalAwarenessInput {
   agentId: string
   sessionId: string
-  missionId?: string | null
 }
 
 /** Pre-loaded data passed to the pure formatter. Exported for testing. */
@@ -21,7 +19,6 @@ export interface SituationalAwarenessData {
   schedules: Schedule[]
   failedRuns: SessionRunRecord[]
   incidents: SupervisorIncident[]
-  mission: Mission | null
   now: number
 }
 
@@ -170,33 +167,11 @@ function buildFailuresSection(failures: FailureEntry[], now: number): string | n
   return lines.join('\n')
 }
 
-export function buildGoalAncestrySection(missionId: string | null | undefined): string | null {
-  if (!missionId) return null
-  const chain: string[] = []
-  let currentId: string | null = missionId
-  const visited = new Set<string>()
-  while (currentId && chain.length < 10) {
-    if (visited.has(currentId)) break
-    visited.add(currentId)
-    const mission = loadMission(currentId)
-    if (!mission) break
-    chain.unshift(mission.objective.slice(0, 80))
-    currentId = mission.parentMissionId || null
-  }
-  if (chain.length <= 1) return null
-  return `### Goal Ancestry\n${chain.map((obj, i) => `${'  '.repeat(i)}${i === chain.length - 1 ? '→' : '↓'} ${obj}`).join('\n')}`
-}
-
-function buildMissionSection(mission: Mission | null): string | null {
-  if (!mission) return null
-  if (mission.status === 'completed' || mission.status === 'failed' || mission.status === 'cancelled') return null
-  return `### Current Mission\nObjective: ${mission.objective.slice(0, 100)} | Status: ${mission.status} | Phase: ${mission.phase}`
-}
 
 // --- pure formatter (testable) ---
 
 export function formatSituationalAwareness(data: SituationalAwarenessData): string {
-  const { tasks, schedules, failedRuns, incidents, mission, now } = data
+  const { tasks, schedules, failedRuns, incidents, now } = data
 
   const filteredTasks = tasks
     .filter((t) => ACTIVE_TASK_STATUSES.has(t.status))
@@ -243,13 +218,6 @@ export function formatSituationalAwareness(data: SituationalAwarenessData): stri
   if (schedulesSection && charCount + schedulesSection.length + header.length < MAX_CHARS) {
     sections.push(schedulesSection)
     charCount += schedulesSection.length
-  }
-
-  // Priority 4: Mission
-  const missionSection = buildMissionSection(mission)
-  if (missionSection && charCount + missionSection.length + header.length < MAX_CHARS) {
-    sections.push(missionSection)
-    charCount += missionSection.length
   }
 
   if (sections.length === 0) return ''
@@ -343,7 +311,7 @@ function computeTodaySpend(sinceTs: number): number {
 // --- main builder (loads data, calls formatter) ---
 
 export function buildSituationalAwarenessBlock(input: SituationalAwarenessInput): string {
-  const { agentId, sessionId, missionId } = input
+  const { agentId, sessionId } = input
   const now = Date.now()
 
   const allTasks = loadTasks() as Record<string, BoardTask>
@@ -356,7 +324,5 @@ export function buildSituationalAwarenessBlock(input: SituationalAwarenessInput)
 
   const incidents = listAgentIncidents(agentId)
 
-  const mission = missionId ? loadMission(missionId) : null
-
-  return formatSituationalAwareness({ tasks, schedules, failedRuns, incidents, mission, now })
+  return formatSituationalAwareness({ tasks, schedules, failedRuns, incidents, now })
 }

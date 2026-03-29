@@ -59,13 +59,6 @@ const COMMAND_GROUPS = {
       pin: { description: 'Toggle pin on a chatroom message', method: 'POST', path: '/chatrooms/:id/pins', params: ['id'] },
     },
   },
-  canvas: {
-    description: 'Session canvas content',
-    commands: {
-      get: { description: 'Get current canvas content for a session', method: 'GET', path: '/canvas/:sessionId', params: ['sessionId'] },
-      set: { description: 'Set/clear canvas content for a session', method: 'POST', path: '/canvas/:sessionId', params: ['sessionId'] },
-    },
-  },
   connectors: {
     description: 'Manage chat connectors',
     commands: {
@@ -214,15 +207,7 @@ const COMMAND_GROUPS = {
       clear: { description: 'Clear log file', method: 'DELETE', path: '/logs' },
     },
   },
-  missions: {
-    description: 'Inspect and control durable missions',
-    commands: {
-      list: { description: 'List missions (supports --query status=,phase=,source=,sessionId=,agentId=,projectId=)', method: 'GET', path: '/missions' },
-      get: { description: 'Get mission detail by id', method: 'GET', path: '/missions/:id', params: ['id'] },
-      events: { description: 'Get mission event timeline', method: 'GET', path: '/missions/:id/events', params: ['id'] },
-      action: { description: 'Run a mission control action (resume, replan, retry_verification, wait, cancel)', method: 'POST', path: '/missions/:id/actions', params: ['id'] },
-    },
-  },
+
   memory: {
     description: 'Agent memory entries',
     commands: {
@@ -526,24 +511,28 @@ const COMMAND_GROUPS = {
       events: { description: 'Get run event history by run id', method: 'GET', path: '/runs/:id/events', params: ['id'] },
     },
   },
-  wallets: {
-    description: 'Agent wallet operations',
-    commands: {
-      list: { description: 'List wallets', method: 'GET', path: '/wallets' },
-      get: { description: 'Get wallet by id', method: 'GET', path: '/wallets/:id', params: ['id'] },
-      create: { description: 'Create wallet', method: 'POST', path: '/wallets' },
-      update: { description: 'Update wallet settings', method: 'PATCH', path: '/wallets/:id', params: ['id'] },
-      delete: { description: 'Delete wallet', method: 'DELETE', path: '/wallets/:id', params: ['id'] },
-      send: { description: 'Send funds from wallet', method: 'POST', path: '/wallets/:id/send', params: ['id'] },
-      approve: { description: 'Approve or deny pending wallet transaction', method: 'POST', path: '/wallets/:id/approve', params: ['id'] },
-      transactions: { description: 'List wallet transactions', method: 'GET', path: '/wallets/:id/transactions', params: ['id'] },
-      'balance-history': { description: 'Get wallet balance history', method: 'GET', path: '/wallets/:id/balance-history', params: ['id'] },
-    },
-  },
   webhooks: {
     description: 'Inbound webhook triggers',
     commands: {
       trigger: { description: 'Trigger webhook by id', method: 'POST', path: '/webhooks/:id', params: ['id'], waitable: true },
+    },
+  },
+  portability: {
+    description: 'Export and import agent configurations',
+    commands: {
+      export: { description: 'Export agents, skills, and schedules as a portable JSON manifest', method: 'GET', path: '/portability/export' },
+      import: { description: 'Import a portable JSON manifest', method: 'POST', path: '/portability/import', body: true },
+    },
+  },
+  wallets: {
+    description: 'Manage agent wallets',
+    commands: {
+      list: { description: 'List wallets', method: 'GET', path: '/wallets' },
+      get: { description: 'Get wallet by id', method: 'GET', path: '/wallets/:id', params: ['id'] },
+      create: { description: 'Create a wallet', method: 'POST', path: '/wallets' },
+      generate: { description: 'Generate a new wallet for an agent', method: 'POST', path: '/wallets/generate', body: true },
+      update: { description: 'Update wallet settings', method: 'PATCH', path: '/wallets/:id', params: ['id'], body: true },
+      delete: { description: 'Delete a wallet', method: 'DELETE', path: '/wallets/:id', params: ['id'] },
     },
   },
 }

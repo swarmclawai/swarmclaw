@@ -23,6 +23,7 @@ import type { ExecuteChatTurnResult } from '@/lib/server/chat-execution/chat-exe
 import { checkAgentBudgetLimits } from '@/lib/server/cost'
 import { enqueueExecution } from '@/lib/server/execution-engine'
 import { extractTaskResult, formatResultBody } from '@/lib/server/tasks/task-result'
+import { checkoutTask } from '@/lib/server/tasks/task-checkout'
 import {
   classifyRuntimeFailure,
   observeAutonomyRunOutcome,
@@ -51,7 +52,6 @@ import {
   markValidatedTaskCompleted,
   refreshTaskCompletionValidation,
 } from '@/lib/server/tasks/task-lifecycle'
-import { noteMissionTaskFinished, noteMissionTaskStarted } from '@/lib/server/missions/mission-service'
 
 const TAG = 'queue'
 
@@ -1210,25 +1210,16 @@ export async function processNext() {
         } catch {}
       }
 
-      const beforeStartTasks = loadTasks() as Record<string, BoardTask>
-      task = beforeStartTasks[taskId] as BoardTask | undefined
-      if (!task || task.status !== 'queued') {
-        return
-      }
-
-      // Mark as running
+      // Atomic checkout — prevents two runners from starting the same task
+      const runId = genId()
+      task = checkoutTask(taskId, runId) as BoardTask | undefined
+      if (!task) return
       applyTaskPolicyDefaults(task)
-      task.status = 'running'
-      task.startedAt = Date.now()
-      task.lastActivityAt = Date.now()
-      task.retryScheduledAt = null
-      task.deadLetteredAt = null
-      // Clear transient failure fields so validation/error state reflects only this attempt.
-      task.error = null
-      task.validation = null
-      task.updatedAt = Date.now()
       logActivity({ entityType: 'task', entityId: taskId, action: 'running', actor: 'system', actorId: task.agentId, summary: `Task started: "${task.title}"` })
 
+      // Reload tasks map for resolution functions and final save (checkoutTask already saved the running status)
+      const allTasks = loadTasks() as Record<string, BoardTask>
+      allTasks[taskId] = task
       const sessionsForCwd = loadSessions() as Record<string, SessionLike>
       const taskCwd = resolveTaskExecutionCwd(task as ScheduleTaskMeta, sessionsForCwd)
       task.cwd = taskCwd
@@ -1238,8 +1229,8 @@ export async function processNext() {
       const sourceScheduleId = typeof scheduleTask.sourceScheduleId === 'string'
         ? scheduleTask.sourceScheduleId
         : ''
-      const reusableTaskSessionId = resolveReusableTaskSessionId(task, beforeStartTasks, sessionsForCwd)
-      const resumeContext = resolveTaskResumeContext(task, beforeStartTasks, sessionsForCwd as Record<string, SessionLike | Session>)
+      const reusableTaskSessionId = resolveReusableTaskSessionId(task, allTasks, sessionsForCwd)
+      const resumeContext = resolveTaskResumeContext(task, allTasks, sessionsForCwd as Record<string, SessionLike | Session>)
 
       // Resolve the agent's persistent thread session to use as parentSessionId
       const agentThreadSessionId = agent.threadSessionId || null
@@ -1307,8 +1298,7 @@ export async function processNext() {
         note: `Attempt ${(task.attempts || 0) + 1}/${task.maxAttempts || '?'} started${continuationBits.length ? ` (${continuationBits.join('; ')})` : ''}`,
         updatedAt: Date.now(),
       }
-      saveTasks(beforeStartTasks)
-      noteMissionTaskStarted(task, task.id)
+      saveTasks(allTasks)
       pushMainLoopEventToMainSessions({
         type: 'task_running',
         text: `Task running: "${task.title}" (${task.id}) with ${agent.name}`,
@@ -1485,13 +1475,6 @@ export async function processNext() {
           disableSessionHeartbeat(t2[taskId].sessionId)
         }
         const doneTask = t2[taskId]
-        if (doneTask?.status === 'completed') {
-          noteMissionTaskFinished(doneTask, 'completed', taskRunId)
-        } else if (doneTask?.status === 'failed') {
-          noteMissionTaskFinished(doneTask, 'failed', taskRunId)
-        } else if (doneTask?.status === 'cancelled') {
-          noteMissionTaskFinished(doneTask, 'cancelled', taskRunId)
-        }
         queueTaskAutonomyObservation({
           runId: taskRunId,
           sessionId,
@@ -1636,11 +1619,6 @@ export async function processNext() {
             })
           }
           saveTasks(t3)
-          if (t3[taskId].status === 'failed') {
-            noteMissionTaskFinished(t3[taskId], 'failed', taskRunId)
-          } else if (t3[taskId].status === 'cancelled') {
-            noteMissionTaskFinished(t3[taskId], 'cancelled', taskRunId)
-          }
           notify('tasks')
           notify('runs')
           disableSessionHeartbeat(t3[taskId].sessionId)

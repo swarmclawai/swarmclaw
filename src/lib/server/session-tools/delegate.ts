@@ -21,7 +21,6 @@ import {
   registerDelegationRuntime,
   startDelegationJob,
 } from '@/lib/server/agents/delegation-jobs'
-import { loadSession } from '@/lib/server/sessions/session-repository'
 import { markProviderFailure, markProviderSuccess } from '../provider-health'
 import { loadRuntimeSettings } from '../runtime/runtime-settings'
 import { getSessionDepth } from '../agents/subagent-runtime'
@@ -463,8 +462,6 @@ async function executeDelegateAction(args: Record<string, unknown>, bctx: Delega
   const jobId = typeof normalized.jobId === 'string' ? normalized.jobId.trim() : ''
   const waitForCompletion = normalized.waitForCompletion !== false && normalized.background !== true
   const parentSessionId = resolveDelegateSessionId(bctx)
-  const parentMissionId = parentSessionId ? loadSession(parentSessionId)?.missionId || null : null
-
   recoverStaleDelegationJobs()
 
   if (action === 'status') {
@@ -505,7 +502,6 @@ async function executeDelegateAction(args: Record<string, unknown>, bctx: Delega
   const job = createDelegationJob({
     kind: 'delegate',
     parentSessionId,
-    parentMissionId,
     backend: requestedBackend,
     task,
     cwd: bctx.cwd || null,

@@ -194,25 +194,9 @@ function getRequestedArtifactStatus(params: {
 // Tool evidence analysis
 // ---------------------------------------------------------------------------
 
-export function hasStateChangingWalletEvidence(toolEvents: MessageToolEvent[]): boolean {
-  return toolEvents.some((event) => {
-    const input = `${event.input || ''}\n${event.output || ''}`
-    return event.name === 'wallet_tool' && (
-      /"action":"send_transaction"/.test(input)
-      || /"action":"send"/.test(input)
-      || /"action":"sign_transaction"/.test(input)
-      || /"type":"extension_wallet_action_request"/.test(input)
-      || /"type":"extension_wallet_transfer_request"/.test(input)
-      || /"status":"broadcast"/.test(input)
-    )
-  })
-}
-
 export function countExternalExecutionResearchSteps(toolEvents: MessageToolEvent[]): number {
   return toolEvents.filter((event) => {
-    if (['http_request', 'web', 'web_search', 'web_fetch', 'browser'].includes(event.name)) return true
-    if (event.name !== 'wallet_tool') return false
-    return /"action":"(balance|address|transactions|call_contract|encode_contract_call)"/.test(event.input || '')
+    return ['http_request', 'web', 'web_search', 'web_fetch', 'browser'].includes(event.name)
   }).length
 }
 
@@ -238,49 +222,24 @@ export function countDistinctExternalResearchHosts(toolEvents: MessageToolEvent[
 // Continuation decision helpers
 // ---------------------------------------------------------------------------
 
-export function shouldForceExternalExecutionFollowthrough(params: {
+export function shouldForceExternalExecutionFollowthrough(_params: {
   userMessage: string
   finalResponse: string
   hasToolCalls: boolean
   toolEvents: MessageToolEvent[]
   classification?: MessageClassification | null
 }): boolean {
-  const isTransactional = params.classification?.walletIntent === 'transactional'
-  if (!isTransactional) return false
-  if (!params.hasToolCalls || params.toolEvents.length < 4) return false
-  if (hasStateChangingWalletEvidence(params.toolEvents)) return false
-  const distinctHosts = countDistinctExternalResearchHosts(params.toolEvents)
-  const trimmed = params.finalResponse.trim()
-  if (!trimmed) return countExternalExecutionResearchSteps(params.toolEvents) >= 4 || distinctHosts >= 3
-  if (/\b(last reversible step|exact blocker|safest next action|blocked|cannot|can't|missing capability|no-key route unavailable)\b/i.test(trimmed)) {
-    return false
-  }
-  if (countExternalExecutionResearchSteps(params.toolEvents) < 4 && distinctHosts < 3) return false
-  return /(let me|i'll|i will|trying|research|query|check|look|promising|now let me|good -|good,)/i.test(trimmed) || trimmed.length < 500
+  return false
 }
 
-export function shouldForceExternalExecutionKickoffFollowthrough(params: {
+export function shouldForceExternalExecutionKickoffFollowthrough(_params: {
   userMessage: string
   finalResponse: string
   hasToolCalls: boolean
   toolEvents: MessageToolEvent[]
   classification?: MessageClassification | null
 }): boolean {
-  const isTransactional = params.classification?.walletIntent === 'transactional'
-  if (!isTransactional) return false
-  if (params.hasToolCalls || params.toolEvents.length > 0) return false
-
-  const trimmed = params.finalResponse.trim()
-  if (!trimmed) return true
-  if (/^(?:HEARTBEAT_OK|NO_MESSAGE)\b/i.test(trimmed)) return false
-  if (/\?\s*$/.test(trimmed)) return false
-  if (/\b(last reversible step|exact blocker|blocked|cannot|can't|missing capability|need approval|requires approval|approval boundary|requires human|ask_human|credential|authentication|login|2fa|mfa|captcha)\b/i.test(trimmed)) {
-    return false
-  }
-  if (/\b(done|completed|finished|sent|broadcast|minted|purchased|bought|swapped|claimed)\b/i.test(trimmed)) {
-    return false
-  }
-  return looksLikeIncompleteDeliverableResponse(trimmed) || trimmed.length < 220
+  return false
 }
 
 export function shouldForceDeliverableFollowthrough(params: {
@@ -454,8 +413,7 @@ function buildExternalExecutionFollowthroughPrompt(params: {
     'You are in a bounded external execution task and have already done enough research.',
     'Do not restart broad discovery. Do not ask the user for another prompt.',
     'Do not spend this continuation on more venue shopping. Use the already confirmed route unless one last fetch is strictly required to prepare execution.',
-    'If several venue or aggregator APIs already failed, stop searching for more venues. Either use a direct onchain read path with the available wallet tools, or state the blocker.',
-    'A prose approval request does not count as completion. If the next step is a sign/send/approve action, call the real wallet tool action so the runtime can create the approval request.',
+    'If several venue or aggregator APIs already failed, stop searching for more venues and state the blocker.',
     'Do not mutate already confirmed token addresses, router addresses, spender addresses, or network identifiers unless newer tool evidence proves the earlier value was wrong.',
     'Within this continuation, do exactly one of the following:',
     '1. Take the next concrete execution step now using the existing tools and stop at the first approval boundary for a state-changing action.',

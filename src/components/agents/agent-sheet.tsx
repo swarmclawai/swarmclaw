@@ -10,8 +10,7 @@ import { sleep } from '@/lib/shared-utils'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
 import { toast } from 'sonner'
 import { ModelCombobox } from '@/components/shared/model-combobox'
-import type { ProviderType, ClaudeSkill, AgentWallet, AgentPackManifest, AgentRoutingStrategy, AgentRoutingTarget } from '@/types'
-import { WalletSection } from '@/components/wallets/wallet-section'
+import type { ProviderType, ClaudeSkill, AgentPackManifest, AgentRoutingStrategy, AgentRoutingTarget } from '@/types'
 import { AVAILABLE_TOOLS, PLATFORM_TOOLS } from '@/lib/tool-definitions'
 import { NATIVE_CAPABILITY_PROVIDER_IDS, NON_LANGGRAPH_PROVIDER_IDS, WORKER_ONLY_PROVIDER_IDS } from '@/lib/provider-sets'
 import { isOrchestratorProviderEligible } from '@/lib/orchestrator-config'
@@ -48,14 +47,6 @@ const AUTO_SYNC_MODEL_PROVIDER_IDS = new Set<ProviderType>([
 ])
 const CONNECTION_TEST_TIMEOUT_MS = 40_000
 type AgentProviderId = string
-
-type SafeAgentWallet = Omit<AgentWallet, 'encryptedPrivateKey'> & {
-  balanceAtomic?: string
-  balanceLamports?: number
-  balanceFormatted?: string
-  balanceSymbol?: string
-  isActive?: boolean
-}
 
 function SectionCard({
   title,
@@ -266,7 +257,6 @@ export function AgentSheet() {
   const [dailyBudget, setDailyBudget] = useState('')
   const [monthlyBudget, setMonthlyBudget] = useState('')
   const [budgetAction, setBudgetAction] = useState<'warn' | 'block'>('warn')
-  const [agentWallets, setAgentWallets] = useState<SafeAgentWallet[]>([])
   const [addingKey, setAddingKey] = useState(false)
   const [newKeyName, setNewKeyName] = useState('')
   const [newKeyValue, setNewKeyValue] = useState('')
@@ -296,21 +286,6 @@ export function AgentSheet() {
     reader.readAsText(file)
     e.target.value = ''
   }
-
-  const loadAgentWallets = useCallback(async (agentId: string) => {
-    try {
-      const wallets = await api<Record<string, SafeAgentWallet>>('GET', `/wallets?agentId=${encodeURIComponent(agentId)}`)
-      const matches = Object.values(wallets)
-        .filter((wallet) => wallet.agentId === agentId)
-        .sort((a, b) => {
-          if ((a.isActive ? 1 : 0) !== (b.isActive ? 1 : 0)) return a.isActive ? -1 : 1
-          return a.chain.localeCompare(b.chain)
-        })
-      setAgentWallets(matches)
-    } catch {
-      setAgentWallets([])
-    }
-  }, [])
 
   const agentSelectableProviders = useMemo(
     () => buildAgentSelectableProviders(providers, providerConfigs),
@@ -487,7 +462,6 @@ export function AgentSheet() {
         setDailyBudget(typeof editing.dailyBudget === 'number' && editing.dailyBudget > 0 ? String(editing.dailyBudget) : '')
         setMonthlyBudget(typeof editing.monthlyBudget === 'number' && editing.monthlyBudget > 0 ? String(editing.monthlyBudget) : '')
         setBudgetAction(editing.budgetAction || 'warn')
-        void loadAgentWallets(editing.id)
       } else if (useAppStore.getState().agentPrefill) {
         // Duplicate mode — prefill from source agent, then clear
         const src = useAppStore.getState().agentPrefill!
@@ -567,7 +541,6 @@ export function AgentSheet() {
         setDailyBudget(typeof src.dailyBudget === 'number' && src.dailyBudget > 0 ? String(src.dailyBudget) : '')
         setMonthlyBudget(typeof src.monthlyBudget === 'number' && src.monthlyBudget > 0 ? String(src.monthlyBudget) : '')
         setBudgetAction(src.budgetAction || 'warn')
-        setAgentWallets([])
       } else {
         setName('')
         setDescription('')
@@ -634,7 +607,6 @@ export function AgentSheet() {
         setDailyBudget('')
         setMonthlyBudget('')
         setBudgetAction('warn')
-        setAgentWallets([])
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2657,7 +2629,7 @@ export function AgentSheet() {
 
       <SectionCard
         title="Utilities"
-        description="Import and export agents, and manage any attached wallets."
+        description="Import and export agents."
         className="mb-0 border-white/[0.05] bg-white/[0.01]"
       >
       <div className="flex flex-wrap gap-3">
@@ -2681,16 +2653,6 @@ export function AgentSheet() {
           </button>
         )}
       </div>
-      {editing && (
-        <div className="mt-6">
-          <WalletSection
-            agentId={editing.id}
-            wallets={agentWallets}
-            activeWalletId={editing.activeWalletId || null}
-            onWalletCreated={() => loadAgentWallets(editing.id)}
-          />
-        </div>
-      )}
       </SectionCard>
       </AdvancedSettingsSection>
       )}

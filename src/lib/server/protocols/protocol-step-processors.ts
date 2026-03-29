@@ -16,7 +16,6 @@ import { errorMessage } from '@/lib/shared-utils'
 import { getAgents } from '@/lib/server/agents/agent-repository'
 import { upsertTask } from '@/lib/server/tasks/task-repository'
 import { notify } from '@/lib/server/ws-hub'
-import { ensureMissionForTask } from '@/lib/server/missions/mission-service'
 import { enqueueTask } from '@/lib/server/runtime/queue'
 import { cleanText, isDiscussionStepKind, now, uniqueIds } from '@/lib/server/protocols/protocol-types'
 import type { ProtocolRunDeps } from '@/lib/server/protocols/protocol-types'
@@ -227,7 +226,6 @@ export async function processEmitTasksPhase(run: ProtocolRun, phase: ProtocolPha
     ...extracted.map((item) => item.agentId || ''),
   ], 64))
   const createdTaskIds: string[] = []
-  const linkedMissionId = typeof run.missionId === 'string' ? run.missionId : null
   const taskProjectId = run.config?.taskProjectId || null
   for (const item of extracted) {
     const assignedAgentId = item.agentId && agents[item.agentId] ? item.agentId : fallbackAssignee
@@ -238,7 +236,6 @@ export async function processEmitTasksPhase(run: ProtocolRun, phase: ProtocolPha
       description: cleanText(item.description, 1_000) || cleanText(artifact.content, 800),
       status: 'backlog',
       agentId: assignedAgentId,
-      missionId: linkedMissionId,
       projectId: taskProjectId || undefined,
       createdByAgentId: chooseFacilitator(run),
       createdInSessionId: run.sessionId || null,
@@ -248,7 +245,6 @@ export async function processEmitTasksPhase(run: ProtocolRun, phase: ProtocolPha
       tags: ['structured-session'],
     }
     upsertTask(task.id, task)
-    ensureMissionForTask(task, { source: 'manual' })
     createdTaskIds.push(task.id)
     appendProtocolEvent(run.id, {
       type: 'task_emitted',
@@ -607,7 +603,6 @@ export function processDispatchTaskPhase(run: ProtocolRun, phase: ProtocolPhaseD
     status: 'queued',
     agentId,
     protocolRunId: run.id,
-    missionId: run.missionId || null,
     queuedAt: now(deps),
     createdAt: now(deps),
     updatedAt: now(deps),
@@ -656,7 +651,6 @@ export function processDispatchDelegationPhase(run: ProtocolRun, phase: Protocol
     status: 'queued',
     agentId: config.agentId,
     protocolRunId: run.id,
-    missionId: run.missionId || null,
     sourceType: 'delegation',
     queuedAt: now(deps),
     createdAt: now(deps),

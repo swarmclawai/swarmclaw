@@ -15,7 +15,6 @@ export type MessageWorkType = 'coding' | 'research' | 'writing' | 'review' | 'op
 export interface MessageSemanticsSummary {
   taskIntent: MessageTaskIntent
   workType: MessageWorkType
-  walletIntent: 'none' | 'read_only' | 'transactional'
   isDeliverableTask: boolean
   isBroadGoal: boolean
   isResearchSynthesis: boolean

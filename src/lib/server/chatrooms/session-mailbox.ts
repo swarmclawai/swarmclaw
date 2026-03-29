@@ -1,7 +1,6 @@
 import { genId } from '@/lib/id'
 import type { MailboxEnvelope } from '@/types'
 import { loadSession, patchSession } from '@/lib/server/sessions/session-repository'
-import { requestMissionTicksForHumanReply } from '@/lib/server/missions/mission-service'
 
 interface MailboxOptions {
   limit?: number
@@ -167,15 +166,6 @@ export function sendMailboxEnvelope(input: {
       lastActiveAt: now,
     }
   })
-  if (envelope.type === 'human_reply') {
-    requestMissionTicksForHumanReply({
-      sessionId: input.toSessionId,
-      correlationId: envelope.correlationId || null,
-      envelopeId: envelope.id,
-      payload: envelope.payload,
-      fromSessionId: envelope.fromSessionId || null,
-    })
-  }
   import('@/lib/server/runtime/watch-jobs')
     .then(({ triggerMailboxWatchJobs }) => {
       triggerMailboxWatchJobs({ sessionId: input.toSessionId, envelope })

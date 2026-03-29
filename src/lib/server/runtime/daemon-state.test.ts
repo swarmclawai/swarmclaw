@@ -245,41 +245,6 @@ describe('daemon start/stop lifecycle', () => {
     }
   })
 
-  it('startDaemon runs mission startup recovery once the daemon owns startup', async () => {
-    const storage = await import('@/lib/server/storage')
-    storage.saveMissions({
-      missionA: {
-        id: 'missionA',
-        source: 'chat',
-        sourceRef: { kind: 'chat', sessionId: 'sessionA' },
-        objective: 'Recover after daemon start',
-        status: 'active',
-        phase: 'executing',
-        sessionId: 'sessionA',
-        taskIds: [],
-        controllerState: {
-          activeRunId: 'run-stale',
-          currentTaskId: 'task-stale',
-        },
-        createdAt: 1,
-        updatedAt: 1,
-      },
-    })
-
-    await mod.stopDaemon({ source: 'test-prestart' })
-    mod.startDaemon({ source: 'test-mission-recovery', manualStart: true })
-    try {
-      const missions = await import('@/lib/server/missions/mission-service')
-      const mission = missions.loadMissionById('missionA')
-      assert.equal(mission?.status, 'active')
-      assert.equal(mission?.phase, 'planning')
-      const events = missions.listMissionEventsForMission('missionA')
-      assert.ok(events.some((event) => event.type === 'interrupted'))
-    } finally {
-      await mod.stopDaemon({ source: 'test-mission-recovery' })
-    }
-  })
-
   it('stopDaemon sets running to false', async () => {
     mod.startDaemon({ source: 'test', manualStart: true })
     await mod.stopDaemon({ source: 'test' })

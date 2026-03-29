@@ -13,8 +13,6 @@ export const TOOL_CAPABILITY = {
   deliveryMessage: 'delivery.message',
   deliveryMedia: 'delivery.media',
   deliveryVoiceNote: 'delivery.voice_note',
-  walletInspect: 'wallet.inspect',
-  walletExecute: 'wallet.execute',
 } as const
 
 export interface ToolPlanningEntry {
@@ -369,16 +367,6 @@ const CORE_TOOL_PLANNING: Record<string, LegacyToolPlanningEntry[]> = {
       capabilities: ['monitoring.watch'],
       disciplineGuidance: [
         'Prefer `wait_until`, `wait_for_http`, `wait_for_file`, or other `wait_for_*` shortcut actions — they create a durable wait that resumes your turn automatically. Avoid creating a watch with `create_watch` then polling `get_watch` in a loop.',
-      ],
-      requestMatchers: [],
-    },
-  ],
-  wallet: [
-    {
-      toolName: 'wallet_tool',
-      capabilities: [TOOL_CAPABILITY.walletInspect, TOOL_CAPABILITY.walletExecute],
-      disciplineGuidance: [
-        'Inspect wallet state once, then act. Use `simulate_transaction` to validate before executing. Do not re-inspect balances between each operation unless the operation changes them.',
       ],
       requestMatchers: [],
     },

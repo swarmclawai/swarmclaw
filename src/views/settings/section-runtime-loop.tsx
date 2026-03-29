@@ -55,20 +55,6 @@ export function RuntimeLoopSection({ appSettings, patchSettings, inputClass }: S
           </div>
         </div>
 
-        <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-3">Mission Human Loop</label>
-        <div className="flex items-center gap-3 mb-6">
-          <button
-            onClick={() => patchSettings({ missionHumanLoopEnabled: !(appSettings.missionHumanLoopEnabled ?? false) })}
-            className={`relative w-10 h-[22px] rounded-full transition-colors duration-200 cursor-pointer ${(appSettings.missionHumanLoopEnabled ?? false) ? 'bg-accent' : 'bg-white/[0.12]'}`}
-          >
-            <span className={`absolute top-[3px] left-[3px] w-4 h-4 rounded-full bg-white transition-transform duration-200 ${(appSettings.missionHumanLoopEnabled ?? false) ? 'translate-x-[18px]' : ''}`} />
-          </button>
-          <div>
-            <div className="text-[12px] text-text-2">Allow missions to stay open waiting for a human follow-up</div>
-            <div className="text-[11px] text-text-3/60 mt-1">Off by default for new users. When disabled, generic mission handoffs like “waiting for your next instruction” are closed instead of lingering as open waiting missions. Explicit tool approvals and real external blockers still apply.</div>
-          </div>
-        </div>
-
         <label className="flex items-center gap-1.5 font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-3">Loop Mode <HintTip text="Bounded = fixed max steps. Ongoing = runs until the task completes (with a safety cap)" /></label>
         <div className="grid grid-cols-2 gap-2 mb-5">
           {([

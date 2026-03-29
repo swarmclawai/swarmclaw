@@ -1,4 +1,3 @@
-import type { MissionSummary } from './mission'
 import type { GoalContract } from './app-settings'
 
 // --- Task Board ---
@@ -28,9 +27,12 @@ export interface BoardTask {
   description: string
   status: BoardTaskStatus
   agentId: string
-  missionId?: string | null
   protocolRunId?: string | null
-  missionSummary?: MissionSummary | null
+  // Objective tracking (absorbed from missions)
+  objective?: string | null
+  successCriteria?: string[] | null
+  verificationSummary?: string | null
+  rootTaskId?: string | null
   projectId?: string
   goalContract?: GoalContract | null
   cwd?: string | null
@@ -137,4 +139,6 @@ export interface BoardTask {
   }>
   repairRunId?: string | null
   lastRepairAttemptAt?: number | null
+  // Atomic checkout — prevents two runners from starting the same task
+  checkoutRunId?: string | null
 }

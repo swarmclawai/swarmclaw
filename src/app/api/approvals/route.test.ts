@@ -46,11 +46,6 @@ test('GET and POST /api/approvals handle human-loop approvals only', () => {
       title: 'Approve deploy',
       data: { question: 'Deploy now?' },
     })
-    approvals.requestApproval({
-      category: 'wallet_action',
-      title: 'Legacy wallet approval',
-      data: { action: 'sign_message' },
-    })
 
     const pendingBefore = await route.GET()
     const pendingBeforeJson = await pendingBefore.json()
@@ -84,43 +79,32 @@ test('GET and POST /api/approvals handle human-loop approvals only', () => {
   assert.equal(output.storedStatus, 'approved')
 })
 
-test('POST /api/approvals rejects invalid and non-human-loop approvals', () => {
+test('POST /api/approvals rejects invalid payloads', () => {
   const output = runWithTempDataDir(`
     const approvalsMod = await import('./src/lib/server/approvals')
     const routeMod = await import('./src/app/api/approvals/route')
     const approvals = approvalsMod.default || approvalsMod
     const route = routeMod.default || routeMod
 
-    const walletApproval = approvals.requestApproval({
-      category: 'wallet_action',
-      title: 'Legacy wallet approval',
-      data: { action: 'sign_message' },
+    const humanApproval = approvals.requestApproval({
+      category: 'human_loop',
+      title: 'Test approval',
+      data: { question: 'Proceed?' },
     })
 
     const invalidResponse = await route.POST(new Request('http://local/api/approvals', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ id: walletApproval.id }),
+      body: JSON.stringify({ id: humanApproval.id }),
     }))
     const invalidPayload = await invalidResponse.json()
-
-    const wrongCategory = await route.POST(new Request('http://local/api/approvals', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ id: walletApproval.id, approved: true }),
-    }))
-    const wrongCategoryPayload = await wrongCategory.json()
 
     console.log(JSON.stringify({
       invalidStatus: invalidResponse.status,
       invalidError: invalidPayload?.error || null,
-      wrongCategoryStatus: wrongCategory.status,
-      wrongCategoryError: wrongCategoryPayload?.error || null,
     }))
   `)
 
   assert.equal(output.invalidStatus, 400)
   assert.match(String(output.invalidError || ''), /id and approved required/i)
-  assert.equal(output.wrongCategoryStatus, 400)
-  assert.match(String(output.wrongCategoryError || ''), /human-loop/i)
 })

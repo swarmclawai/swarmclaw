@@ -26,7 +26,6 @@ describe('parseClassificationResponse', () => {
     taskIntent: 'general',
     isDeliverableTask: true,
     isBroadGoal: false,
-    walletIntent: 'none',
     hasHumanSignals: false,
     hasSignificantEvent: false,
     isResearchSynthesis: false,
@@ -40,7 +39,6 @@ describe('parseClassificationResponse', () => {
     assert.ok(result)
     assert.equal(result!.isDeliverableTask, true)
     assert.equal(result!.isBroadGoal, false)
-    assert.equal(result!.walletIntent, 'none')
     assert.equal(result!.taskIntent, 'general')
     assert.equal(result!.workType, 'general')
     assert.equal(result!.confidence, 0.9)
@@ -62,7 +60,6 @@ describe('parseClassificationResponse', () => {
       taskIntent: 'general',
       isDeliverableTask: true,
       isBroadGoal: false,
-      walletIntent: 'none',
       hasHumanSignals: false,
       hasSignificantEvent: false,
       isResearchSynthesis: false,
@@ -129,44 +126,6 @@ describe('isBroadGoal', () => {
 })
 
 // ---------------------------------------------------------------------------
-// hasWalletIntent
-// ---------------------------------------------------------------------------
-
-describe('hasWalletIntent', () => {
-  it('walletIntent none returns false', () => {
-    assert.equal(mod.hasWalletIntent(makeClassification({ walletIntent: 'none' }), ''), false)
-  })
-
-  it('walletIntent read_only returns true', () => {
-    assert.equal(mod.hasWalletIntent(makeClassification({ walletIntent: 'read_only' }), ''), true)
-  })
-
-  it('walletIntent transactional returns true', () => {
-    assert.equal(mod.hasWalletIntent(makeClassification({ walletIntent: 'transactional' }), ''), true)
-  })
-
-  it('falls back to regex when classification is null', () => {
-    assert.equal(mod.hasWalletIntent(null, 'check my wallet balance'), false)
-  })
-})
-
-// ---------------------------------------------------------------------------
-// hasTransactionalWalletIntent
-// ---------------------------------------------------------------------------
-
-describe('hasTransactionalWalletIntent', () => {
-  it('only transactional returns true', () => {
-    assert.equal(mod.hasTransactionalWalletIntent(makeClassification({ walletIntent: 'transactional' }), ''), true)
-    assert.equal(mod.hasTransactionalWalletIntent(makeClassification({ walletIntent: 'read_only' }), ''), false)
-    assert.equal(mod.hasTransactionalWalletIntent(makeClassification({ walletIntent: 'none' }), ''), false)
-  })
-
-  it('falls back to regex when classification is null', () => {
-    assert.equal(mod.hasTransactionalWalletIntent(null, 'swap 1 ETH for USDC'), false)
-  })
-})
-
-// ---------------------------------------------------------------------------
 // hasHumanSignals
 // ---------------------------------------------------------------------------
 
@@ -227,7 +186,6 @@ describe('classifyMessage', () => {
       taskIntent: 'coding',
       isDeliverableTask: true,
       isBroadGoal: false,
-      walletIntent: 'none',
       hasHumanSignals: false,
       hasSignificantEvent: false,
       isResearchSynthesis: false,
@@ -244,7 +202,6 @@ describe('classifyMessage', () => {
     assert.ok(result)
     assert.equal(result!.isDeliverableTask, true)
     assert.equal(result!.taskIntent, 'coding')
-    assert.equal(result!.walletIntent, 'none')
     assert.equal(result!.workType, 'coding')
     assert.deepEqual(result!.explicitToolRequests, ['shell'])
   })
@@ -284,7 +241,6 @@ describe('classifyMessage', () => {
       taskIntent: 'general',
       isDeliverableTask: false,
       isBroadGoal: false,
-      walletIntent: 'none',
       hasHumanSignals: false,
       hasSignificantEvent: false,
       isResearchSynthesis: false,
@@ -326,7 +282,6 @@ function makeClassification(overrides: Partial<import('@/lib/server/chat-executi
     taskIntent: 'general',
     isDeliverableTask: false,
     isBroadGoal: false,
-    walletIntent: 'none',
     hasHumanSignals: false,
     hasSignificantEvent: false,
     isResearchSynthesis: false,

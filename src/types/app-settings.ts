@@ -73,7 +73,6 @@ export interface AppSettings {
   safetyRequireApprovalForOutbound?: boolean
   safetyMaxDailySpendUsd?: number | null
   safetyBlockedTools?: string[]
-  walletApprovalsEnabled?: boolean
   capabilityPolicyMode?: 'permissive' | 'balanced' | 'strict'
   capabilityBlockedTools?: string[]
   capabilityBlockedCategories?: string[]
@@ -96,7 +95,6 @@ export interface AppSettings {
   supervisorNoProgressLimit?: number
   supervisorRepeatedToolLimit?: number
   autonomyResumeApprovalsEnabled?: boolean
-  missionHumanLoopEnabled?: boolean
   reflectionEnabled?: boolean
   reflectionAutoWriteMemory?: boolean
   memoryReferenceDepth?: number

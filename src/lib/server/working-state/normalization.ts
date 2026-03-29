@@ -4,7 +4,6 @@ import { genId } from '@/lib/id'
 import { cleanText, cleanMultiline, normalizeList } from '@/lib/server/text-normalization'
 import type {
   EvidenceRef,
-  Mission,
   SessionWorkingState,
   WorkingArtifact,
   WorkingArtifactPatch,
@@ -56,7 +55,7 @@ export const WorkingPlanStepPatchSchema = z.object({
 export const WorkingFactPatchSchema = z.object({
   id: z.string().optional().nullable(),
   statement: z.string().optional().nullable(),
-  source: z.enum(['user', 'tool', 'assistant', 'mission', 'system']).optional().nullable(),
+  source: z.enum(['user', 'tool', 'assistant', 'system']).optional().nullable(),
   status: WorkingItemStatusSchema.optional().nullable(),
   evidenceIds: z.array(z.string()).optional().nullable(),
 })
@@ -150,7 +149,6 @@ import type { MessageToolEvent } from '@/types'
 
 export interface WorkingStateDeterministicUpdateInput {
   sessionId: string
-  mission?: Mission | null
   message?: string | null
   assistantText?: string | null
   error?: string | null
@@ -233,7 +231,6 @@ export function normalizeEvidenceRef(input: unknown): EvidenceRef | null {
   if (!summary) return null
   const type = record.type === 'tool'
     || record.type === 'message'
-    || record.type === 'mission'
     || record.type === 'task'
     || record.type === 'artifact'
     || record.type === 'error'
@@ -249,7 +246,6 @@ export function normalizeEvidenceRef(input: unknown): EvidenceRef | null {
     toolCallId: cleanText(record.toolCallId, 120) || null,
     runId: cleanText(record.runId, 120) || null,
     sessionId: cleanText(record.sessionId, 120) || null,
-    missionId: cleanText(record.missionId, 120) || null,
     taskId: cleanText(record.taskId, 120) || null,
     createdAt: typeof record.createdAt === 'number' && Number.isFinite(record.createdAt)
       ? Math.trunc(record.createdAt)
@@ -290,7 +286,6 @@ export function normalizeFact(input: unknown): WorkingFact | null {
     source: record.source === 'user'
       || record.source === 'tool'
       || record.source === 'assistant'
-      || record.source === 'mission'
       || record.source === 'system'
       ? record.source
       : 'assistant',
@@ -434,17 +429,16 @@ export function normalizeMatchKey(value: string): string {
 // defaultWorkingState & normalizeWorkingState
 // ---------------------------------------------------------------------------
 
-export function defaultWorkingState(sessionId: string, mission?: Mission | null): SessionWorkingState {
+export function defaultWorkingState(sessionId: string): SessionWorkingState {
   const nowTs = now()
   return {
     sessionId,
-    missionId: mission?.id || null,
-    objective: cleanMultiline(mission?.objective, 900) || null,
-    summary: cleanMultiline(mission?.verifierSummary || mission?.plannerSummary, 600) || null,
+    objective: null,
+    summary: null,
     constraints: [],
-    successCriteria: normalizeList(mission?.successCriteria, 12, 240),
-    status: mission ? missionStatusToWorkingStateStatus(mission) : 'idle',
-    nextAction: cleanText(mission?.currentStep, 240) || null,
+    successCriteria: [],
+    status: 'idle',
+    nextAction: null,
     planSteps: [],
     confirmedFacts: [],
     artifacts: [],
@@ -462,19 +456,17 @@ export function defaultWorkingState(sessionId: string, mission?: Mission | null)
 export function normalizeWorkingState(
   input: unknown,
   sessionId: string,
-  mission?: Mission | null,
 ): SessionWorkingState {
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
-    return defaultWorkingState(sessionId, mission)
+    return defaultWorkingState(sessionId)
   }
   const record = input as Record<string, unknown>
-  const base = defaultWorkingState(sessionId, mission)
+  const base = defaultWorkingState(sessionId)
   const createdAt = typeof record.createdAt === 'number' && Number.isFinite(record.createdAt)
     ? Math.trunc(record.createdAt)
     : base.createdAt
   const normalized: SessionWorkingState = {
     sessionId: cleanText(record.sessionId, 120) || sessionId,
-    missionId: cleanText(record.missionId, 120) || mission?.id || null,
     objective: cleanMultiline(record.objective, 900) || base.objective,
     summary: cleanMultiline(record.summary, 600) || base.summary,
     constraints: normalizeList(record.constraints, 12, 240),
@@ -497,7 +489,7 @@ export function normalizeWorkingState(
       ? Math.trunc(record.lastCompactedAt)
       : null,
   }
-  return compactWorkingStateObject(syncWorkingStateWithMission(normalized, mission))
+  return compactWorkingStateObject(normalized)
 }
 
 // ---------------------------------------------------------------------------
@@ -522,89 +514,6 @@ export function compactWorkingStateObject(state: SessionWorkingState): SessionWo
 }
 
 // ---------------------------------------------------------------------------
-// missionStatusToWorkingStateStatus & syncWorkingStateWithMission
-// ---------------------------------------------------------------------------
-
-export function missionStatusToWorkingStateStatus(mission: Mission): WorkingStateStatus {
-  if (mission.status === 'completed') return 'completed'
-  if (mission.status === 'waiting') return 'waiting'
-  if (mission.status === 'failed' || mission.status === 'cancelled') return 'blocked'
-  return 'progress'
-}
-
-export function syncWorkingStateWithMission(
-  state: SessionWorkingState,
-  mission?: Mission | null,
-): SessionWorkingState {
-  if (!mission) return state
-  const next = { ...state }
-  next.missionId = mission.id
-  next.objective = cleanMultiline(mission.objective, 900) || next.objective
-  next.successCriteria = normalizeList(mission.successCriteria, 12, 240)
-  next.summary = next.summary || cleanMultiline(mission.verifierSummary || mission.plannerSummary, 600) || null
-  const missionStatus = missionStatusToWorkingStateStatus(mission)
-  if (missionStatus === 'completed' || missionStatus === 'waiting' || missionStatus === 'blocked') {
-    next.status = missionStatus
-  } else if (next.status === 'idle') {
-    next.status = missionStatus
-  }
-  next.nextAction = next.nextAction || cleanText(mission.currentStep, 240) || null
-
-  if (mission.currentStep) {
-    next.planSteps = upsertItems(next.planSteps, [{
-      id: null,
-      text: mission.currentStep,
-      status: mission.status === 'completed' ? 'resolved' : 'active',
-    } satisfies WorkingPlanStepPatch], {
-      max: MAX_PLAN_STEPS,
-      getPatchId: (patch) => cleanText(patch.id, 120) || null,
-      getPatchKey: (patch) => cleanText(patch.text, 240),
-      getItemKey: (item) => item.text,
-      create: (patch, nowTs) => ({
-        id: genId(12),
-        text: cleanText(patch.text, 240),
-        status: normalizeItemStatus(patch.status),
-        createdAt: nowTs,
-        updatedAt: nowTs,
-      }),
-      merge: (current, patch, nowTs) => ({
-        ...current,
-        text: cleanText(patch.text, 240) || current.text,
-        status: normalizeItemStatus(patch.status, current.status),
-        updatedAt: nowTs,
-      }),
-      compact: compactPlanSteps,
-    })
-  }
-
-  if (mission.waitState?.reason || mission.blockerSummary) {
-    const blockerSummary = cleanText(mission.waitState?.reason || mission.blockerSummary, 280)
-    if (blockerSummary) {
-      next.blockers = upsertItems(next.blockers, [{
-        summary: blockerSummary,
-        kind: mission.waitState?.kind === 'approval'
-          ? 'approval'
-          : mission.waitState?.kind === 'human_reply'
-            ? 'human_input'
-            : mission.waitState?.kind === 'external_dependency' || mission.waitState?.kind === 'provider'
-              ? 'external_dependency'
-              : mission.status === 'failed'
-                ? 'error'
-                : 'other',
-        nextAction: mission.currentStep || null,
-        status: mission.status === 'completed' ? 'resolved' : 'active',
-      }], blockerUpsertConfig())
-    }
-  }
-
-  if (mission.status === 'completed') {
-    next.blockers = next.blockers.map((blocker) => blocker.status === 'active'
-      ? { ...blocker, status: 'resolved', updatedAt: now() }
-      : blocker)
-  }
-
-  return next
-}
 
 // ---------------------------------------------------------------------------
 // upsertItems & upsertConfig factories
@@ -647,7 +556,6 @@ export function factUpsertConfig(): UpsertConfig<WorkingFact, WorkingFactPatch> 
       source: patch.source === 'user'
         || patch.source === 'tool'
         || patch.source === 'assistant'
-        || patch.source === 'mission'
         || patch.source === 'system'
         ? patch.source
         : 'assistant',
@@ -662,7 +570,6 @@ export function factUpsertConfig(): UpsertConfig<WorkingFact, WorkingFactPatch> 
       source: patch.source === 'user'
         || patch.source === 'tool'
         || patch.source === 'assistant'
-        || patch.source === 'mission'
         || patch.source === 'system'
         ? patch.source
         : current.source,

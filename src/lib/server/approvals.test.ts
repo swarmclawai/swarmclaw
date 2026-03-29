@@ -56,19 +56,19 @@ describe('approvals', () => {
       title: 'Human approval',
       data: { question: 'Proceed?' },
     })
-    const wallet = approvals.requestApproval({
-      category: 'wallet_action',
-      title: 'Legacy wallet approval',
-      data: { action: 'sign_message' },
+    const other = approvals.requestApproval({
+      category: 'human_loop',
+      title: 'Another approval',
+      data: { question: 'Continue?' },
     })
 
-    await approvals.submitDecision(wallet.id, true)
+    await approvals.submitDecision(other.id, true)
 
     const pending = approvals.listPendingApprovals()
     const humanPending = approvals.listPendingApprovals('human_loop')
 
     assert.equal(pending.some((entry) => entry.id === human.id), true)
-    assert.equal(pending.some((entry) => entry.id === wallet.id), false)
+    assert.equal(pending.some((entry) => entry.id === other.id), false)
     assert.equal(humanPending.some((entry) => entry.id === human.id), true)
     assert.equal(humanPending.every((entry) => entry.category === 'human_loop'), true)
   })

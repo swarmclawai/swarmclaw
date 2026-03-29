@@ -22,7 +22,6 @@ import type {
 import {
   EXTRACTION_TIMEOUT_MS,
   WorkingStatePatchSchema,
-  missionStatusToWorkingStateStatus,
   normalizeEvidenceIds,
   now,
 } from '@/lib/server/working-state/normalization'
@@ -268,9 +267,9 @@ export function buildWorkingStatePatchPrompt(input: WorkingStateExtractionInput)
     'You maintain a structured working-state object for an autonomous agent.',
     'Return JSON only.',
     '',
-    'Update the state using only evidence from the latest turn, tool results, and mission snapshot.',
+    'Update the state using only evidence from the latest turn and tool results.',
     'Rules:',
-    '- Facts must be confirmed by explicit user text, mission state, or tool evidence. Do not turn guesses into facts.',
+    '- Facts must be confirmed by explicit user text or tool evidence. Do not turn guesses into facts.',
     '- Put uncertain leads into hypotheses, not facts.',
     '- Use blockers for approvals, credentials, human input, external waits, and explicit execution failures.',
     '- nextAction must be one concrete immediate action, not a broad plan.',
@@ -288,7 +287,7 @@ export function buildWorkingStatePatchPrompt(input: WorkingStateExtractionInput)
       status: 'idle|progress|blocked|waiting|completed',
       nextAction: 'optional',
       planSteps: [{ id: 'optional', text: 'step', status: 'active|resolved|superseded' }],
-      factsUpsert: [{ id: 'optional', statement: 'confirmed fact', source: 'user|tool|assistant|mission|system', status: 'active|resolved|superseded', evidenceIds: ['optional'] }],
+      factsUpsert: [{ id: 'optional', statement: 'confirmed fact', source: 'user|tool|assistant|system', status: 'active|resolved|superseded', evidenceIds: ['optional'] }],
       artifactsUpsert: [{ id: 'optional', label: 'artifact', kind: 'file|url|approval|message|other', path: 'optional', url: 'optional', sourceTool: 'optional', status: 'active|resolved|superseded', evidenceIds: ['optional'] }],
       decisionsAppend: [{ summary: 'decision', rationale: 'optional', status: 'active|resolved|superseded', evidenceIds: ['optional'] }],
       blockersUpsert: [{ summary: 'blocker', kind: 'approval|credential|human_input|external_dependency|error|other', nextAction: 'optional', status: 'active|resolved|superseded', evidenceIds: ['optional'] }],
@@ -298,21 +297,6 @@ export function buildWorkingStatePatchPrompt(input: WorkingStateExtractionInput)
     }),
     '',
     `source: ${JSON.stringify(cleanText(input.source, 80) || 'chat')}`,
-    `mission: ${JSON.stringify(input.mission ? {
-      id: input.mission.id,
-      objective: cleanMultiline(input.mission.objective, 600),
-      status: input.mission.status,
-      phase: input.mission.phase,
-      currentStep: cleanText(input.mission.currentStep, 240) || null,
-      plannerSummary: cleanText(input.mission.plannerSummary, 280) || null,
-      verifierSummary: cleanText(input.mission.verifierSummary, 280) || null,
-      blockerSummary: cleanText(input.mission.blockerSummary, 240) || null,
-      waitState: input.mission.waitState ? {
-        kind: input.mission.waitState.kind,
-        reason: cleanText(input.mission.waitState.reason, 240),
-        approvalId: cleanText(input.mission.waitState.approvalId, 120) || null,
-      } : null,
-    } : null)}`,
     `current_state:\n${renderStateForExtraction(input.currentState)}`,
     `user_message: ${JSON.stringify(cleanMultiline(input.message, 1200) || null)}`,
     `assistant_text: ${JSON.stringify(cleanMultiline(input.assistantText, 1200) || null)}`,
@@ -398,7 +382,6 @@ export function deterministicEvidencePatch(input: WorkingStateDeterministicUpdat
       value: input.runId,
       runId: input.runId,
       sessionId: input.sessionId,
-      missionId: input.mission?.id || null,
       createdAt: nowTs,
     })
   }
@@ -420,7 +403,6 @@ export function deterministicEvidencePatch(input: WorkingStateDeterministicUpdat
         toolCallId: cleanText(event.toolCallId, 120) || null,
         runId: input.runId || null,
         sessionId: input.sessionId,
-        missionId: input.mission?.id || null,
         createdAt: nowTs + index,
       })
 
@@ -428,7 +410,7 @@ export function deterministicEvidencePatch(input: WorkingStateDeterministicUpdat
         blockersUpsert.push({
           summary: output || `Tool ${toolName} failed.`,
           kind: 'error',
-          nextAction: cleanText(input.mission?.currentStep, 240) || null,
+          nextAction: null,
           status: 'active',
           evidenceIds: [evidenceId],
         })
@@ -521,7 +503,6 @@ export function deterministicEvidencePatch(input: WorkingStateDeterministicUpdat
       value: cleanText(input.error, 240) || null,
       runId: input.runId || null,
       sessionId: input.sessionId,
-      missionId: input.mission?.id || null,
       createdAt: nowTs + 100,
     })
     blockersUpsert.push({
@@ -531,26 +512,11 @@ export function deterministicEvidencePatch(input: WorkingStateDeterministicUpdat
     })
   }
 
-  if (input.mission) {
-    evidenceAppend.push({
-      id: genId(12),
-      type: 'mission',
-      summary: `Mission state updated: ${input.mission.status}/${input.mission.phase}.`,
-      value: cleanText(input.mission.currentStep || input.mission.objective, 240) || null,
-      runId: input.runId || null,
-      sessionId: input.sessionId,
-      missionId: input.mission.id,
-      createdAt: nowTs + 200,
-    })
-  }
-
   return {
     status: input.error
       ? 'blocked'
-      : input.mission
-        ? missionStatusToWorkingStateStatus(input.mission)
-        : undefined,
-    nextAction: cleanText(input.mission?.currentStep, 240) || undefined,
+      : undefined,
+    nextAction: undefined,
     factsUpsert: factsUpsert.length > 0 ? factsUpsert : undefined,
     artifactsUpsert: artifactsUpsert.length > 0 ? artifactsUpsert : undefined,
     blockersUpsert: blockersUpsert.length > 0 ? blockersUpsert : undefined,
@@ -608,7 +574,7 @@ export function shouldExtractStructuredPatch(input: SynchronizeWorkingStateForTu
   const hasAssistantText = cleanMultiline(input.assistantText, 400).length > 0
   const hasError = cleanText(input.error, 120).length > 0
   if (cleanText(input.source, 80) === 'heartbeat') {
-    return hasToolEvents || hasError || Boolean(input.mission)
+    return hasToolEvents || hasError
   }
-  return hasToolEvents || hasAssistantText || hasMessage || hasError || Boolean(input.mission)
+  return hasToolEvents || hasAssistantText || hasMessage || hasError
 }

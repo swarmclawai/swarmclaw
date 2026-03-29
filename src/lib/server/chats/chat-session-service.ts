@@ -7,7 +7,6 @@ import { buildAgentDisabledMessage, isAgentDisabled } from '@/lib/server/agents/
 import { loadAgent } from '@/lib/server/agents/agent-repository'
 import { clearMainLoopStateForSession } from '@/lib/server/agents/main-agent-loop'
 import { applyResolvedRoute, resolvePrimaryAgentRoute } from '@/lib/server/agents/agent-runtime-config'
-import { enrichSessionWithMissionSummary } from '@/lib/server/missions/mission-service'
 import { cleanupSessionProcesses } from '@/lib/server/runtime/process-manager'
 import { stopActiveSessionProcess } from '@/lib/server/runtime/runtime-state'
 import {
@@ -60,7 +59,7 @@ export function listChatsForApi(): Record<string, ReturnType<typeof buildSession
     sessions[id].currentRunId = run.runningRunId || null
   }
   return Object.fromEntries(
-    Object.entries(sessions).map(([id, session]) => [id, buildSessionListSummary(enrichSessionWithMissionSummary(session))]),
+    Object.entries(sessions).map(([id, session]) => [id, buildSessionListSummary(session)]),
   )
 }
 
@@ -72,7 +71,7 @@ export function getChatSessionForApi(sessionId: string): Session | null {
   session.active = !!run.runningRunId
   session.queuedCount = queue.queueLength
   session.currentRunId = run.runningRunId || null
-  return enrichSessionWithMissionSummary(session)
+  return session
 }
 
 export function createChatSession(input: Record<string, unknown>): ServiceResult<Session> {
@@ -285,7 +284,7 @@ export function updateChatSession(sessionId: string, updates: Record<string, unk
 
   saveSession(sessionId, original)
   notify('sessions')
-  return enrichSessionWithMissionSummary(original)
+  return original
 }
 
 export function deleteChatSession(sessionId: string): boolean {
@@ -320,7 +319,6 @@ export function queueChatMessage(sessionId: string, body: Record<string, unknown
   }
   const queued = enqueueSessionRun({
     sessionId,
-    missionId: session.missionId || null,
     message,
     imagePath,
     imageUrl,

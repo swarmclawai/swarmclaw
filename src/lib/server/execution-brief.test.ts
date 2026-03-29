@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
 import { buildExecutionBrief, buildExecutionBriefContextBlock, serializeExecutionBriefForDelegation } from './execution-brief'
-import type { Mission, Session, SessionWorkingState } from '@/types'
+import type { Session, SessionWorkingState } from '@/types'
 
 test('buildExecutionBrief prefers working state and folds in mission and run-context fallback data', () => {
   const session = {
@@ -31,25 +31,8 @@ test('buildExecutionBrief prefers working state and folds in mission and run-con
     },
   } satisfies Partial<Session> as Session
 
-  const mission = {
-    id: 'm1',
-    source: 'chat',
-    objective: 'Ship the release fix',
-    status: 'active',
-    phase: 'executing',
-    currentStep: 'Verify staging auth',
-    successCriteria: ['Restore staging deploys'],
-    waitState: {
-      kind: 'approval',
-      reason: 'Waiting for deploy approval.',
-    },
-    createdAt: 1,
-    updatedAt: 1,
-  } satisfies Partial<Mission> as Mission
-
   const workingState = {
     sessionId: 's1',
-    missionId: 'm1',
     objective: 'Ship the release fix safely',
     summary: 'Auth mismatch isolated to staging.',
     constraints: ['Do not change the API'],
@@ -79,7 +62,7 @@ test('buildExecutionBrief prefers working state and folds in mission and run-con
     updatedAt: 1,
   } satisfies SessionWorkingState
 
-  const brief = buildExecutionBrief({ session, mission, workingState })
+  const brief = buildExecutionBrief({ session, workingState })
 
   assert.equal(brief.objective, 'Ship the release fix safely')
   assert.equal(brief.summary, 'Auth mismatch isolated to staging.')
@@ -87,11 +70,9 @@ test('buildExecutionBrief prefers working state and folds in mission and run-con
   assert.equal(brief.nextAction, 'Request deploy approval')
   assert.equal(brief.plan[0]?.text, 'Request deploy approval')
   assert.equal(brief.blockers[0], 'Deploy approval is pending. | next: Request deploy approval')
-  assert.ok(brief.blockers.some((entry) => /waiting for deploy approval/i.test(entry)))
   assert.ok(brief.facts.some((entry) => /auth mismatch isolated to staging/i.test(entry)))
   assert.ok(brief.artifacts.some((entry) => /deploy\.log/i.test(entry)))
   assert.equal(brief.parentContext, 'Parent asked for a contained fix.')
-  assert.equal(brief.missionPhase, 'executing')
 })
 
 test('buildExecutionBriefContextBlock renders a single canonical state block', () => {
@@ -139,7 +120,6 @@ test('buildExecutionBriefContextBlock renders a single canonical state block', (
 test('serializeExecutionBriefForDelegation creates a bounded handoff summary', () => {
   const text = serializeExecutionBriefForDelegation({
     sessionId: 's3',
-    missionId: 'm3',
     objective: 'Repair the deployment pipeline',
     summary: 'The regression is isolated to the release job.',
     status: 'blocked',
@@ -153,9 +133,6 @@ test('serializeExecutionBriefForDelegation creates a bounded handoff summary', (
     artifacts: ['/tmp/project/release.log'],
     constraints: ['Keep the current release shape.'],
     successCriteria: ['Production deploy completes'],
-    missionStatus: 'active',
-    missionPhase: 'executing',
-    waitState: null,
     evidenceRefs: [],
     parentContext: 'Parent is waiting on a concise status update.',
   })

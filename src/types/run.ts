@@ -17,7 +17,6 @@ export type ExecutionOwnerType =
   | 'task'
   | 'protocol_run'
   | 'schedule'
-  | 'mission'
   | 'agent'
   | 'subagent'
 
@@ -48,7 +47,6 @@ export interface SessionRunRecoveryPayload {
 export interface SessionRunRecord {
   id: string
   sessionId: string
-  missionId?: string | null
   kind?: ExecutionKind
   ownerType?: ExecutionOwnerType | null
   ownerId?: string | null
@@ -78,7 +76,6 @@ export interface SessionRunRecord {
 export interface SessionQueuedTurn {
   runId: string
   sessionId: string
-  missionId?: string | null
   text: string
   queuedAt: number
   position: number

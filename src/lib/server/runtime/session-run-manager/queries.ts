@@ -37,7 +37,6 @@ function toQueuedTurn(entry: SessionRunQueueEntry, index: number): SessionQueued
   return {
     runId: entry.run.id,
     sessionId: entry.run.sessionId,
-    missionId: entry.run.missionId || null,
     text: entry.message,
     queuedAt: entry.run.queuedAt,
     position: index + 1,

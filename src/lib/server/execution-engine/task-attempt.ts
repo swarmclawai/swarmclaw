@@ -238,7 +238,6 @@ export function enqueueTaskAttemptExecution(
   const run: SessionRunRecord = {
     id: executionId,
     sessionId: input.sessionId,
-    missionId: input.task.missionId || null,
     kind: 'task_attempt',
     ownerType: 'task',
     ownerId: input.task.id,

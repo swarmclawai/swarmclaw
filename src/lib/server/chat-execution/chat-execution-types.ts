@@ -3,7 +3,6 @@ import type { MessageToolEvent, SSEEvent } from '@/types'
 export interface ExecuteChatTurnInput {
   sessionId: string
   message: string
-  missionId?: string | null
   imagePath?: string
   imageUrl?: string
   attachedFiles?: string[]
@@ -27,7 +26,6 @@ export interface ExecuteChatTurnInput {
 export interface ExecuteChatTurnResult {
   runId?: string
   sessionId: string
-  missionId?: string | null
   text: string
   persisted: boolean
   toolEvents: MessageToolEvent[]

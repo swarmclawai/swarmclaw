@@ -3,12 +3,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useAgentsQuery } from '@/features/agents/queries'
 import { useChatroomsQuery } from '@/features/chatrooms/queries'
-import { useMissionsQuery } from '@/features/missions/queries'
 import { useCreateProtocolRunMutation, useProtocolTemplatesQuery } from '@/features/protocols/queries'
 import { useTasksQuery } from '@/features/tasks/queries'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
 import { SheetFooter } from '@/components/shared/sheet-footer'
-import type { BoardTask, Chatroom, Mission, ProtocolRun, ProtocolTemplate } from '@/types'
+import type { BoardTask, Chatroom, ProtocolRun, ProtocolTemplate } from '@/types'
 
 export type StructuredSessionLaunchContext = {
   templateId?: string | null
@@ -21,8 +20,6 @@ export type StructuredSessionLaunchContext = {
   sessionLabel?: string | null
   parentChatroomId?: string | null
   parentChatroomLabel?: string | null
-  missionId?: string | null
-  missionLabel?: string | null
   taskId?: string | null
   taskLabel?: string | null
   autoStart?: boolean
@@ -52,7 +49,6 @@ type FormState = {
   facilitatorAgentId: string
   sessionId: string
   parentChatroomId: string
-  missionId: string
   taskId: string
   autoStart: boolean
   createTranscript: boolean
@@ -62,7 +58,6 @@ const DEFAULT_TEMPLATE_ID = 'facilitated_discussion'
 
 function buildDefaultTitle(context: StructuredSessionLaunchContext | null | undefined): string {
   if (context?.title?.trim()) return context.title.trim()
-  if (context?.missionLabel?.trim()) return `Structured session: ${context.missionLabel.trim()}`
   if (context?.taskLabel?.trim()) return `Structured session: ${context.taskLabel.trim()}`
   if (context?.parentChatroomLabel?.trim()) return `Structured session: ${context.parentChatroomLabel.trim()}`
   if (context?.sessionLabel?.trim()) return `Structured session: ${context.sessionLabel.trim()}`
@@ -81,7 +76,6 @@ function buildInitialState(context: StructuredSessionLaunchContext | null | unde
     facilitatorAgentId: context?.facilitatorAgentId?.trim() || '',
     sessionId: context?.sessionId?.trim() || '',
     parentChatroomId: context?.parentChatroomId?.trim() || '',
-    missionId: context?.missionId?.trim() || '',
     taskId: context?.taskId?.trim() || '',
     autoStart: context?.autoStart !== false,
     createTranscript: context?.createTranscript !== false,
@@ -108,19 +102,16 @@ export function StructuredSessionLauncher({
   const templatesQuery = useProtocolTemplatesQuery({ enabled: open })
   const agentsQuery = useAgentsQuery({ enabled: open })
   const chatroomsQuery = useChatroomsQuery({ enabled: open && allowContextSelection })
-  const missionsQuery = useMissionsQuery({ enabled: open && allowContextSelection, limit: 80 })
   const tasksQuery = useTasksQuery({ includeArchived: true, enabled: open && allowContextSelection })
   const createRunMutation = useCreateProtocolRunMutation()
   const templates = templatesQuery.data ?? []
   const agents = agentsQuery.data ?? {}
   const chatrooms = chatroomsQuery.data ?? {}
-  const missions = missionsQuery.data ?? []
   const tasks = tasksQuery.data ?? {}
   const loading = (
     templatesQuery.isLoading
     || agentsQuery.isLoading
     || chatroomsQuery.isLoading
-    || missionsQuery.isLoading
     || tasksQuery.isLoading
   )
   const breakoutMode = variant === 'breakout'
@@ -145,7 +136,6 @@ export function StructuredSessionLauncher({
     () => [
       contextChip('Chat', initialContext?.sessionLabel),
       contextChip('Chatroom', initialContext?.parentChatroomLabel),
-      contextChip('Mission', initialContext?.missionLabel),
       contextChip('Task', initialContext?.taskLabel),
     ].filter(Boolean) as Array<{ label: string; value: string }>,
     [initialContext],
@@ -180,7 +170,6 @@ export function StructuredSessionLauncher({
         facilitatorAgentId: form.facilitatorAgentId || null,
         sessionId: form.sessionId || null,
         parentChatroomId: form.parentChatroomId || null,
-        missionId: form.missionId || null,
         taskId: form.taskId || null,
         autoStart: form.autoStart,
         createTranscript: form.createTranscript,
@@ -411,16 +400,6 @@ export function StructuredSessionLauncher({
                     <option value="">No parent chatroom</option>
                     {Object.values(chatrooms).map((chatroom) => (
                       <option key={chatroom.id} value={chatroom.id}>{chatroom.name}</option>
-                    ))}
-                  </select>
-                  <select
-                    value={form.missionId}
-                    onChange={(event) => setForm((current) => ({ ...current, missionId: event.target.value }))}
-                    className="rounded-[12px] border border-white/[0.06] bg-black/20 px-3 py-2.5 text-[14px] text-text outline-none"
-                  >
-                    <option value="">No linked mission</option>
-                    {missions.map((mission) => (
-                      <option key={mission.id} value={mission.id}>{mission.objective}</option>
                     ))}
                   </select>
                   <select

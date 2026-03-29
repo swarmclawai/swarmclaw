@@ -1,6 +1,6 @@
 import { StateCreator } from 'zustand'
 import type { AppState } from '../use-app-store'
-import type { NetworkInfo, Directory, ProviderInfo, Credentials, Schedule, AppSettings, StoredSecret, ProviderConfig, Skill, Connector, Webhook, McpServerConfig, ExtensionMeta, Project, ActivityEntry, AppNotification, GatewayProfile } from '../../types'
+import type { NetworkInfo, Directory, ProviderInfo, Credentials, Schedule, AppSettings, StoredSecret, ProviderConfig, Skill, Connector, Webhook, McpServerConfig, ExtensionMeta, Project, ActivityEntry, AppNotification, GatewayProfile, SafeWallet } from '../../types'
 import { api } from '@/lib/app/api-client'
 import { safeStorageGetJson, safeStorageSet } from '@/lib/app/safe-storage'
 import { fetchDirs, fetchProviders, fetchCredentials } from '@/lib/chat/chats'
@@ -24,6 +24,8 @@ export interface DataSlice {
   updateSettings: (patch: Partial<AppSettings>) => Promise<void>
   secrets: Record<string, StoredSecret>
   loadSecrets: () => Promise<void>
+  wallets: Record<string, SafeWallet>
+  loadWallets: () => Promise<void>
   providerConfigs: ProviderConfig[]
   loadProviderConfigs: () => Promise<void>
   gatewayProfiles: GatewayProfile[]
@@ -78,6 +80,8 @@ export const createDataSlice: StateCreator<AppState, [], [], DataSlice> = (set, 
   },
   secrets: {},
   loadSecrets: createLoader<AppState>(set, 'secrets', () => api<Record<string, StoredSecret>>('GET', '/secrets'), {}),
+  wallets: {},
+  loadWallets: createLoader<AppState>(set, 'wallets', () => api<Record<string, SafeWallet>>('GET', '/wallets'), {}),
   providerConfigs: [],
   loadProviderConfigs: createLoader<AppState>(set, 'providerConfigs', () => api<ProviderConfig[]>('GET', '/providers/configs'), []),
   gatewayProfiles: [],

@@ -14,9 +14,6 @@ import {
   loadChatroomMany,
 } from '@/lib/server/chatrooms/chatroom-repository'
 import {
-  loadMission,
-} from '@/lib/server/missions/mission-repository'
-import {
   loadProtocolRun,
   loadProtocolRuns,
   deleteProtocolRun,
@@ -37,7 +34,6 @@ export function listProtocolTemplates(): ProtocolTemplate[] {
 
 export function listProtocolRuns(options?: {
   status?: ProtocolRunStatus | null
-  missionId?: string | null
   taskId?: string | null
   sessionId?: string | null
   parentChatroomId?: string | null
@@ -51,7 +47,6 @@ export function listProtocolRuns(options?: {
   return Object.values(loadProtocolRuns())
     .map((run) => normalizeProtocolRun(run))
     .filter((run) => !options?.status || run.status === options.status)
-    .filter((run) => !options?.missionId || run.missionId === options.missionId)
     .filter((run) => !options?.taskId || run.taskId === options.taskId)
     .filter((run) => !options?.sessionId || run.sessionId === options.sessionId)
     .filter((run) => !options?.parentChatroomId || run.parentChatroomId === options.parentChatroomId)
@@ -109,7 +104,6 @@ export function getProtocolRunDetail(runId: string): ProtocolRunDetail | null {
     template: loadTemplate(run.templateId),
     transcript: run.transcriptChatroomId ? chatrooms[run.transcriptChatroomId] || null : null,
     parentChatroom: run.parentChatroomId ? chatrooms[run.parentChatroomId] || null : null,
-    linkedMission: run.missionId ? loadMission(run.missionId) : null,
     linkedTask: run.taskId ? loadTask(run.taskId) : null,
     events: listEvents(run.id),
   }

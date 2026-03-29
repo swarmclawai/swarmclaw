@@ -12,8 +12,6 @@ import { canonicalizeExtensionId } from '@/lib/server/tool-aliases'
 import { logExecution } from '@/lib/server/execution-log'
 import { perf } from '@/lib/server/runtime/perf'
 import {
-  getWalletApprovalBoundaryAction,
-  isWalletSimulationResult,
   resolveSuccessfulTerminalToolBoundary,
   updateStreamedToolEvents,
 } from '@/lib/server/chat-execution/chat-streaming-utils'
@@ -21,7 +19,6 @@ import {
   resolveToolAction,
 } from '@/lib/server/chat-execution/memory-mutation-tools'
 import {
-  hasStateChangingWalletEvidence,
   countExternalExecutionResearchSteps,
   countDistinctExternalResearchHosts,
 } from '@/lib/server/chat-execution/stream-continuation'
@@ -328,18 +325,9 @@ export async function processIterationEvents(opts: ProcessIterationEventsOpts): 
           break
         }
       }
-      if (boundedExternalExecutionTask && getWalletApprovalBoundaryAction(outputStr || '')) {
-        reachedExecutionBoundary = true
-        write(`data: ${JSON.stringify({
-          t: 'status',
-          text: JSON.stringify({ executionBoundary: 'wallet_approval' }),
-        })}\n\n`)
-        break
-      }
       if (
         boundedExternalExecutionTask
         && ['http_request', 'web', 'web_search', 'web_fetch', 'browser'].includes(toolName)
-        && !hasStateChangingWalletEvidence(state.streamedToolEvents)
         && countExternalExecutionResearchSteps(state.streamedToolEvents) >= 5
         && countDistinctExternalResearchHosts(state.streamedToolEvents) >= 3
       ) {
@@ -347,18 +335,6 @@ export async function processIterationEvents(opts: ProcessIterationEventsOpts): 
         write(`data: ${JSON.stringify({
           t: 'status',
           text: JSON.stringify({ executionBoundary: 'research_limit' }),
-        })}\n\n`)
-        break
-      }
-      if (
-        boundedExternalExecutionTask
-        && !hasStateChangingWalletEvidence(state.streamedToolEvents)
-        && isWalletSimulationResult(toolName, outputStr || '')
-      ) {
-        executionFollowthroughReason = 'post_simulation'
-        write(`data: ${JSON.stringify({
-          t: 'status',
-          text: JSON.stringify({ executionBoundary: 'post_simulation' }),
         })}\n\n`)
         break
       }

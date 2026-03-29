@@ -22,7 +22,6 @@ const UNIVERSAL_CORE_EXTENSION_IDS = [
   'manage_secrets',
   'manage_chatrooms',
   'spawn_subagent',
-  'canvas',
   'http_request',
   'wallet',
   'monitor',

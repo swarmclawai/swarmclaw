@@ -19,8 +19,6 @@ import { buildMemoryTools } from './memory'
 import { buildChatroomTools } from './chatroom'
 import { buildProtocolTools } from './protocol'
 import { buildSubagentTools } from './subagent'
-import { buildCanvasTools } from './canvas'
-import { buildWalletTools } from './wallet'
 import { buildOpenClawWorkspaceTools } from './openclaw-workspace'
 import { buildScheduleTools } from './schedule'
 import { buildPlatformTools } from './platform'
@@ -187,8 +185,6 @@ export async function buildSessionTools(cwd: string, enabledExtensions: string[]
       ['manage_chatrooms', buildChatroomTools],
       ['manage_protocols', buildProtocolTools],
       ['spawn_subagent', buildSubagentTools],
-      ['canvas', buildCanvasTools],
-      ['wallet', buildWalletTools],
       ['openclaw_workspace', buildOpenClawWorkspaceTools],
       ['schedule', buildScheduleTools],
       ['manage_sessions', buildSessionInfoTools],

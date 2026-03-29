@@ -446,9 +446,6 @@ export function normalizeProtocolSourceRef(run: Partial<ProtocolRun>): ProtocolS
   if (typeof run.parentChatroomId === 'string' && run.parentChatroomId.trim()) {
     return { kind: 'chatroom', chatroomId: run.parentChatroomId.trim() }
   }
-  if (typeof run.missionId === 'string' && run.missionId.trim()) {
-    return { kind: 'mission', missionId: run.missionId.trim() }
-  }
   if (typeof run.taskId === 'string' && run.taskId.trim()) {
     return { kind: 'task', taskId: run.taskId.trim() }
   }
@@ -484,7 +481,6 @@ export function normalizeProtocolRun(run: ProtocolRun): ProtocolRun {
     participantAgentIds: uniqueIds(run.participantAgentIds, 64),
     observerAgentIds: uniqueIds(run.observerAgentIds, 64),
     facilitatorAgentId: typeof run.facilitatorAgentId === 'string' ? run.facilitatorAgentId : null,
-    missionId: typeof run.missionId === 'string' ? run.missionId : null,
     taskId: typeof run.taskId === 'string' ? run.taskId : null,
     sessionId: typeof run.sessionId === 'string' ? run.sessionId : null,
     parentRunId: typeof run.parentRunId === 'string' ? run.parentRunId : null,

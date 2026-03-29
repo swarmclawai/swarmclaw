@@ -83,10 +83,6 @@ export interface Agent {
   trashedAt?: number
   openclawSkillMode?: SkillAllowlistMode
   openclawAllowedSkills?: string[]
-  walletIds?: string[]
-  activeWalletId?: string | null
-  /** @deprecated Use walletIds + activeWalletId */
-  walletId?: string | null
   responseStyle?: 'concise' | 'normal' | 'detailed' | null
   responseMaxChars?: number | null
   monthlyBudget?: number | null
@@ -169,86 +165,6 @@ export interface Agent {
 
   createdAt: number
   updatedAt: number
-}
-
-// --- Agent Wallets ---
-
-export type WalletChain = 'solana' | 'ethereum'
-
-export interface AgentWallet {
-  id: string
-  agentId: string
-  chain: WalletChain
-  publicKey: string
-  encryptedPrivateKey: string       // AES-256-GCM via encryptKey()
-  label?: string
-  spendingLimitAtomic?: string
-  dailyLimitAtomic?: string
-  /** @deprecated Use spendingLimitAtomic */
-  spendingLimitLamports?: number
-  /** @deprecated Use dailyLimitAtomic */
-  dailyLimitLamports?: number
-  requireApproval: boolean          // default true; can be globally overridden by app settings
-  createdAt: number
-  updatedAt: number
-}
-
-export interface WalletAssetBalance {
-  id: string
-  chain: WalletChain
-  networkId: string
-  networkLabel: string
-  symbol: string
-  name?: string
-  decimals: number
-  balanceAtomic: string
-  balanceFormatted?: string
-  balanceDisplay?: string
-  isNative: boolean
-  contractAddress?: string
-  tokenMint?: string
-  explorerUrl?: string
-}
-
-export interface WalletPortfolioSummary {
-  totalAssets: number
-  nonZeroAssets: number
-  tokenAssets: number
-  networkCount: number
-}
-
-export type WalletTransactionType = 'send' | 'receive' | 'swap'
-export type WalletTransactionStatus = 'pending_approval' | 'pending' | 'confirmed' | 'failed' | 'denied'
-
-export interface WalletTransaction {
-  id: string
-  walletId: string
-  agentId: string
-  chain: WalletChain
-  type: WalletTransactionType
-  signature: string
-  fromAddress: string
-  toAddress: string
-  amountAtomic?: string
-  feeAtomic?: string
-  /** @deprecated Use amountAtomic */
-  amountLamports?: number
-  /** @deprecated Use feeAtomic */
-  feeLamports?: number
-  status: WalletTransactionStatus
-  memo?: string                     // agent's reason for tx
-  approvedBy?: 'user' | 'auto'
-  tokenMint?: string                // null = native chain asset
-  timestamp: number
-}
-
-export interface WalletBalanceSnapshot {
-  id: string
-  walletId: string
-  balanceAtomic?: string
-  /** @deprecated Use balanceAtomic */
-  balanceLamports?: number
-  timestamp: number
 }
 
 export type AgentTool = 'browser'

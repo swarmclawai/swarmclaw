@@ -13,7 +13,6 @@ import {
 import { getExtensionManager } from '@/lib/server/extensions'
 import {
   getEnabledToolPlanningView,
-  getFirstToolForCapability,
   getToolsForCapability,
   TOOL_CAPABILITY,
 } from '@/lib/server/tool-planning'
@@ -23,7 +22,6 @@ import { routeTaskIntent } from '@/lib/server/capability-router'
 import type { MessageClassification } from '@/lib/server/chat-execution/message-classifier'
 import {
   isBroadGoal as classifiedIsBroadGoal,
-  hasWalletIntent as classifiedHasWalletIntent,
   isDeliverableTask as classifiedIsDeliverableTask,
 } from '@/lib/server/chat-execution/message-classifier'
 import { isCurrentThreadRecallRequest } from '@/lib/server/memory/memory-policy'
@@ -112,7 +110,6 @@ export function buildToolDisciplineLines(enabledExtensions: string[]): string[] 
   const planning = getEnabledToolPlanningView(enabledExtensions)
   const uniqueTools = buildExactToolNameList(enabledExtensions)
   if (uniqueTools.length === 0) return []
-  const walletTools = getToolsForCapability(enabledExtensions, TOOL_CAPABILITY.walletInspect)
   const httpTools = getToolsForCapability(enabledExtensions, 'network.http')
 
   const lines = [
@@ -164,10 +161,6 @@ export function buildToolDisciplineLines(enabledExtensions: string[]): string[] 
     lines.push(`If one research path is blocked, try another (${alternateResearchTools.map((toolName) => `\`${toolName}\``).join(', ')}) before giving up.`)
   }
 
-  if (walletTools.length && (uniqueTools.includes('browser') || httpTools.length > 0)) {
-    lines.push(`For wallet/trading tasks, inspect the wallet first with \`${walletTools[0]}\`. Use a bounded loop: verify, attempt one reversible step, then execute or state the blocker.`)
-  }
-
   if (uniqueTools.includes('manage_secrets')) {
     lines.push('Store secrets (passwords, API keys, tokens) with `manage_secrets` — never echo raw values in assistant text.')
   }
@@ -209,25 +202,6 @@ export function shouldForceAttachmentFollowthrough(params: {
   const decision = routeTaskIntent(params.userMessage, params.enabledExtensions, null, params.classification ?? null)
   if (decision.intent !== 'research' && decision.intent !== 'browsing') return false
   return decision.preferredTools.some((toolName) => extensionIdMatches(params.enabledExtensions, toolName))
-}
-
-export function buildExternalWalletExecutionBlock(enabledExtensions: string[]): string {
-  const hasExecutionContext = Boolean(
-    getFirstToolForCapability(enabledExtensions, TOOL_CAPABILITY.walletInspect)
-    || getFirstToolForCapability(enabledExtensions, 'network.http')
-    || getEnabledDisplayTool(enabledExtensions, 'browser')
-    || getEnabledDisplayTool(enabledExtensions, 'manage_capabilities'),
-  )
-  if (!hasExecutionContext) return ''
-  const lines = [
-    '## External Service Execution',
-    'Define a stop condition before exploring: either complete one concrete reversible action, or identify the exact blocker with evidence.',
-    'A prose sentence saying approval is needed is not enough. When the next step is a wallet signature or transaction, trigger the actual wallet approval request through the tool.',
-    'After one or two discovery bursts, stop exploring and summarize the blocker if execution still depends on a missing capability such as injected wallet signing, external credentials, or unavailable approvals.',
-    'Do not mutate already confirmed identifiers unless newer tool evidence proves the earlier value was wrong.',
-    'Never claim success on a trading or dApp task unless you either completed the reversible step with tool evidence or clearly stated the final missing step.',
-  ]
-  return lines.join('\n')
 }
 
 export async function buildForcedExternalServiceSummary(params: {
@@ -471,10 +445,6 @@ export function buildAgenticExecutionPolicy(opts: {
   // Situational blocks — skipped in minimal mode
   if (!isMinimal) {
     if (opts.userMessage && classifiedIsBroadGoal(opts.classification ?? null, opts.userMessage)) parts.push(GOAL_DECOMPOSITION_BLOCK)
-    if (opts.userMessage && classifiedHasWalletIntent(opts.classification ?? null, opts.userMessage)) {
-      const externalExecutionBlock = buildExternalWalletExecutionBlock(opts.enabledExtensions)
-      if (externalExecutionBlock) parts.push(externalExecutionBlock)
-    }
     if (opts.userMessage && classifiedIsDeliverableTask(opts.classification ?? null, opts.userMessage) && opts.enabledExtensions.some((toolId) => toolId === 'files' || toolId === 'edit_file')) {
       parts.push(OPEN_ENDED_REVISION_BLOCK)
     }

@@ -40,7 +40,6 @@ describe('buildAgenticExecutionPolicy', () => {
         isDeliverableTask: false,
         isBroadGoal: false,
         isLightweightDirectChat: true,
-        walletIntent: 'none',
         hasHumanSignals: false,
         hasSignificantEvent: false,
         isResearchSynthesis: false,

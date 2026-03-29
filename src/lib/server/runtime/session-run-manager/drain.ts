@@ -90,7 +90,6 @@ export async function drainExecution(
     })
 
     let runtimeTimer: ReturnType<typeof setTimeout> | null = null
-    let finishedMissionId: string | null = null
     if (next.maxRuntimeMs && next.maxRuntimeMs > 0) {
       runtimeTimer = setTimeout(() => {
         next.signalController.abort()
@@ -119,8 +118,6 @@ export async function drainExecution(
       next.run.status = aborted ? 'cancelled' : (failed ? 'failed' : 'completed')
       next.run.endedAt = next.run.endedAt || now()
       next.run.error = aborted ? (next.run.error || 'Cancelled') : result.error
-      next.run.missionId = result.missionId || next.run.missionId || null
-      finishedMissionId = next.run.missionId || null
       next.run.resultPreview = result.text?.slice(0, 280)
       if (typeof result.inputTokens === 'number') next.run.totalInputTokens = result.inputTokens
       if (typeof result.outputTokens === 'number') next.run.totalOutputTokens = result.outputTokens
@@ -186,7 +183,6 @@ export async function drainExecution(
       next.run.status = aborted ? 'cancelled' : 'failed'
       next.run.endedAt = now()
       next.run.error = errorMessage(err)
-      finishedMissionId = next.run.missionId || null
       syncRunRecord(next.run)
       emitRunMeta(next, next.run.status, { error: next.run.error })
       log.error('session-run', `Run failed ${next.run.id}`, {
@@ -216,26 +212,6 @@ export async function drainExecution(
       decrementNonHeartbeatWork(next)
       reconcileSessionActivityLease(next.run.sessionId)
       notify(`stream-end:${next.run.sessionId}`)
-      if (finishedMissionId && next.run.source !== 'chat') {
-        const missionId = finishedMissionId
-        queueMicrotask(() => {
-          import('@/lib/server/missions/mission-service')
-            .then(({ loadMissionById, requestMissionTick }) => {
-              const mission = loadMissionById(missionId)
-              if (!mission) return
-              if (mission.status !== 'active') return
-              if (mission.phase === 'dispatching' || mission.phase === 'executing') return
-              requestMissionTick(missionId, 'run_drained', {
-                runId: next.run.id,
-                source: next.run.source,
-                status: next.run.status,
-              })
-            })
-            .catch((err: unknown) => {
-              log.warn('session-run', 'Mission tick failed', { missionId, runId: next.run.id, error: errorMessage(err) })
-            })
-        })
-      }
       void drainExecution(executionKey, deps)
     }
   } finally {

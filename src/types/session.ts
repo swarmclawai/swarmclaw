@@ -1,7 +1,6 @@
 import type { ProviderId, OllamaMode } from './provider'
 import type { ConnectorPlatform } from './connector'
 import type { Message } from './message'
-import type { MissionSummary } from './mission'
 
 export type SessionResetMode = 'idle' | 'daily' | 'isolated'
 export type SessionResetType = 'direct' | 'group' | 'thread' | 'main'
@@ -33,51 +32,6 @@ export interface SessionSkillRuntimeState {
   lastRunToolName?: string | null
 }
 
-export interface CanvasMetricItem {
-  label: string
-  value: string
-  detail?: string
-  tone?: 'default' | 'positive' | 'negative' | 'warning'
-}
-
-export interface CanvasCardItem {
-  title: string
-  body?: string
-  meta?: string
-  tone?: 'default' | 'positive' | 'negative' | 'warning'
-}
-
-export interface CanvasActionItem {
-  label: string
-  href?: string
-  note?: string
-  intent?: 'primary' | 'secondary' | 'success' | 'danger'
-}
-
-export interface CanvasTableData {
-  columns: string[]
-  rows: Array<Array<string | number | boolean | null>>
-  caption?: string
-}
-
-export type CanvasBlock =
-  | { type: 'markdown'; title?: string; markdown: string }
-  | { type: 'metrics'; title?: string; items: CanvasMetricItem[] }
-  | { type: 'cards'; title?: string; items: CanvasCardItem[] }
-  | { type: 'table'; title?: string; table: CanvasTableData }
-  | { type: 'code'; title?: string; code: string; language?: string }
-  | { type: 'actions'; title?: string; items: CanvasActionItem[] }
-
-export interface CanvasDocument {
-  kind: 'structured'
-  title?: string
-  subtitle?: string
-  theme?: 'slate' | 'sky' | 'emerald' | 'amber' | 'rose'
-  blocks: CanvasBlock[]
-  updatedAt?: number | null
-}
-
-export type CanvasContent = string | CanvasDocument | null
 
 export interface MailboxEnvelope {
   id: string
@@ -204,8 +158,6 @@ export interface Session {
   lastSessionResetReason?: string | null
   identityState?: IdentityContinuityState | null
   sessionArchiveState?: SessionArchiveState | null
-  missionId?: string | null
-  missionSummary?: MissionSummary | null
   skillRuntimeState?: SessionSkillRuntimeState | null
   pinned?: boolean
   file?: string | null
@@ -217,7 +169,6 @@ export interface Session {
   vibe?: string
   theme?: string
   avatar?: string
-  canvasContent?: CanvasContent
   /** Tracks how many times each memory ID has been injected via proactive recall in this session. */
   injectedMemoryIds?: Record<string, number>
   /** Structured working memory that survives compaction and flows through delegation. */
@@ -251,7 +202,6 @@ export type SessionTool =
   | 'edit_file'
   | 'process'
   | 'spawn_subagent'
-  | 'canvas'
   | 'http_request'
   | 'git'
   | 'mailbox'
@@ -262,4 +212,4 @@ export type SessionTool =
   | 'crawl'
 
 export type SessionType = 'human'
-export type AppView = 'home' | 'agents' | 'org_chart' | 'inbox' | 'chatrooms' | 'protocols' | 'schedules' | 'memory' | 'missions' | 'tasks' | 'secrets' | 'providers' | 'skills' | 'connectors' | 'webhooks' | 'mcp_servers' | 'knowledge' | 'extensions' | 'usage' | 'wallets' | 'runs' | 'autonomy' | 'logs' | 'settings' | 'projects' | 'activity'
+export type AppView = 'home' | 'agents' | 'org_chart' | 'inbox' | 'chatrooms' | 'protocols' | 'schedules' | 'memory' | 'tasks' | 'secrets' | 'wallets' | 'providers' | 'skills' | 'connectors' | 'webhooks' | 'mcp_servers' | 'knowledge' | 'extensions' | 'usage' | 'runs' | 'autonomy' | 'logs' | 'settings' | 'projects' | 'activity'

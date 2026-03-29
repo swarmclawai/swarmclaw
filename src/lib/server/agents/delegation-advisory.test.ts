@@ -62,7 +62,6 @@ function makeClassification(overrides: Partial<MessageClassification>): MessageC
     taskIntent: 'general',
     isDeliverableTask: false,
     isBroadGoal: false,
-    walletIntent: 'none',
     hasHumanSignals: false,
     hasSignificantEvent: false,
     isResearchSynthesis: false,

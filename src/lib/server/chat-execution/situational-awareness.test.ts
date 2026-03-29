@@ -5,12 +5,12 @@ import {
   timeAgo,
   type SituationalAwarenessData,
 } from '@/lib/server/chat-execution/situational-awareness'
-import type { BoardTask, Mission, Schedule, SupervisorIncident, SessionRunRecord } from '@/types'
+import type { BoardTask, Schedule, SupervisorIncident, SessionRunRecord } from '@/types'
 
 const NOW = 1_710_500_000_000 // fixed timestamp for deterministic tests
 
 function emptyData(): SituationalAwarenessData {
-  return { tasks: [], schedules: [], failedRuns: [], incidents: [], mission: null, now: NOW }
+  return { tasks: [], schedules: [], failedRuns: [], incidents: [], now: NOW }
 }
 
 function makeTask(overrides: Partial<BoardTask> & { id: string; title: string; status: string; agentId: string }): BoardTask {
@@ -192,58 +192,6 @@ describe('formatSituationalAwareness', () => {
     assert.equal(failureLines.length, 2)
   })
 
-  it('builds mission section for active mission', () => {
-    const data = emptyData()
-    data.mission = {
-      id: 'm1',
-      source: 'user' as const,
-      objective: 'Implement user auth flow',
-      status: 'active',
-      phase: 'dispatching',
-      createdAt: NOW,
-      updatedAt: NOW,
-    } as unknown as Mission
-
-    const result = formatSituationalAwareness(data)
-
-    assert.ok(result.includes('### Current Mission'))
-    assert.ok(result.includes('Implement user auth flow'))
-    assert.ok(result.includes('Status: active'))
-    assert.ok(result.includes('Phase: dispatching'))
-  })
-
-  it('omits mission section for completed missions', () => {
-    const data = emptyData()
-    data.mission = {
-      id: 'm1',
-      source: 'user' as const,
-      objective: 'Done task',
-      status: 'completed',
-      phase: 'completed',
-      createdAt: NOW,
-      updatedAt: NOW,
-    } as unknown as Mission
-
-    const result = formatSituationalAwareness(data)
-    assert.ok(!result.includes('### Current Mission'))
-  })
-
-  it('omits mission section for failed missions', () => {
-    const data = emptyData()
-    data.mission = {
-      id: 'm1',
-      source: 'user' as const,
-      objective: 'Failed task',
-      status: 'failed',
-      phase: 'failed',
-      createdAt: NOW,
-      updatedAt: NOW,
-    } as unknown as Mission
-
-    const result = formatSituationalAwareness(data)
-    assert.ok(!result.includes('### Current Mission'))
-  })
-
   it('produces all sections within token budget', () => {
     const data = emptyData()
     for (let i = 0; i < 5; i++) {
@@ -265,15 +213,6 @@ describe('formatSituationalAwareness', () => {
       }))
     }
     data.failedRuns.push(makeRun({ id: 'r1', sessionId: 'sess-1', endedAt: NOW - 3_600_000, error: 'Test failure' }))
-    data.mission = {
-      id: 'm1',
-      source: 'user' as const,
-      objective: 'Test mission objective',
-      status: 'active',
-      phase: 'executing',
-      createdAt: NOW,
-      updatedAt: NOW,
-    } as unknown as Mission
 
     const result = formatSituationalAwareness(data)
 
@@ -281,7 +220,6 @@ describe('formatSituationalAwareness', () => {
     assert.ok(result.includes('### Active Tasks'))
     assert.ok(result.includes('### Recent Failures'))
     assert.ok(result.includes('### My Schedule'))
-    assert.ok(result.includes('### Current Mission'))
     assert.ok(result.length <= 3200, `Block is ${result.length} chars, should be <= 3200`)
   })
 
@@ -299,15 +237,6 @@ describe('formatSituationalAwareness', () => {
     for (let i = 0; i < 3; i++) {
       data.schedules.push(makeSchedule({ id: `s${i}`, name: 'S'.repeat(60), agentId: 'a1', nextRunAt: NOW + 3_600_000, frequency: 'daily' }))
     }
-    data.mission = {
-      id: 'm1',
-      source: 'user' as const,
-      objective: 'O'.repeat(100),
-      status: 'active',
-      phase: 'executing',
-      createdAt: NOW,
-      updatedAt: NOW,
-    } as unknown as Mission
 
     const result = formatSituationalAwareness(data)
 

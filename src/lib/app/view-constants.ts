@@ -9,9 +9,10 @@ export const VIEW_LABELS: Record<AppView, string> = {
   protocols: 'Sessions',
   schedules: 'Schedules',
   memory: 'Memory',
-  missions: 'Missions',
+
   tasks: 'Tasks',
   secrets: 'Secrets',
+  wallets: 'Wallets',
   providers: 'Providers',
   skills: 'Skills',
   connectors: 'Connectors',
@@ -21,7 +22,6 @@ export const VIEW_LABELS: Record<AppView, string> = {
   logs: 'Logs',
   extensions: 'Extensions',
   usage: 'Usage',
-  wallets: 'Wallets',
   runs: 'Runs',
   autonomy: 'Autonomy',
   settings: 'Settings',
@@ -53,9 +53,10 @@ export const VIEW_DESCRIPTIONS: Record<AppView, string> = {
   protocols: 'Temporary structured sessions and protocol-driven runs',
   schedules: 'Automated task schedules',
   memory: 'Long-term agent memory store',
-  missions: 'Durable mission control and execution state',
+
   tasks: 'Task board for agent work and queued runs',
   secrets: 'API keys, tokens, and encrypted credentials',
+  wallets: 'Crypto wallets for agent-initiated on-chain transactions',
   providers: 'LLM providers & custom endpoints',
   skills: 'Reusable instruction sets for agents',
   connectors: 'Chat platform bridges (Discord, Slack, etc.)',
@@ -65,7 +66,6 @@ export const VIEW_DESCRIPTIONS: Record<AppView, string> = {
   logs: 'Application logs & error tracking',
   extensions: 'Manage external extensions and marketplace installs',
   usage: 'Usage metrics, cost tracking & agent performance',
-  wallets: 'Agent crypto wallets — hold funds, send SOL, manage spending',
   runs: 'Live run monitoring & history',
   autonomy: 'Estops, incidents, and runtime autonomy controls',
   settings: 'Manage defaults, providers, secrets, and automation settings',
@@ -89,7 +89,7 @@ export const VIEW_EMPTY_STATES: Record<Exclude<AppView, 'agents' | 'home'>, { ic
   protocols: {
     icon: 'list',
     title: 'Structured Sessions',
-    description: 'Run temporary bounded sessions from chats, chatrooms, tasks, missions, or schedules without turning every surface into a workflow engine.',
+    description: 'Run temporary bounded sessions from chats, chatrooms, tasks, or schedules without turning every surface into a workflow engine.',
     features: ['Start one-agent or multi-agent structured sessions from context', 'Use neutral built-in templates like review, discussion, and decision rounds', 'Keep a hidden transcript plus durable run events', 'Archive the outcome and post a compact summary back when needed'],
   },
   schedules: {
@@ -104,12 +104,7 @@ export const VIEW_EMPTY_STATES: Record<Exclude<AppView, 'agents' | 'home'>, { ic
     description: 'Long-term memory store for AI agents so they can retain useful context across conversations.',
     features: ['Agents store findings and learnings automatically', 'Full-text search across all stored memories', 'Organized by categories and agents', 'Persists across conversations for continuity'],
   },
-  missions: {
-    icon: 'target',
-    title: 'Missions',
-    description: 'Track durable objectives, blockers, waits, verification, and linked work across chats, schedules, and delegation.',
-    features: ['Inspect active and waiting missions', 'Review child missions and linked tasks', 'Understand why a mission is blocked or complete', 'Resume, replan, or retry verification from one place'],
-  },
+
   tasks: {
     icon: 'clipboard',
     title: 'Task Board',
@@ -121,6 +116,12 @@ export const VIEW_EMPTY_STATES: Record<Exclude<AppView, 'agents' | 'home'>, { ic
     title: 'Secrets',
     description: 'Manage API keys and credentials that agents and integrations can access securely.',
     features: ['Store keys for external services (Gmail, APIs, etc.)', 'Scope secrets globally or to specific agents', 'Encrypted at rest with AES-256-GCM', 'Agents retrieve secrets through configured tools'],
+  },
+  wallets: {
+    icon: 'wallet',
+    title: 'Wallets',
+    description: 'Manage crypto wallets that agents use for on-chain transactions and payments.',
+    features: ['Generate wallets with encrypted private keys', 'Assign wallets to specific agents', 'Set spending and daily USDC limits', 'Require human approval for transactions'],
   },
   providers: {
     icon: 'zap',
@@ -212,16 +213,10 @@ export const VIEW_EMPTY_STATES: Record<Exclude<AppView, 'agents' | 'home'>, { ic
     description: 'Audit trail of all entity mutations across the system.',
     features: ['Track agent, task, and connector changes', 'Filter by entity type and action', 'Real-time updates via WebSocket', 'Relative timestamps'],
   },
-  wallets: {
-    icon: 'wallet',
-    title: 'Wallets',
-    description: 'Agent crypto wallets for autonomous financial operations on Solana.',
-    features: ['Create Solana wallets for agents', 'Per-transaction and daily spending limits', 'User approval for transactions', 'Balance tracking and transaction history'],
-  },
 }
 
 export const FULL_WIDTH_VIEWS = new Set<AppView>([
-  'home', 'org_chart', 'inbox', 'chatrooms', 'protocols', 'schedules', 'missions', 'secrets', 'providers', 'skills',
+  'home', 'org_chart', 'inbox', 'chatrooms', 'protocols', 'schedules', 'secrets', 'wallets', 'providers', 'skills',
   'connectors', 'webhooks', 'mcp_servers', 'knowledge', 'extensions',
-  'usage', 'wallets', 'runs', 'autonomy', 'logs', 'settings', 'activity', 'projects',
+  'usage', 'runs', 'autonomy', 'logs', 'settings', 'activity', 'projects',
 ])

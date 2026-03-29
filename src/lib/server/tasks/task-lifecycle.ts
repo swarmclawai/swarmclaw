@@ -176,6 +176,7 @@ export function markValidatedTaskCompleted(
   task.completedAt = options.preserveCompletedAt ? (task.completedAt || options.now) : options.now
   task.updatedAt = options.now
   task.error = null
+  task.checkoutRunId = null
   return task
 }
 
@@ -187,6 +188,7 @@ export function markInvalidCompletedTaskFailed(
   task.status = 'failed'
   task.completedAt = null
   task.updatedAt = options.now
+  task.checkoutRunId = null
   task.error = formatValidationFailure(validation.reasons).slice(0, 500)
   if (options.comment) {
     if (!task.comments) task.comments = []

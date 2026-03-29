@@ -122,7 +122,6 @@ export type ProtocolSourceRef =
   | { kind: 'api' }
   | { kind: 'session'; sessionId: string }
   | { kind: 'chatroom'; chatroomId: string }
-  | { kind: 'mission'; missionId: string }
   | { kind: 'task'; taskId: string }
   | { kind: 'schedule'; scheduleId: string }
   | { kind: 'protocol_run'; runId: string; parentRunId?: string | null; stepId?: string | null; branchId?: string | null }
@@ -319,7 +318,6 @@ export interface ProtocolRun {
   participantAgentIds: string[]
   facilitatorAgentId?: string | null
   observerAgentIds?: string[]
-  missionId?: string | null
   taskId?: string | null
   sessionId?: string | null
   parentRunId?: string | null

@@ -215,7 +215,6 @@ export function enqueueSessionRun(
   const run: SessionRunRecord = {
     id: runId,
     sessionId: input.sessionId,
-    missionId: input.missionId ?? getSession(input.sessionId)?.missionId ?? null,
     kind: 'session_turn',
     ownerType: 'session',
     ownerId: input.sessionId,

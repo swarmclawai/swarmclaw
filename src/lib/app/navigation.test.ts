@@ -39,19 +39,6 @@ describe('getViewPath', () => {
   })
 })
 
-describe('getMissionPath', () => {
-  it('returns /missions when no ID is provided', () => {
-    assert.equal(mod.getMissionPath(), '/missions')
-    assert.equal(mod.getMissionPath(null), '/missions')
-    assert.equal(mod.getMissionPath(''), '/missions')
-  })
-
-  it('returns /missions/{encoded} with an ID', () => {
-    assert.equal(mod.getMissionPath('m-42'), '/missions/m-42')
-    assert.equal(mod.getMissionPath('has/slash'), '/missions/has%2Fslash')
-  })
-})
-
 describe('pathToView', () => {
   it('matches exact path', () => {
     assert.equal(mod.pathToView('/agents'), 'agents')

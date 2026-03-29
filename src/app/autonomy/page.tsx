@@ -7,7 +7,7 @@ import { StatCard } from '@/components/ui/stat-card'
 import { isOrchestratorEligible } from '@/lib/orchestrator-config'
 import { timeAgo } from '@/lib/time-format'
 import { useWs } from '@/hooks/use-ws'
-import type { Agent, ApprovalRequest, EstopState, Mission, SupervisorIncident } from '@/types'
+import type { Agent, ApprovalRequest, EstopState, SupervisorIncident } from '@/types'
 
 type EstopResponse = EstopState & {
   ok?: boolean
@@ -108,7 +108,6 @@ function previewIncidentDetails(value: string): string {
 export default function AutonomyPage() {
   const [estop, setEstop] = useState<EstopResponse | null>(null)
   const [incidents, setIncidents] = useState<SupervisorIncident[]>([])
-  const [missions, setMissions] = useState<Mission[]>([])
   const [agents, setAgents] = useState<Agent[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -122,15 +121,13 @@ export default function AutonomyPage() {
     if (mode === 'initial') setLoading(true)
     else setRefreshing(true)
     try {
-      const [estopState, incidentList, missionList, agentMap] = await Promise.all([
+      const [estopState, incidentList, agentMap] = await Promise.all([
         api<EstopResponse>('GET', '/autonomy/estop'),
         api<SupervisorIncident[]>('GET', '/autonomy/incidents?limit=60'),
-        api<Mission[]>('GET', '/missions?status=non_terminal&limit=20'),
         api<Record<string, Agent>>('GET', '/agents'),
       ])
       setEstop(estopState)
       setIncidents(Array.isArray(incidentList) ? incidentList : [])
-      setMissions(Array.isArray(missionList) ? missionList : [])
       setAgents(agentMap ? Object.values(agentMap) : [])
       setRefreshedAt(Date.now())
       setError(null)
@@ -287,14 +284,6 @@ export default function AutonomyPage() {
     () => [...incidents].sort((left, right) => right.createdAt - left.createdAt),
     [incidents],
   )
-  const activeMissions = useMemo(
-    () => [...missions].sort((left, right) => right.updatedAt - left.updatedAt),
-    [missions],
-  )
-  const blockedMissions = activeMissions.filter((mission) =>
-    mission.status === 'waiting' || mission.status === 'failed' || mission.status === 'cancelled',
-  )
-
   const filteredIncidents = useMemo(() => {
     if (incidentFilter === 'high') return sortedIncidents.filter((incident) => incident.severity === 'high')
     if (incidentFilter === 'runtime_failure') return sortedIncidents.filter((incident) => incident.kind === 'runtime_failure')
@@ -490,50 +479,6 @@ export default function AutonomyPage() {
             </div>
           </div>
         )}
-
-        <section className="rounded-[20px] border border-white/[0.06] bg-surface p-5">
-          <div className="mb-4 flex items-start justify-between gap-4">
-            <div>
-              <h2 className="font-display text-[18px] font-700 tracking-[-0.02em] text-text">Active Missions</h2>
-              <p className="mt-1 text-[12px] leading-[1.7] text-text-3/72">
-                Durable goals that are still running or waiting. Waiting missions surface here so operators can see blockers without digging through incidents.
-              </p>
-            </div>
-            <div className="rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1 text-[11px] text-text-3/72">
-              {activeMissions.length} active
-              {blockedMissions.length > 0 ? ` · ${blockedMissions.length} waiting` : ''}
-            </div>
-          </div>
-
-          {activeMissions.length === 0 ? (
-            <div className="rounded-[16px] border border-white/[0.06] bg-white/[0.02] px-4 py-3 text-[12px] text-text-3/70">
-              No durable missions are active right now.
-            </div>
-          ) : (
-            <div className="grid gap-3 lg:grid-cols-2">
-              {activeMissions.slice(0, 6).map((mission) => {
-                const waiting = mission.status === 'waiting' || mission.status === 'failed' || mission.status === 'cancelled'
-                return (
-                  <div
-                    key={mission.id}
-                    className={`rounded-[16px] border p-4 ${waiting ? 'border-amber-500/18 bg-amber-500/[0.05]' : 'border-white/[0.06] bg-white/[0.02]'}`}
-                  >
-                    <div className="mb-2 flex items-center justify-between gap-3">
-                      <span className={`rounded-full px-2.5 py-1 text-[10px] font-700 uppercase tracking-[0.08em] ${waiting ? 'bg-amber-500/12 text-amber-300' : 'bg-emerald-500/12 text-emerald-300'}`}>
-                        {mission.status}
-                      </span>
-                      <span className="text-[11px] text-text-3/65">{timeAgo(mission.updatedAt, now)}</span>
-                    </div>
-                    <div className="text-[14px] font-600 text-text">{mission.objective}</div>
-                    <div className="mt-2 text-[12px] leading-[1.7] text-text-3/72">
-                      {mission.waitState?.reason || mission.currentStep || mission.verifierSummary || mission.plannerSummary || 'Mission active.'}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </section>
 
         <section className="rounded-[20px] border border-white/[0.06] bg-surface p-5">
           <div className="mb-4 flex items-start justify-between gap-4">

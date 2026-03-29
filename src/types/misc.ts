@@ -388,8 +388,6 @@ export interface DelegationJobRecord {
   kind: DelegationJobKind
   status: DelegationJobStatus
   backend?: 'claude' | 'codex' | 'opencode' | 'gemini' | null
-  missionId?: string | null
-  parentMissionId?: string | null
   parentSessionId?: string | null
   childSessionId?: string | null
   agentId?: string | null

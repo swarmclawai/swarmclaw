@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
 import { relativeDate, STATUS_STYLES } from '../project-utils'
-import type { Agent, BoardTask, Mission } from '@/types'
+import type { Agent, BoardTask } from '@/types'
 
 type SortKey = 'status' | 'updated' | 'agent'
 type StatusFilter = 'all' | 'backlog' | 'queued' | 'running' | 'completed' | 'failed'
@@ -13,11 +13,7 @@ const STATUS_PRIORITY: Record<string, number> = {
   failed: 0, running: 1, queued: 2, backlog: 3, deferred: 4, completed: 5, cancelled: 6, archived: 7,
 }
 
-interface WorkTabProps {
-  missions: Mission[]
-}
-
-export function WorkTab({ missions }: WorkTabProps) {
+export function WorkTab() {
   const tasks = useAppStore((s) => s.tasks) as Record<string, BoardTask>
   const agents = useAppStore((s) => s.agents) as Record<string, Agent>
   const activeProjectFilter = useAppStore((s) => s.activeProjectFilter)
@@ -27,37 +23,20 @@ export function WorkTab({ missions }: WorkTabProps) {
   const [sortKey, setSortKey] = useState<SortKey>('status')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [agentFilter, setAgentFilter] = useState<string | null>(null)
-  const [missionFilter, setMissionFilter] = useState<string | null>(null)
-  const [missionSummaryOpen, setMissionSummaryOpen] = useState(false)
 
   const projectTasks = useMemo(
     () => Object.values(tasks).filter((t) => t.projectId === activeProjectFilter),
     [tasks, activeProjectFilter],
   )
 
-  // Build taskId -> mission lookup from Mission.taskIds
-  const taskIdToMission = useMemo(() => {
-    const lookup: Record<string, Mission> = {}
-    for (const m of missions) {
-      for (const tid of m.taskIds || []) {
-        lookup[tid] = m
-      }
-    }
-    return lookup
-  }, [missions])
-
   // Filter
   const filteredTasks = useMemo(() => {
     return projectTasks.filter((t) => {
       if (statusFilter !== 'all' && t.status !== statusFilter) return false
       if (agentFilter && t.agentId !== agentFilter) return false
-      if (missionFilter) {
-        const m = taskIdToMission[t.id]
-        if (!m || m.id !== missionFilter) return false
-      }
       return true
     })
-  }, [projectTasks, statusFilter, agentFilter, missionFilter, taskIdToMission])
+  }, [projectTasks, statusFilter, agentFilter])
 
   // Sort
   const sortedTasks = useMemo(() => {
@@ -78,56 +57,8 @@ export function WorkTab({ missions }: WorkTabProps) {
     return Array.from(ids)
   }, [projectTasks])
 
-  // Mission status summary
-  const missionStatusSummary = useMemo(() => {
-    const counts: Record<string, number> = {}
-    for (const m of missions) {
-      counts[m.status] = (counts[m.status] || 0) + 1
-    }
-    return counts
-  }, [missions])
-
   return (
     <div className="max-w-3xl mx-auto px-8 py-6 space-y-4">
-      {/* Mission summary (collapsible) */}
-      {missions.length > 0 && (
-        <div className="rounded-[12px] border border-white/[0.06] bg-white/[0.02] overflow-hidden">
-          <button
-            onClick={() => setMissionSummaryOpen(!missionSummaryOpen)}
-            className="w-full flex items-center justify-between px-4 py-3 cursor-pointer bg-transparent border-none text-left"
-            style={{ fontFamily: 'inherit' }}
-          >
-            <span className="text-[12px] font-600 text-text-2">
-              Missions: {Object.entries(missionStatusSummary).map(([s, c]) => `${c} ${s}`).join(', ')}
-            </span>
-            <svg
-              width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"
-              className={`text-text-3/40 transition-transform ${missionSummaryOpen ? 'rotate-180' : ''}`}
-            >
-              <polyline points="6 9 12 15 18 9" />
-            </svg>
-          </button>
-          {missionSummaryOpen && (
-            <div className="border-t border-white/[0.06] px-4 py-2 space-y-1">
-              {missions.map((m) => (
-                <button
-                  key={m.id}
-                  onClick={() => setMissionFilter(missionFilter === m.id ? null : m.id)}
-                  className={`w-full flex items-center justify-between px-2 py-1.5 rounded-[8px] text-left cursor-pointer bg-transparent border-none transition-colors
-                    ${missionFilter === m.id ? 'bg-accent-soft' : 'hover:bg-white/[0.04]'}`}
-                  style={{ fontFamily: 'inherit' }}
-                >
-                  <span className="text-[12px] text-text truncate">{m.objective}</span>
-                  <span className={`text-[9px] font-600 uppercase tracking-wider px-1.5 py-0.5 rounded-[4px] shrink-0 ${
-                    m.status === 'active' ? 'bg-sky-500/15 text-sky-400' : 'bg-white/[0.06] text-text-3'
-                  }`}>{m.status}</span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
       {/* Controls row */}
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
@@ -174,9 +105,9 @@ export function WorkTab({ missions }: WorkTabProps) {
           )}
 
           {/* Clear filters */}
-          {(statusFilter !== 'all' || agentFilter || missionFilter) && (
+          {(statusFilter !== 'all' || agentFilter) && (
             <button
-              onClick={() => { setStatusFilter('all'); setAgentFilter(null); setMissionFilter(null) }}
+              onClick={() => { setStatusFilter('all'); setAgentFilter(null) }}
               className="text-[10px] text-accent-bright/70 hover:text-accent-bright cursor-pointer bg-transparent border-none"
               style={{ fontFamily: 'inherit' }}
             >
@@ -212,7 +143,6 @@ export function WorkTab({ missions }: WorkTabProps) {
         <div className="flex flex-col gap-1.5">
           {sortedTasks.map((task) => {
             const agent = task.agentId ? agents[task.agentId] : null
-            const mission = taskIdToMission[task.id]
             return (
               <button
                 key={task.id}
@@ -225,8 +155,8 @@ export function WorkTab({ missions }: WorkTabProps) {
                 </span>
                 <div className="flex-1 min-w-0">
                   <span className="text-[13px] text-text truncate block">{task.title}</span>
-                  {mission && (
-                    <span className="text-[10px] text-text-3/40 truncate block mt-0.5">{mission.objective}</span>
+                  {task.objective && (
+                    <span className="text-[10px] text-text-3/40 truncate block mt-0.5">{task.objective}</span>
                   )}
                 </div>
                 {agent && (

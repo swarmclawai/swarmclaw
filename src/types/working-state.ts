@@ -1,18 +1,16 @@
-import type { MissionStatus, MissionPhase, MissionWaitState } from './mission'
 
 export type WorkingStateStatus = 'idle' | 'progress' | 'blocked' | 'waiting' | 'completed'
 export type WorkingStateItemStatus = 'active' | 'resolved' | 'superseded'
 
 export interface EvidenceRef {
   id: string
-  type: 'tool' | 'message' | 'mission' | 'task' | 'artifact' | 'error' | 'approval'
+  type: 'tool' | 'message' | 'task' | 'artifact' | 'error' | 'approval'
   summary: string
   value?: string | null
   toolName?: string | null
   toolCallId?: string | null
   runId?: string | null
   sessionId?: string | null
-  missionId?: string | null
   taskId?: string | null
   createdAt: number
 }
@@ -28,7 +26,7 @@ export interface WorkingPlanStep {
 export interface WorkingFact {
   id: string
   statement: string
-  source: 'user' | 'tool' | 'assistant' | 'mission' | 'system'
+  source: 'user' | 'tool' | 'assistant' | 'system'
   status: WorkingStateItemStatus
   evidenceIds?: string[]
   createdAt: number
@@ -165,7 +163,6 @@ export interface WorkingStatePatch {
 
 export interface SessionWorkingState {
   sessionId: string
-  missionId?: string | null
   objective?: string | null
   summary?: string | null
   constraints: string[]
@@ -192,7 +189,6 @@ export interface ExecutionBriefPlanStep {
 
 export interface ExecutionBrief {
   sessionId?: string | null
-  missionId?: string | null
   objective: string | null
   summary: string | null
   status: WorkingStateStatus
@@ -203,9 +199,6 @@ export interface ExecutionBrief {
   artifacts: string[]
   constraints: string[]
   successCriteria: string[]
-  missionStatus?: MissionStatus | null
-  missionPhase?: MissionPhase | null
-  waitState?: MissionWaitState | null
   evidenceRefs: EvidenceRef[]
   parentContext: string | null
 }

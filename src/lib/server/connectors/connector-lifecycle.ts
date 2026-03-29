@@ -19,6 +19,7 @@ import {
   setReconnectState,
 } from './reconnect-state'
 import { connectorRuntimeState, runningConnectors } from './runtime-state'
+import { ensureSwarmdockConnectorCredential } from './swarmdock-secret'
 
 const TAG = 'connector-lifecycle'
 
@@ -70,6 +71,7 @@ export async function getPlatform(platform: string) {
     case 'googlechat': return (await import('./googlechat')).default
     case 'matrix':    return (await import('./matrix')).default
     case 'email':     return (await import('./email')).default
+    case 'swarmdock': return (await import('./swarmdock')).default
   }
 
   // 2. Check Extension-provided connectors
@@ -134,8 +136,9 @@ async function _startConnectorImpl(connectorId: string): Promise<void> {
   }
 
   const connectors = loadConnectors()
-  const connector = connectors[connectorId] as Connector | undefined
-  if (!connector) throw new Error('Connector not found')
+  const storedConnector = connectors[connectorId] as Connector | undefined
+  if (!storedConnector) throw new Error('Connector not found')
+  let connector: Connector = storedConnector
 
   // Starting a connector expresses durable intent: keep it enabled across
   // transient failures so daemon recovery and server restarts can retry it.
@@ -148,6 +151,16 @@ async function _startConnectorImpl(connectorId: string): Promise<void> {
   }
 
   try {
+    let swarmdockFallbackPrivateKey: string | null = null
+    if (connector.platform === 'swarmdock') {
+      const prepared = ensureSwarmdockConnectorCredential(connector, {
+        allowMigrationFailureFallback: true,
+      })
+      connector = prepared.connector
+      connectors[connectorId] = connector
+      swarmdockFallbackPrivateKey = prepared.fallbackPrivateKey
+    }
+
     // Resolve bot token from credential
     let botToken = ''
     if (connector.credentialId) {
@@ -164,8 +177,11 @@ async function _startConnectorImpl(connectorId: string): Promise<void> {
     if (!botToken && connector.platform === 'bluebubbles' && connector.config.password) {
       botToken = connector.config.password
     }
+    if (!botToken && swarmdockFallbackPrivateKey) {
+      botToken = swarmdockFallbackPrivateKey
+    }
 
-    if (!botToken && connector.platform !== 'whatsapp' && connector.platform !== 'openclaw' && connector.platform !== 'signal' && connector.platform !== 'email') {
+    if (!botToken && connector.platform !== 'whatsapp' && connector.platform !== 'openclaw' && connector.platform !== 'signal' && connector.platform !== 'email' && connector.platform !== 'swarmdock') {
       throw new Error('No bot token configured')
     }
 

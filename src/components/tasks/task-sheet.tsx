@@ -15,7 +15,6 @@ import {
 import { useProjectsQuery } from '@/features/projects/queries'
 import { useAppSettingsQuery } from '@/features/settings/queries'
 import { useProtocolRunsQuery } from '@/features/protocols/queries'
-import { getMissionPath } from '@/lib/app/navigation'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
 import { AgentPickerList } from '@/components/shared/agent-picker-list'
 import { DirBrowser } from '@/components/shared/dir-browser'
@@ -342,28 +341,11 @@ export function TaskSheet() {
           </div>
         )}
 
-        {editing.missionSummary && (
+        {editing.objective && (
           <div className="mb-8">
-            <SectionLabel>Mission</SectionLabel>
+            <SectionLabel>Objective</SectionLabel>
             <div className="rounded-[14px] border border-white/[0.06] bg-surface px-4 py-3">
-              <div className="mb-2 flex items-center justify-between gap-3">
-                <div className="text-[14px] font-600 text-text">{editing.missionSummary.objective}</div>
-                <div className="flex items-center gap-2">
-                  <span className="rounded-full bg-sky-500/10 px-2.5 py-1 text-[10px] font-700 uppercase tracking-[0.08em] text-sky-300">
-                    {editing.missionSummary.status}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => router.push(getMissionPath(editing.missionSummary?.id || null))}
-                    className="rounded-[8px] border border-white/[0.08] px-2 py-1 text-[10px] font-700 uppercase tracking-[0.08em] text-text-2 transition-colors hover:bg-white/[0.05]"
-                  >
-                    Open
-                  </button>
-                </div>
-              </div>
-              <div className="text-[12px] leading-[1.7] text-text-3/72">
-                {editing.missionSummary.waitingReason || editing.missionSummary.currentStep || 'Mission linked to this task.'}
-              </div>
+              <div className="text-[14px] font-600 text-text">{editing.objective}</div>
             </div>
           </div>
         )}
@@ -691,23 +673,11 @@ export function TaskSheet() {
         />
       </div>
 
-      {editing?.missionSummary && (
+      {editing?.objective && (
         <div className="mb-8">
-          <SectionLabel>Mission</SectionLabel>
+          <SectionLabel>Objective</SectionLabel>
           <div className="rounded-[14px] border border-white/[0.06] bg-surface px-4 py-3 text-[12px] leading-[1.7] text-text-3/75">
-            <div className="flex items-center justify-between gap-3">
-              <div className="font-600 text-text">{editing.missionSummary.objective}</div>
-              <button
-                type="button"
-                onClick={() => router.push(getMissionPath(editing.missionSummary?.id || null))}
-                className="rounded-[8px] border border-white/[0.08] px-2 py-1 text-[10px] font-700 uppercase tracking-[0.08em] text-text-2 transition-colors hover:bg-white/[0.05]"
-              >
-                Open
-              </button>
-            </div>
-            <div className="mt-1">
-              {editing.missionSummary.waitingReason || editing.missionSummary.currentStep || `Status: ${editing.missionSummary.status}`}
-            </div>
+            <div className="font-600 text-text">{editing.objective}</div>
           </div>
         </div>
       )}

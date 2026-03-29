@@ -92,15 +92,6 @@ export function markProviderSuccess(providerId: string, credentialId?: string | 
     const { upsertStoredItem } = require('@/lib/server/storage')
     upsertStoredItem('provider_health', key, states.get(key)!)
   } catch {}
-  queueMicrotask(() => {
-    import('@/lib/server/missions/mission-service')
-      .then(({ requestMissionTicksForProviderRecovery }) => {
-        requestMissionTicksForProviderRecovery(providerId)
-      })
-      .catch(() => {
-        // Mission recovery is best-effort only.
-      })
-  })
 }
 
 export function isProviderCoolingDown(providerId: string, credentialId?: string | null): boolean {

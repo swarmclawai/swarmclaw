@@ -137,7 +137,7 @@ export const ConnectorCreateSchema = z.object({
   name: z.string().min(1, 'Connector name is required').optional(),
   platform: z.enum([
     'discord', 'telegram', 'slack', 'whatsapp', 'openclaw',
-    'bluebubbles', 'signal', 'teams', 'googlechat', 'matrix', 'email',
+    'bluebubbles', 'signal', 'teams', 'googlechat', 'matrix', 'email', 'swarmdock',
   ]),
   agentId: z.string().nullable().optional().default(null),
   chatroomId: z.string().nullable().optional().default(null),
@@ -396,7 +396,6 @@ export const ProtocolRunCreateSchema = z.object({
   participantAgentIds: z.array(z.string()).min(1, 'Select at least one participant').default([]),
   facilitatorAgentId: z.string().nullable().optional().default(null),
   observerAgentIds: z.array(z.string()).optional().default([]),
-  missionId: z.string().nullable().optional().default(null),
   taskId: z.string().nullable().optional().default(null),
   sessionId: z.string().nullable().optional().default(null),
   parentChatroomId: z.string().nullable().optional().default(null),
@@ -471,6 +470,38 @@ export const ProtocolRunActionSchema = z.object({
   stepId: z.string().nullable().optional().default(null),
   agentId: z.string().nullable().optional().default(null),
   workItemId: z.string().nullable().optional().default(null),
+})
+
+const PortableAgentSchema = z.object({
+  originalId: z.string().min(1),
+  name: z.string().min(1),
+  description: z.string(),
+  systemPrompt: z.string(),
+  provider: z.string().min(1),
+  model: z.string().min(1),
+  createdAt: z.number().optional(),
+  updatedAt: z.number().optional(),
+  skillIds: z.array(z.string()).optional(),
+}).passthrough()
+
+const PortableSkillSchema = z.object({
+  originalId: z.string().min(1),
+  name: z.string().min(1),
+  content: z.string(),
+}).passthrough()
+
+const PortableScheduleSchema = z.object({
+  originalId: z.string().min(1),
+  originalAgentId: z.string().min(1),
+  name: z.string().min(1),
+}).passthrough()
+
+export const PortableManifestSchema = z.object({
+  formatVersion: z.number().int().nonnegative(),
+  exportedAt: z.string().optional(),
+  agents: z.array(PortableAgentSchema),
+  skills: z.array(PortableSkillSchema),
+  schedules: z.array(PortableScheduleSchema),
 })
 
 /** Format ZodError into a 400-friendly payload */

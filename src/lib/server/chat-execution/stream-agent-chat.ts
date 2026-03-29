@@ -78,7 +78,6 @@ import {
   buildToolAvailabilityLines,
   buildToolDisciplineLines,
   buildToolSection,
-  buildExternalWalletExecutionBlock,
   buildForcedExternalServiceSummary,
   shouldForceAttachmentFollowthrough,
   joinPromptSegments,
@@ -101,7 +100,6 @@ import { finalizeStreamResult } from '@/lib/server/chat-execution/post-stream-fi
 import {
   classifyMessage,
   isDeliverableTask as classifiedIsDeliverableTask,
-  hasTransactionalWalletIntent as classifiedHasTransactionalWalletIntent,
   isResearchSynthesis as classifiedIsResearchSynthesis,
   type MessageClassification,
 } from '@/lib/server/chat-execution/message-classifier'
@@ -125,7 +123,6 @@ export {
   buildToolAvailabilityLines,
   buildToolDisciplineLines,
   buildToolSection,
-  buildExternalWalletExecutionBlock,
   shouldForceAttachmentFollowthrough,
   buildForcedExternalServiceSummary,
 }
@@ -142,7 +139,6 @@ export {
 } from '@/lib/server/chat-execution/stream-continuation'
 
 export {
-  isWalletSimulationResult,
   resolveSuccessfulTerminalToolBoundary,
   shouldForceExternalServiceSummary,
 } from '@/lib/server/chat-execution/chat-streaming-utils'
@@ -889,7 +885,7 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
   const routingDecision = routeTaskIntent(message, sessionExtensions, null, classification)
   const explicitRequiredToolNames = getExplicitRequiredToolNames(message, sessionExtensions)
 
-  const boundedExternalExecutionTask = classifiedHasTransactionalWalletIntent(classification, message)
+  const boundedExternalExecutionTask = false
   const likelyResearchSynthesisTask = classifiedIsResearchSynthesis(classification, routingDecision.intent)
   const shouldEnforceEarlyRequiredToolKickoff = explicitRequiredToolNames.length > 0
     && classifiedIsDeliverableTask(classification, message)

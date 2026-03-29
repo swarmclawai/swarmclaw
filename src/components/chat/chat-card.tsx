@@ -15,7 +15,6 @@ import { AgentAvatar } from '@/components/agents/agent-avatar'
 import { timeAgoShort } from '@/lib/time-format'
 import { toast } from 'sonner'
 import { getEnabledCapabilityIds } from '@/lib/capability-selection'
-import { getMissionPath } from '@/lib/app/navigation'
 
 function shortPath(p: string): string {
   return (p || '').replace(/^\/Users\/\w+/, '~')
@@ -80,7 +79,6 @@ export function ChatCard({ session, active, onClick }: Props) {
     : session.name
   const connector = getSessionConnector(session, connectors)
   const queuedCount = Math.max(session.queuedCount ?? 0, optimisticQueuedCount)
-  const mission = session.missionSummary || null
   const loopIsOngoing = appSettings.loopMode === 'ongoing'
   const explicitOptIn = session.heartbeatEnabled === true || agent?.heartbeatEnabled === true
   const intervalRaw = session.heartbeatIntervalSec ?? agent?.heartbeatIntervalSec ?? appSettings.heartbeatIntervalSec ?? DEFAULT_HEARTBEAT_INTERVAL_SEC
@@ -198,35 +196,6 @@ export function ChatCard({ session, active, onClick }: Props) {
         <div className="text-[13px] text-amber-300/75 truncate mt-1 leading-relaxed flex items-center gap-1.5">
           <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
           {queuedCount} queued {queuedCount === 1 ? 'message' : 'messages'} waiting
-        </div>
-      ) : mission ? (
-        <div className="mt-1 flex items-center gap-2">
-          <div className={`min-w-0 truncate text-[13px] leading-relaxed flex items-center gap-1.5 ${
-            mission.status === 'waiting' || mission.status === 'failed' || mission.status === 'cancelled'
-              ? 'text-amber-300/75'
-              : mission.status === 'completed'
-                ? 'text-emerald-300/75'
-                : 'text-sky-300/75'
-          }`}>
-            <span className={`w-1.5 h-1.5 rounded-full ${
-              mission.status === 'waiting' || mission.status === 'failed' || mission.status === 'cancelled'
-                ? 'bg-amber-400'
-                : mission.status === 'completed'
-                  ? 'bg-emerald-400'
-                  : 'bg-sky-400'
-            }`} />
-            <span className="truncate">{mission.waitingReason || mission.currentStep || mission.objective}</span>
-          </div>
-          <button
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation()
-              router.push(getMissionPath(mission.id))
-            }}
-            className="shrink-0 rounded-[8px] border border-white/[0.08] px-2 py-1 text-[10px] font-700 uppercase tracking-[0.08em] text-text-2 transition-colors hover:bg-white/[0.05]"
-          >
-            Mission
-          </button>
         </div>
       ) : (
         <div className="text-[13px] text-text-2/50 truncate mt-1 leading-relaxed">{preview}</div>
