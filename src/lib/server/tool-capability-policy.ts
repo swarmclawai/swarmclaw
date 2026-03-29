@@ -60,8 +60,6 @@ const TOOL_DESCRIPTORS: Record<string, ToolDescriptor> = {
   gemini_cli: { categories: ['delegation', 'execution'], concreteTools: ['delegate_to_gemini_cli'] },
   memory: { categories: ['memory'], concreteTools: ['memory', 'memory_tool', 'memory_search', 'memory_get', 'memory_store', 'memory_update', 'context_status', 'context_summarize'] },
   // http_request consolidated into web 'api' action — no separate descriptor
-  canvas: { categories: ['filesystem'], concreteTools: ['canvas'] },
-  wallet: { categories: ['outbound'], concreteTools: ['wallet', 'wallet_tool'] },
   monitor: { categories: ['execution'], concreteTools: ['monitor', 'monitor_tool'] },
   openclaw_workspace: { categories: ['filesystem', 'platform'], concreteTools: ['openclaw_workspace'] },
   openclaw_nodes: { categories: ['platform'], concreteTools: ['openclaw_nodes'] },

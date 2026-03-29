@@ -66,7 +66,6 @@ import { loadEstopState } from '@/lib/server/runtime/estop'
 import { classifyRuntimeFailure, recordSupervisorIncident } from '@/lib/server/autonomy/supervisor-reflection'
 import { getMemoryDb } from '@/lib/server/memory/memory-db'
 import { clearLogsByAge } from '@/lib/server/execution-log'
-import { runMissionControllerStartupRecovery } from '@/lib/server/missions/mission-service'
 
 const TAG = 'daemon-state'
 
@@ -293,14 +292,6 @@ export function startDaemon(options?: { source?: string; manualStart?: boolean }
       if (lost > 0) log.info(TAG, `[daemon] Marked ${lost} in-flight swarm(s) as lost after restart`)
     } catch { /* best-effort */ }
     resumeQueue()
-    const missionRecovery = runMissionControllerStartupRecovery()
-    if (missionRecovery.recovered > 0 || missionRecovery.rerunVerification > 0) {
-      log.info(
-        TAG,
-        `[daemon] Recovered ${missionRecovery.recovered} mission(s) on startup`
-          + ` (${missionRecovery.rerunVerification} queued for verification replay)`,
-      )
-    }
     startScheduler()
     startQueueProcessor()
     startBrowserSweep()

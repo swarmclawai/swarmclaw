@@ -6,10 +6,8 @@ import type { MessageToolEvent } from '@/types'
 import { buildSuccessfulMemoryMutationResponse } from '@/lib/server/chat-execution/memory-mutation-tools'
 import {
   buildToolAvailabilityLines,
-  buildExternalWalletExecutionBlock,
   buildToolDisciplineLines,
   getExplicitRequiredToolNames,
-  isWalletSimulationResult,
   looksLikeOpenEndedDeliverableTask,
   pruneIncompleteToolEvents,
   resolveExclusiveMemoryWriteTerminalAllowance,
@@ -35,8 +33,6 @@ import {
   parseClassificationResponse,
   isDeliverableTask,
   isBroadGoal,
-  hasWalletIntent,
-  hasTransactionalWalletIntent,
   hasHumanSignals,
   hasSignificantEvent,
   isResearchSynthesis,
@@ -122,14 +118,6 @@ describe('buildToolDisciplineLines', () => {
     assert.ok(lines.some((line) => line.includes('Store secrets (passwords, API keys, tokens) with `manage_secrets`')))
   })
 
-  it('adds bounded execution guidance for wallet-connected external-service tasks', () => {
-    const lines = buildToolDisciplineLines(['wallet', 'browser', 'http_request', 'manage_capabilities'])
-
-    assert.ok(lines.some((line) => line.includes('inspect the wallet first with `wallet_tool`')))
-    assert.ok(lines.some((line) => line.includes('Use a bounded loop: verify, attempt one reversible step, then execute or state the blocker.')))
-    assert.ok(lines.some((line) => line.includes('stop venue-shopping') && line.includes('call_contract')))
-  })
-
   it('includes concrete local coding tool guidance when coding tools are already available', () => {
     const lines = buildToolDisciplineLines(['files', 'shell', 'delegate'])
 
@@ -169,14 +157,6 @@ describe('buildToolDisciplineLines', () => {
     const required = getExplicitRequiredToolNames(
       'Write a Python script that sends an HTTP GET request to httpbin.org/get and save the response.',
       ['web_search', 'manage_connectors', 'files'],
-    )
-    assert.deepEqual(required, [])
-  })
-
-  it('does not force wallet tools based on keyword matching', () => {
-    const required = getExplicitRequiredToolNames(
-      'Use the available wallets and figure out how to trade on Hyperliquid.',
-      ['wallet', 'browser', 'http_request'],
     )
     assert.deepEqual(required, [])
   })
@@ -288,41 +268,6 @@ describe('buildToolDisciplineLines', () => {
     // When shell runs curl/wget/gh, the web tool should be marked as used.
     assert.ok(streamAgentChatSource.includes("curl|wget|http|gh\\s+(issue|pr|api|repo|release|search|run)"))
     assert.ok(streamAgentChatSource.includes("usedToolNames.add('web')"))
-  })
-})
-
-describe('buildExternalWalletExecutionBlock', () => {
-  it('omits extension-specific tool names when wallet/network capabilities are unavailable', () => {
-    const block = buildExternalWalletExecutionBlock(['files'])
-
-    assert.equal(block, '')
-  })
-
-  it('uses only enabled wallet-related tools in the external execution block', () => {
-    const block = buildExternalWalletExecutionBlock(['wallet', 'http_request', 'manage_capabilities'])
-
-    assert.ok(block.includes('## External Service Execution'))
-    assert.ok(!block.includes('`browser`'))
-    assert.ok(!block.includes('`wallet_tool`'))
-    assert.ok(!block.includes('`manage_capabilities`'))
-    assert.ok(block.includes('Define a stop condition before exploring'))
-  })
-})
-
-describe('isWalletSimulationResult', () => {
-  it('detects simulated wallet transaction outputs and ignores other tool outputs', () => {
-    assert.equal(
-      isWalletSimulationResult('wallet_tool', '{"status":"simulated","action":"simulate_transaction"}'),
-      true,
-    )
-    assert.equal(
-      isWalletSimulationResult('wallet_tool', '{"status":"broadcast","action":"send_transaction"}'),
-      false,
-    )
-    assert.equal(
-      isWalletSimulationResult('http_request', '{"status":"simulated"}'),
-      false,
-    )
   })
 })
 
@@ -765,7 +710,7 @@ describe('shouldForceExternalServiceSummary', () => {
   it('forces a summary when an external-service run ends with an unfinished exploration sentence', () => {
     assert.equal(
       shouldForceExternalServiceSummary({
-        userMessage: 'Try to trade on Hyperliquid with the available wallet and stop at the blocker.',
+        userMessage: 'Try to interact with the Hyperliquid API and stop at the blocker.',
         finalResponse: 'This is promising - Hyperliquid runs on Arbitrum! Let me verify this and check if I can access their interface:',
         hasToolCalls: true,
         toolEventCount: 6,
@@ -777,8 +722,8 @@ describe('shouldForceExternalServiceSummary', () => {
   it('does not force a summary when the final response already states the blocker', () => {
     assert.equal(
       shouldForceExternalServiceSummary({
-        userMessage: 'Try to trade on Hyperliquid with the available wallet and stop at the blocker.',
-        finalResponse: 'Last reversible step: I verified the funded Arbitrum wallet and opened the site. Exact blocker: this runtime cannot complete a WalletConnect signature prompt.',
+        userMessage: 'Try to interact with the Hyperliquid API and stop at the blocker.',
+        finalResponse: 'Last reversible step: I verified the funded Arbitrum account and opened the site. Exact blocker: this runtime cannot complete a signature prompt.',
         hasToolCalls: true,
         toolEventCount: 6,
       }),
@@ -789,7 +734,6 @@ describe('shouldForceExternalServiceSummary', () => {
 
 describe('shouldForceExternalExecutionFollowthrough', () => {
   const researchToolEvents = [
-    { name: 'wallet_tool', input: '{"action":"balance","chain":"ethereum"}', output: '{"status":"ok"}' },
     { name: 'http_request', input: '{"method":"GET","url":"https://example.com/quote"}', output: '{"status":200}' },
     { name: 'web', input: '{"action":"open","url":"https://example.com/swap"}', output: '{"status":"ok"}' },
     { name: 'browser', input: '{"action":"read_page"}', output: '{"title":"Swap"}' },
@@ -826,7 +770,6 @@ describe('shouldForceExternalExecutionFollowthrough', () => {
         finalResponse: 'Let me try another aggregator before proceeding.',
         hasToolCalls: true,
         toolEvents: [
-          { name: 'wallet_tool', input: '{"action":"balance","chain":"ethereum"}', output: '{"status":"ok"}' },
           { name: 'http_request', input: '{"method":"GET","url":"https://api.0x.org/swap/v1/quote"}', output: '{"status":404}' },
           { name: 'http_request', input: '{"method":"GET","url":"https://apiv5.paraswap.io/prices"}', output: '{"status":400}' },
           { name: 'http_request', input: '{"method":"POST","url":"https://api.odos.xyz/sor/quote/v2"}', output: '{"status":200}' },
@@ -836,31 +779,13 @@ describe('shouldForceExternalExecutionFollowthrough', () => {
     )
   })
 
-  it('does not force a followthrough after a wallet approval boundary is reached', () => {
-    assert.equal(
-      shouldForceExternalExecutionFollowthrough({
-        userMessage: 'Do one tiny live swap on Arbitrum and stop at the first approval boundary.',
-        finalResponse: 'Current status: approval required for the exact-input token approval.',
-        hasToolCalls: true,
-        toolEvents: [
-          ...researchToolEvents,
-          {
-            name: 'wallet_tool',
-            input: '{"action":"send_transaction","chain":"ethereum"}',
-            output: '{"type":"extension_wallet_action_request","status":"pending"}',
-          },
-        ],
-      }),
-      false,
-    )
-  })
 })
 
 describe('shouldForceExternalExecutionKickoffFollowthrough', () => {
   it('forces a bounded continuation when an execution task stops at an intent-only kickoff', () => {
     assert.equal(
       shouldForceExternalExecutionKickoffFollowthrough({
-        userMessage: 'Try buy one NFT on Arbitrum and show me what happened.',
+        userMessage: 'Try to interact with the NFT marketplace API and show me what happened.',
         finalResponse: 'Let me try to interact directly with the NFT contract and see if I can mint one:',
         hasToolCalls: false,
         toolEvents: [],
@@ -872,8 +797,8 @@ describe('shouldForceExternalExecutionKickoffFollowthrough', () => {
   it('does not force kickoff when the model already surfaced a real blocker or asked a blocking question', () => {
     assert.equal(
       shouldForceExternalExecutionKickoffFollowthrough({
-        userMessage: 'Try buy one NFT on Arbitrum and show me what happened.',
-        finalResponse: 'Exact blocker: this wallet cannot complete the required signature in the current runtime.',
+        userMessage: 'Try to interact with the NFT marketplace API and show me what happened.',
+        finalResponse: 'Exact blocker: this runtime cannot complete the required signature step.',
         hasToolCalls: false,
         toolEvents: [],
       }),
@@ -881,7 +806,7 @@ describe('shouldForceExternalExecutionKickoffFollowthrough', () => {
     )
     assert.equal(
       shouldForceExternalExecutionKickoffFollowthrough({
-        userMessage: 'Try buy one NFT on Arbitrum and show me what happened.',
+        userMessage: 'Try to interact with the NFT marketplace API and show me what happened.',
         finalResponse: 'Which collection do you want me to target?',
         hasToolCalls: false,
         toolEvents: [],
@@ -1223,7 +1148,6 @@ describe('parseClassificationResponse', () => {
     const result = parseClassificationResponse(JSON.stringify({
       isDeliverableTask: true,
       isBroadGoal: false,
-      walletIntent: 'none',
       hasHumanSignals: false,
       hasSignificantEvent: false,
       isResearchSynthesis: true,
@@ -1233,14 +1157,13 @@ describe('parseClassificationResponse', () => {
     assert.ok(result)
     assert.equal(result.isDeliverableTask, true)
     assert.equal(result.isBroadGoal, false)
-    assert.equal(result.walletIntent, 'none')
     assert.equal(result.isResearchSynthesis, true)
     assert.deepEqual(result.explicitToolRequests, ['web'])
     assert.equal(result.confidence, 0.9)
   })
 
   it('extracts JSON from markdown code block', () => {
-    const text = '```json\n{"isDeliverableTask":false,"isBroadGoal":false,"walletIntent":"none","hasHumanSignals":false,"hasSignificantEvent":false,"isResearchSynthesis":false,"explicitToolRequests":[],"confidence":0.8}\n```'
+    const text = '```json\n{"isDeliverableTask":false,"isBroadGoal":false,"hasHumanSignals":false,"hasSignificantEvent":false,"isResearchSynthesis":false,"explicitToolRequests":[],"confidence":0.8}\n```'
     const result = parseClassificationResponse(text)
     assert.ok(result)
     assert.equal(result.isDeliverableTask, false)
@@ -1257,19 +1180,6 @@ describe('parseClassificationResponse', () => {
     assert.equal(result, null)
   })
 
-  it('rejects invalid walletIntent values', () => {
-    const result = parseClassificationResponse(JSON.stringify({
-      isDeliverableTask: false,
-      isBroadGoal: false,
-      walletIntent: 'invalid',
-      hasHumanSignals: false,
-      hasSignificantEvent: false,
-      isResearchSynthesis: false,
-      explicitToolRequests: [],
-      confidence: 0.5,
-    }))
-    assert.equal(result, null)
-  })
 })
 
 describe('message classifier adapter functions', () => {
@@ -1277,7 +1187,6 @@ describe('message classifier adapter functions', () => {
     taskIntent: 'general',
     isDeliverableTask: true,
     isBroadGoal: true,
-    walletIntent: 'none',
     hasHumanSignals: false,
     hasSignificantEvent: false,
     isResearchSynthesis: false,
@@ -1285,23 +1194,10 @@ describe('message classifier adapter functions', () => {
     confidence: 0.95,
   }
 
-  const walletClassification: MessageClassification = {
-    taskIntent: 'general',
-    isDeliverableTask: false,
-    isBroadGoal: false,
-    walletIntent: 'transactional',
-    hasHumanSignals: false,
-    hasSignificantEvent: false,
-    isResearchSynthesis: false,
-    explicitToolRequests: [],
-    confidence: 0.9,
-  }
-
   const humanSignalClassification: MessageClassification = {
     taskIntent: 'general',
     isDeliverableTask: false,
     isBroadGoal: false,
-    walletIntent: 'none',
     hasHumanSignals: true,
     hasSignificantEvent: true,
     isResearchSynthesis: false,
@@ -1324,17 +1220,6 @@ describe('message classifier adapter functions', () => {
   it('isBroadGoal prefers classification over regex', () => {
     assert.equal(isBroadGoal(deliverableClassification, 'short'), true)
     assert.equal(isBroadGoal({ ...deliverableClassification, isBroadGoal: false }, 'short'), false)
-  })
-
-  it('hasWalletIntent uses classification', () => {
-    assert.equal(hasWalletIntent(walletClassification, 'swap ETH for USDC'), true)
-    assert.equal(hasWalletIntent({ ...walletClassification, walletIntent: 'none' }, 'swap ETH for USDC'), false)
-  })
-
-  it('hasTransactionalWalletIntent distinguishes read_only from transactional', () => {
-    assert.equal(hasTransactionalWalletIntent(walletClassification, 'anything'), true)
-    assert.equal(hasTransactionalWalletIntent({ ...walletClassification, walletIntent: 'read_only' }, 'anything'), false)
-    assert.equal(hasTransactionalWalletIntent({ ...walletClassification, walletIntent: 'none' }, 'anything'), false)
   })
 
   it('hasHumanSignals uses classification', () => {

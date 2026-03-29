@@ -270,11 +270,7 @@ export function SidebarRail({
                 <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" /><rect x="9" y="3" width="6" height="4" rx="1" /><path d="M9 14l2 2 4-4" />
               </svg>
             </NavItem>
-            <NavItem view="missions" label="Missions" expanded={railExpanded} isActive={isNavActive('missions')} onClick={() => handleNavClick('missions')}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <path d="M12 3 4 7v5c0 5 3.4 8.8 8 10 4.6-1.2 8-5 8-10V7l-8-4Z" /><path d="m9.5 12 1.8 1.8L15 10" />
-              </svg>
-            </NavItem>
+
             <NavItem view="schedules" label="Schedules" expanded={railExpanded} isActive={isNavActive('schedules')} onClick={() => handleNavClick('schedules')}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
@@ -343,6 +339,11 @@ export function SidebarRail({
                 <rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" />
               </svg>
             </NavItem>
+            <NavItem view="wallets" label="Wallets" expanded={railExpanded} isActive={isNavActive('wallets')} onClick={() => handleNavClick('wallets')}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="2" y="6" width="20" height="14" rx="2" /><path d="M22 10H18a2 2 0 0 0 0 4h4" /><path d="M6 6V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2" />
+              </svg>
+            </NavItem>
             <NavItem view="providers" label="Providers" expanded={railExpanded} isActive={isNavActive('providers')} onClick={() => handleNavClick('providers')}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z" />
@@ -363,11 +364,6 @@ export function SidebarRail({
                 <path d="M12 3l7 3v6c0 4.4-2.92 8.46-7 9-4.08-.54-7-4.6-7-9V6l7-3z" />
                 <path d="M12 8v5" />
                 <path d="M12 16h.01" />
-              </svg>
-            </NavItem>
-            <NavItem view="wallets" label="Wallets" expanded={railExpanded} isActive={isNavActive('wallets')} onClick={() => handleNavClick('wallets')}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="2" y="6" width="20" height="14" rx="2" /><path d="M22 10H18a2 2 0 0 0 0 4h4" /><path d="M6 6V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2" />
               </svg>
             </NavItem>
             <NavItem view="logs" label="Logs" expanded={railExpanded} isActive={isNavActive('logs')} onClick={() => handleNavClick('logs')}>

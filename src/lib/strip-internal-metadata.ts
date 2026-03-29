@@ -15,7 +15,7 @@
 // ---------------------------------------------------------------------------
 
 const INTERNAL_JSON_KEYS = [
-  'isDeliverableTask', 'quality_score', 'isBroadGoal', 'walletIntent',
+  'isDeliverableTask', 'quality_score', 'isBroadGoal',
   'hasHumanSignals', 'explicitToolRequests', 'isResearchSynthesis', 'confidence',
 ]
 

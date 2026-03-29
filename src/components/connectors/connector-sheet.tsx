@@ -96,6 +96,8 @@ const FIELD_HINTS: Record<string, string> = {
   dmAddressingMode: 'Control whether DMs need to address the agent by name before it replies',
   ownerSenderId: 'Optional sender ID that should route to the main owner thread for direct agent connectors',
   scopes: 'Press Enter after each scope to add it',
+  walletAddress: 'Base L2 Ethereum address for receiving USDC payments from completed tasks',
+  maxBudget: 'USDC with 6 decimal places. $1.00 = 1000000, $5.00 = 5000000',
 }
 
 const BOOLEAN_SELECT_OPTIONS: ConnectorConfigOption[] = [
@@ -342,6 +344,26 @@ const PLATFORMS: {
       { key: 'signalCliPath', label: 'signal-cli Path', placeholder: 'signal-cli', help: 'Path to signal-cli binary (defaults to signal-cli)', section: 'advanced' },
       { key: 'signalCliMode', label: 'Mode', placeholder: 'stdio', help: 'How SwarmClaw talks to signal-cli.', type: 'select', options: [{ value: 'stdio', label: 'stdio' }, { value: 'http', label: 'HTTP API' }], emptyLabel: 'Not set (default: stdio)', section: 'advanced' },
       { key: 'signalCliHttpUrl', label: 'HTTP API URL', placeholder: 'http://localhost:8080', help: 'Only needed for http mode', section: 'advanced' },
+    ],
+  },
+  {
+    id: 'swarmdock',
+    label: 'SwarmDock',
+    color: '#F59E0B',
+    setupSteps: [
+      'Generate an Ed25519 keypair for agent identity',
+      'Set your Base L2 wallet address for receiving USDC payments',
+      'Configure skills and auto-discovery preferences',
+    ],
+    tokenLabel: 'SwarmDock Identity Key',
+    tokenHelp: 'Encrypted Ed25519 private key used to authenticate this agent on SwarmDock.',
+    configFields: [
+      { key: 'apiUrl', label: 'API URL', placeholder: 'https://api.swarmdock.ai', help: 'SwarmDock marketplace API endpoint' },
+      { key: 'walletAddress', label: 'Base L2 Wallet Address', placeholder: '0x...', help: 'USDC wallet on Base L2 for payments' },
+      { key: 'agentDescription', label: 'Marketplace Description', placeholder: 'Specialized in...', help: 'Description on your SwarmDock profile' },
+      { key: 'skills', label: 'Skills (comma-separated)', placeholder: 'data-analysis,web-design', help: 'Skill IDs for task matching' },
+      { key: 'autoDiscover', label: 'Auto-Discover Tasks', placeholder: 'false', help: 'Automatically bid on matching tasks' },
+      { key: 'maxBudget', label: 'Max Budget (USDC micro-units)', placeholder: '5000000', help: '$1 = 1000000, $5 = 5000000' },
     ],
   },
 ]
@@ -1181,7 +1203,9 @@ export function ConnectorSheet() {
                     try {
                       const cred = await createCredentialMutation.mutateAsync({
                         provider: platform,
-                        name: newCredName.trim() || `${platformConfig.label} Bot Token`,
+                        name: newCredName.trim() || (platform === 'swarmdock'
+                          ? `${platformConfig.label} Identity Key`
+                          : `${platformConfig.label} Bot Token`),
                         apiKey: newCredValue.trim(),
                       })
                       await credentialsQuery.refetch()

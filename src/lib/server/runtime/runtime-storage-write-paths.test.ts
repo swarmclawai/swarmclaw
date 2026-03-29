@@ -9,7 +9,7 @@ function readRepoSource(relativePath: string): string {
   return fs.readFileSync(path.join(repoRoot, relativePath), 'utf-8')
 }
 
-test('runtime hot paths use row-level task, schedule, and agent writes', () => {
+test('runtime hot paths use row-level task, schedule, and wallet writes', () => {
   const expectations = [
     {
       file: 'src/lib/server/runtime/scheduler.ts',
@@ -17,14 +17,14 @@ test('runtime hot paths use row-level task, schedule, and agent writes', () => {
       forbidden: ['saveTasks(', 'saveSchedules('],
     },
     {
-      file: 'src/app/api/schedules/[id]/run/route.ts',
-      required: ['upsertTask(', 'upsertSchedule('],
+      file: 'src/lib/server/schedules/schedule-route-service.ts',
+      required: ['saveTask(', 'upsertSchedule('],
       forbidden: ['saveTasks(', 'saveSchedules('],
     },
     {
-      file: 'src/lib/server/wallet/wallet-service.ts',
-      required: ['loadAgent(', 'upsertAgent('],
-      forbidden: ['saveAgents('],
+      file: 'src/lib/server/wallets/wallet-service.ts',
+      required: ['saveWallet(', 'deleteWallet('],
+      forbidden: ['saveWallets('],
     },
   ] as const
 

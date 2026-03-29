@@ -23,7 +23,6 @@ export const AVAILABLE_TOOLS: ToolDefinition[] = [
   { id: 'delegate', label: 'Delegate', description: 'Delegate complex tasks to specialized backends (Claude Code, Codex, OpenCode)' },
   { id: 'browser', label: 'Browser', description: 'Playwright — browse, scrape, interact with web pages' },
   { id: 'memory', label: 'Memory', description: 'Store and retrieve long-term memories across conversations' },
-  { id: 'wallet', label: 'Wallet', description: 'Manage agent crypto wallet — check balance, send SOL, view transactions', extensionId: 'wallet' },
   { id: 'monitor', label: 'Monitor', description: 'Durable watch jobs: monitor files, endpoints, tasks, and resume agents on triggers' },
   { id: 'extension_creator', label: 'Extension Creator', description: 'Design focused extensions for durable capabilities and recurring automations' },
   { id: 'image_gen', label: 'Image Generation', description: 'Generate images from text prompts using OpenAI, Stability AI, Replicate, fal.ai, and more', extensionId: 'image_gen' },

@@ -8,7 +8,7 @@ import { OverviewTab } from './tabs/overview-tab'
 import { WorkTab } from './tabs/work-tab'
 import { OperationsTab } from './tabs/operations-tab'
 import { ActivityTab } from './tabs/activity-tab'
-import type { BoardTask, Mission } from '@/types'
+import type { BoardTask } from '@/types'
 
 export function ProjectDetail() {
   const activeProjectFilter = useAppStore((s) => s.activeProjectFilter)
@@ -17,42 +17,10 @@ export function ProjectDetail() {
   const activeTab = useAppStore((s) => s.projectDetailTab)
   const loadSecrets = useAppStore((s) => s.loadSecrets)
 
-  const [projectMissionSnapshot, setProjectMissionSnapshot] = useState<{ projectId: string | null; missions: Mission[] }>({
-    projectId: null,
-    missions: [],
-  })
-
   useEffect(() => {
     if (!activeProjectFilter) return
     void loadSecrets()
   }, [activeProjectFilter, loadSecrets])
-
-  useEffect(() => {
-    let cancelled = false
-    if (!activeProjectFilter) return
-    void api<Mission[]>('GET', `/missions?projectId=${encodeURIComponent(activeProjectFilter)}&status=non_terminal&limit=8`)
-      .then((missions) => {
-        if (!cancelled) {
-          setProjectMissionSnapshot({
-            projectId: activeProjectFilter,
-            missions: Array.isArray(missions) ? missions : [],
-          })
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setProjectMissionSnapshot({
-            projectId: activeProjectFilter,
-            missions: [],
-          })
-        }
-      })
-    return () => { cancelled = true }
-  }, [activeProjectFilter])
-
-  const projectMissions = projectMissionSnapshot.projectId === activeProjectFilter
-    ? projectMissionSnapshot.missions
-    : []
 
   const project = activeProjectFilter ? projects[activeProjectFilter] : null
 
@@ -107,10 +75,10 @@ export function ProjectDetail() {
       />
       <div className="flex-1 overflow-y-auto">
         {activeTab === 'overview' && (
-          <OverviewTab project={project} missions={projectMissions} />
+          <OverviewTab project={project} />
         )}
         {activeTab === 'work' && (
-          <WorkTab missions={projectMissions} />
+          <WorkTab />
         )}
         {activeTab === 'operations' && (
           <OperationsTab project={project} />

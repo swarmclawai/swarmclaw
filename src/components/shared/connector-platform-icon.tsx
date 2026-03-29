@@ -26,6 +26,7 @@ export const CONNECTOR_PLATFORM_META: Record<ConnectorPlatform, { label: string;
   email: { label: 'Email', color: '#EA4335' },
   webchat: { label: 'Web Chat', color: '#0EA5E9' },
   mockmail: { label: 'MockMail', color: '#7C3AED' },
+  swarmdock: { label: 'SwarmDock', color: '#F59E0B' },
 }
 
 const FALLBACK_CONNECTOR_PLATFORM_META = { label: 'Connector', color: '#64748B' } as const

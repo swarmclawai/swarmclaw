@@ -1,7 +1,6 @@
 import { genId } from '@/lib/id'
 import { cleanText, cleanMultiline, normalizeList } from '@/lib/server/text-normalization'
 import type {
-  Mission,
   SessionWorkingState,
   WorkingBlocker,
   WorkingPlanStepPatch,
@@ -20,7 +19,6 @@ import {
   normalizeWorkingState,
   defaultWorkingState,
   compactWorkingStateObject,
-  syncWorkingStateWithMission,
   normalizeItemStatus,
   normalizeStateStatus,
   upsertItems,
@@ -96,8 +94,6 @@ export {
   compactPlanSteps,
   defaultWorkingState,
   compactWorkingStateObject,
-  missionStatusToWorkingStateStatus,
-  syncWorkingStateWithMission,
   // Upsert
   upsertItems,
   factUpsertConfig,
@@ -142,14 +138,14 @@ export { buildWorkingStatePromptBlockFromState } from '@/lib/server/working-stat
 // CRUD / coordination layer
 // ---------------------------------------------------------------------------
 
-export function loadSessionWorkingState(sessionId: string, options?: { mission?: Mission | null }): SessionWorkingState | null {
+export function loadSessionWorkingState(sessionId: string): SessionWorkingState | null {
   const stored = loadPersistedWorkingState(sessionId)
-  if (!stored && !options?.mission) return null
-  return normalizeWorkingState(stored, sessionId, options?.mission || null)
+  if (!stored) return null
+  return normalizeWorkingState(stored, sessionId)
 }
 
-export function getOrCreateSessionWorkingState(sessionId: string, options?: { mission?: Mission | null }): SessionWorkingState {
-  return loadSessionWorkingState(sessionId, options) || defaultWorkingState(sessionId, options?.mission || null)
+export function getOrCreateSessionWorkingState(sessionId: string): SessionWorkingState {
+  return loadSessionWorkingState(sessionId) || defaultWorkingState(sessionId)
 }
 
 export function saveSessionWorkingState(state: SessionWorkingState): SessionWorkingState {
@@ -165,12 +161,10 @@ export function deleteSessionWorkingState(sessionId: string): void {
 export function applyWorkingStatePatch(
   sessionId: string,
   patch: WorkingStatePatch,
-  options?: { mission?: Mission | null },
 ): SessionWorkingState {
-  const current = getOrCreateSessionWorkingState(sessionId, options)
+  const current = getOrCreateSessionWorkingState(sessionId)
   const next: SessionWorkingState = {
     ...current,
-    missionId: options?.mission?.id || current.missionId || null,
     objective: patch.objective !== undefined ? (cleanMultiline(patch.objective, 900) || null) : current.objective,
     summary: patch.summary !== undefined ? (cleanMultiline(patch.summary, 600) || null) : current.summary,
     constraints: patch.constraints !== undefined ? normalizeList(patch.constraints, 12, 240) : current.constraints,
@@ -215,16 +209,15 @@ export function applyWorkingStatePatch(
   next.openQuestions = markSuperseded(next.openQuestions, patch.supersedeIds)
   next.hypotheses = markSuperseded(next.hypotheses, patch.supersedeIds)
 
-  const synced = compactWorkingStateObject(syncWorkingStateWithMission(next, options?.mission || null))
-  upsertPersistedWorkingState(sessionId, synced as unknown as Record<string, unknown>)
-  return synced
+  const compacted = compactWorkingStateObject(next)
+  upsertPersistedWorkingState(sessionId, compacted as unknown as Record<string, unknown>)
+  return compacted
 }
 
 export function recordWorkingStateEvidence(input: WorkingStateDeterministicUpdateInput): SessionWorkingState {
   return applyWorkingStatePatch(
     input.sessionId,
     deterministicEvidencePatch(input),
-    { mission: input.mission || null },
   )
 }
 
@@ -241,12 +234,11 @@ export async function synchronizeWorkingStateForTurn(
     currentState: deterministic,
   }, options)
   if (!patch) return deterministic
-  return applyWorkingStatePatch(input.sessionId, patch, { mission: input.mission || null })
+  return applyWorkingStatePatch(input.sessionId, patch)
 }
 
 export function syncWorkingStateFromMainLoopState(input: {
   sessionId: string
-  mission?: Mission | null
   goal?: string | null
   summary?: string | null
   status?: WorkingStateStatus | null
@@ -281,13 +273,12 @@ export function syncWorkingStateFromMainLoopState(input: {
         status: (input.status === 'completed' ? 'resolved' : 'active') as WorkingStateItemStatus,
       })).filter((fact) => fact.statement)
       : undefined,
-  }, { mission: input.mission || null })
+  })
 }
 
 export function buildWorkingStatePromptBlock(
   sessionId: string,
-  options?: { mission?: Mission | null },
 ): string {
-  const state = loadSessionWorkingState(sessionId, options)
+  const state = loadSessionWorkingState(sessionId)
   return buildWorkingStatePromptBlockFromState(state)
 }

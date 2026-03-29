@@ -26,9 +26,6 @@ import { estimateCost } from '@/lib/server/cost'
 import { refreshSessionIdentityState } from '@/lib/server/identity-continuity'
 import { log } from '@/lib/server/logger'
 import { syncSessionArchiveMemory } from '@/lib/server/memory/session-archive-memory'
-import {
-  applyMissionOutcomeForTurn,
-} from '@/lib/server/missions/mission-service'
 import { runCapabilityHook, transformCapabilityText } from '@/lib/server/native-capabilities'
 import { isHeartbeatSource } from '@/lib/server/runtime/heartbeat-source'
 import { perf } from '@/lib/server/runtime/perf'
@@ -181,7 +178,6 @@ export async function finalizeChatTurn(params: {
     sessionForRun,
     appSettings,
     lifecycleRunId,
-    mission,
     extensionsForRun,
     effectiveMessage,
     providerType,
@@ -589,45 +585,15 @@ export async function finalizeChatTurn(params: {
     }
 
     refreshSessionIdentityState(current, currentAgent)
-    let resolvedMissionId = mission?.id || current.missionId || null
-    let updatedMission = mission || null
-    if (resolvedMissionId) {
-      updatedMission = await applyMissionOutcomeForTurn({
-        session: current,
-        missionId: resolvedMissionId,
-        source,
-        runId: lifecycleRunId,
-        message,
-        assistantText: hiddenControlOnly ? '' : textForPersistence,
-        error: errorMessage || null,
-        toolEvents: persistedToolEvents,
-      })
-      if (updatedMission?.id) {
-        resolvedMissionId = updatedMission.id
-        current.missionId = updatedMission.id
-      }
-    }
-    const missionStateChanged = Boolean(
-      updatedMission
-      && (
-        updatedMission.id !== mission?.id
-        || updatedMission.updatedAt !== mission?.updatedAt
-        || updatedMission.status !== mission?.status
-        || updatedMission.phase !== mission?.phase
-        || updatedMission.currentStep !== mission?.currentStep
-        || updatedMission.waitState?.reason !== mission?.waitState?.reason
-      )
-    )
     const shouldSyncWorkingState = (
       (!isHeartbeatRun && (assistantPersisted || persistedToolEvents.length > 0 || Boolean(errorMessage)))
-      || (isHeartbeatRun && (persistedToolEvents.length > 0 || Boolean(errorMessage) || missionStateChanged))
+      || (isHeartbeatRun && (persistedToolEvents.length > 0 || Boolean(errorMessage)))
     )
     if (shouldSyncWorkingState) {
       try {
         await synchronizeWorkingStateForTurn({
           sessionId,
           agentId: current.agentId || null,
-          mission: updatedMission,
           message,
           assistantText: hiddenControlOnly ? '' : textForPersistence,
           error: errorMessage || null,
@@ -673,7 +639,6 @@ export async function finalizeChatTurn(params: {
   return {
     runId,
     sessionId,
-    missionId: mission?.id || null,
     text: hiddenControlOnly ? '' : textForPersistence,
     persisted: assistantPersisted,
     toolEvents: persistedToolEvents,

@@ -28,6 +28,7 @@ export type ConnectorPlatform =
   | 'email'
   | 'webchat'
   | 'mockmail'
+  | 'swarmdock'
 export type ConnectorStatus = 'stopped' | 'running' | 'error'
 
 export interface MessageSource {

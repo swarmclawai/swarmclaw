@@ -435,6 +435,7 @@ export function normalizeStoredRecord(
     && table !== 'schedules' && table !== 'sessions'
     && table !== 'provider_configs'
     && table !== 'runtime_runs' && table !== 'runtime_run_events'
+    && table !== 'wallets'
   ) {
     return { value, changed: false }
   }
@@ -571,6 +572,13 @@ function normalizeStoredRecordInner(
 
   if (table === 'schedules') {
     return normalizeStoredScheduleRecord(value, loadItem)
+  }
+
+  if (table === 'wallets') {
+    const wallet = value as StoredObject
+    if (wallet.chain !== 'base') wallet.chain = 'base'
+    if (typeof wallet.createdAt !== 'number') wallet.createdAt = Date.now()
+    return wallet
   }
 
   // sessions

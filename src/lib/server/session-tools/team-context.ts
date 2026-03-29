@@ -168,9 +168,6 @@ async function formatPeerContext(agentId: string, peerId: string): Promise<strin
     const activeSession = Object.values(sessions).find(
       (s) => s.agentId === peerId && s.active,
     )
-    if (activeSession?.missionId) {
-      result.activeMission = { missionId: activeSession.missionId }
-    }
   } catch { /* non-critical */ }
 
   // Enforce output cap — drop large fields instead of slicing mid-JSON

@@ -19,7 +19,6 @@ import { patchChatroom, upsertChatroom } from '@/lib/server/chatrooms/chatroom-r
 import { loadProtocolRuns } from '@/lib/server/protocols/protocol-run-repository'
 import { loadTask } from '@/lib/server/tasks/task-repository'
 import { errorMessage, hmrSingleton } from '@/lib/shared-utils'
-import { requestMissionTick } from '@/lib/server/missions/mission-service'
 import { cleanText, isDiscussionStepKind, now, uniqueIds } from '@/lib/server/protocols/protocol-types'
 import type { CreateProtocolRunInput, ProtocolRunActionInput, ProtocolRunDeps } from '@/lib/server/protocols/protocol-types'
 import { deriveDisplayPhasesFromSteps, loadProtocolRunById, normalizeProtocolRun, resolveRunSteps } from '@/lib/server/protocols/protocol-normalization'
@@ -224,11 +223,10 @@ export function createProtocolRun(input: CreateProtocolRunInput, deps?: Protocol
     : null
   const sourceRef = input.sourceRef || (
     input.parentChatroomId ? { kind: 'chatroom', chatroomId: input.parentChatroomId } as ProtocolSourceRef
-      : input.missionId ? { kind: 'mission', missionId: input.missionId } as ProtocolSourceRef
-        : input.taskId ? { kind: 'task', taskId: input.taskId } as ProtocolSourceRef
-          : input.scheduleId ? { kind: 'schedule', scheduleId: input.scheduleId } as ProtocolSourceRef
-            : input.sessionId ? { kind: 'session', sessionId: input.sessionId } as ProtocolSourceRef
-              : { kind: 'manual' } as ProtocolSourceRef
+      : input.taskId ? { kind: 'task', taskId: input.taskId } as ProtocolSourceRef
+        : input.scheduleId ? { kind: 'schedule', scheduleId: input.scheduleId } as ProtocolSourceRef
+          : input.sessionId ? { kind: 'session', sessionId: input.sessionId } as ProtocolSourceRef
+            : { kind: 'manual' } as ProtocolSourceRef
   )
   const runId = genId()
   if (transcript) {
@@ -246,7 +244,6 @@ export function createProtocolRun(input: CreateProtocolRunInput, deps?: Protocol
     participantAgentIds,
     facilitatorAgentId: cleanText(input.facilitatorAgentId, 64) || participantAgentIds[0] || null,
     observerAgentIds: uniqueIds(input.observerAgentIds, 32),
-    missionId: cleanText(input.missionId, 64) || null,
     taskId: cleanText(input.taskId, 64) || null,
     sessionId: cleanText(input.sessionId, 64) || null,
     parentRunId: cleanText(input.parentRunId, 64) || null,
@@ -288,9 +285,6 @@ export function createProtocolRun(input: CreateProtocolRunInput, deps?: Protocol
       transcriptChatroomId: run.transcriptChatroomId,
     },
   }, deps)
-  if (run.missionId) {
-    requestMissionTick(run.missionId, 'protocol_run_created', { protocolRunId: run.id })
-  }
   if (input.autoStart !== false) {
     requestProtocolRunExecution(run.id, deps)
   }
@@ -594,7 +588,6 @@ export function launchProtocolRunForSchedule(schedule: Schedule): ProtocolRun {
     observerAgentIds: uniqueIds(schedule.protocolObserverAgentIds, 32),
     scheduleId: schedule.id,
     sessionId: schedule.createdInSessionId || null,
-    missionId: schedule.linkedMissionId || null,
     sourceRef: { kind: 'schedule', scheduleId: schedule.id },
     autoStart: true,
     parentChatroomId: null,
@@ -607,31 +600,11 @@ export function launchProtocolRunForSchedule(schedule: Schedule): ProtocolRun {
   })
 }
 
-export function launchProtocolRunForMission(input: {
-  missionId: string
-  title: string
-  participantAgentIds: string[]
-  facilitatorAgentId?: string | null
-  config?: ProtocolRunConfig | null
-  templateId?: string | null
-}): ProtocolRun {
-  return createProtocolRun({
-    title: input.title,
-    templateId: input.templateId || 'facilitated_discussion',
-    participantAgentIds: input.participantAgentIds,
-    facilitatorAgentId: input.facilitatorAgentId || null,
-    missionId: input.missionId,
-    sourceRef: { kind: 'mission', missionId: input.missionId },
-    config: input.config || null,
-  })
-}
-
 export function launchProtocolRunForTask(input: {
   taskId: string
   title: string
   participantAgentIds: string[]
   facilitatorAgentId?: string | null
-  missionId?: string | null
   config?: ProtocolRunConfig | null
   templateId?: string | null
 }): ProtocolRun {
@@ -640,7 +613,6 @@ export function launchProtocolRunForTask(input: {
     templateId: input.templateId || 'facilitated_discussion',
     participantAgentIds: input.participantAgentIds,
     facilitatorAgentId: input.facilitatorAgentId || null,
-    missionId: input.missionId || null,
     taskId: input.taskId,
     sourceRef: { kind: 'task', taskId: input.taskId },
     config: input.config || null,

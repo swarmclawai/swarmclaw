@@ -11,7 +11,6 @@ import { ThemeSection } from '@/views/settings/section-theme'
 import { RuntimeLoopSection } from '@/views/settings/section-runtime-loop'
 import { SupervisorReflectionSection } from '@/views/settings/section-supervisor-reflection'
 import { CapabilityPolicySection } from '@/views/settings/section-capability-policy'
-import { WalletsSection } from '@/views/settings/section-wallets'
 import { StorageSection } from '@/views/settings/section-storage'
 import { VoiceSection } from '@/views/settings/section-voice'
 import { WebSearchSection } from '@/views/settings/section-web-search'
@@ -148,14 +147,6 @@ export default function SettingsRoute() {
       description: 'Manage upload retention, cleanup, and file storage behavior.',
       keywords: ['storage', 'uploads', 'disk', 'cleanup', 'files'],
       render: () => <StorageSection {...sectionProps} />,
-    },
-    {
-      id: 'wallets',
-      tabId: 'general',
-      title: 'Wallets',
-      description: 'Control global wallet approval behavior and auto-execution defaults.',
-      keywords: ['wallet', 'wallets', 'approval', 'approvals', 'crypto', 'send'],
-      render: () => <WalletsSection {...sectionProps} />,
     },
     {
       id: 'theme',

@@ -38,7 +38,6 @@ import {
   deriveTaskTitle,
   prepareTaskCreation,
 } from '@/lib/server/tasks/task-service'
-import { ensureMissionForTask, enrichTaskWithMissionSummary } from '@/lib/server/missions/mission-service'
 import { classifyMessage } from '@/lib/server/chat-execution/message-classifier'
 import {
   buildDelegationTaskProfile,
@@ -742,19 +741,6 @@ export function buildCrudTools(bctx: ToolBuildContext): StructuredToolInterface[
 
               res.save(all)
               if (toolKey === 'manage_tasks') {
-                const mission = ensureMissionForTask(entry as BoardTask, {
-                  source: entry.sourceType === 'schedule'
-                    ? 'schedule'
-                    : entry.sourceType === 'delegation'
-                      ? 'delegation'
-                      : 'manual',
-                })
-                if (mission) {
-                  responseEntry = enrichTaskWithMissionSummary({
-                    ...(responseEntry as BoardTask),
-                    missionId: mission.id,
-                  })
-                }
                 if (taskDelegationAdvisory && responseEntry && typeof responseEntry === 'object') {
                   responseEntry = {
                     ...(responseEntry as Record<string, unknown>),

@@ -13,9 +13,10 @@ const VIEW_TO_PATH: Record<AppView, string> = {
   protocols: '/protocols',
   schedules: '/schedules',
   memory: '/memory',
-  missions: '/missions',
+
   tasks: '/tasks',
   secrets: '/secrets',
+  wallets: '/wallets',
   providers: '/providers',
   skills: '/skills',
   connectors: '/connectors',
@@ -25,7 +26,6 @@ const VIEW_TO_PATH: Record<AppView, string> = {
   logs: '/logs',
   extensions: '/extensions',
   usage: '/usage',
-  wallets: '/wallets',
   runs: '/runs',
   autonomy: '/autonomy',
   settings: '/settings',
@@ -40,11 +40,6 @@ export function getViewPath(view: AppView, id?: string | null): string {
     return `${base}/${encodeURIComponent(id)}`
   }
   return base
-}
-
-export function getMissionPath(missionId?: string | null): string {
-  if (!missionId) return VIEW_TO_PATH.missions
-  return `${VIEW_TO_PATH.missions}/${encodeURIComponent(missionId)}`
 }
 
 /** Map a pathname back to an AppView. Returns null for unknown paths. */

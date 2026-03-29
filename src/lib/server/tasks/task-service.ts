@@ -106,13 +106,6 @@ export function applyTaskContinuationDefaults(
     if (!Object.prototype.hasOwnProperty.call(explicit, 'cwd') && typeof sourceTask.cwd === 'string' && sourceTask.cwd.trim()) {
       parsed.cwd = sourceTask.cwd.trim()
     }
-    if (
-      !Object.prototype.hasOwnProperty.call(explicit, 'missionId')
-      && typeof sourceTask.missionId === 'string'
-      && sourceTask.missionId.trim()
-    ) {
-      parsed.missionId = sourceTask.missionId.trim()
-    }
     const sourceSessionId = typeof sourceTask.checkpoint?.lastSessionId === 'string' && sourceTask.checkpoint.lastSessionId.trim()
       ? sourceTask.checkpoint.lastSessionId.trim()
       : typeof sourceTask.sessionId === 'string' && sourceTask.sessionId.trim()

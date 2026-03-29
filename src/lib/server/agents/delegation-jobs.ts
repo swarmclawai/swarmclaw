@@ -13,8 +13,6 @@ import { log } from '@/lib/server/logger'
 import { debug } from '@/lib/server/debug'
 import { createNotification } from '@/lib/server/create-notification'
 import { enqueueSystemEvent } from '@/lib/server/runtime/system-events'
-import { ensureDelegationMission, syncDelegationMissionFromJob } from '@/lib/server/missions/mission-service'
-import { loadSession } from '@/lib/server/sessions/session-repository'
 import { notify } from '@/lib/server/ws-hub'
 
 interface DelegationRuntimeHandle {
@@ -42,8 +40,6 @@ export interface CreateDelegationJobInput {
   kind: DelegationJobRecord['kind']
   task: string
   backend?: DelegationJobRecord['backend']
-  missionId?: string | null
-  parentMissionId?: string | null
   parentSessionId?: string | null
   childSessionId?: string | null
   agentId?: string | null
@@ -53,15 +49,11 @@ export interface CreateDelegationJobInput {
 
 export function createDelegationJob(input: CreateDelegationJobInput): DelegationJobRecord {
   const createdAt = Date.now()
-  const inferredParentMissionId = input.parentMissionId
-    || (input.parentSessionId ? loadSession(input.parentSessionId)?.missionId || null : null)
   const job: DelegationJobRecord = {
     id: genId(10),
     kind: input.kind,
     status: 'queued',
     backend: input.backend ?? null,
-    missionId: input.missionId ?? null,
-    parentMissionId: inferredParentMissionId,
     parentSessionId: input.parentSessionId ?? null,
     childSessionId: input.childSessionId ?? null,
     agentId: input.agentId ?? null,
@@ -85,22 +77,6 @@ export function createDelegationJob(input: CreateDelegationJobInput): Delegation
     completedAt: null,
   }
   upsertDelegationJob(job.id, job)
-  if (!job.missionId && inferredParentMissionId) {
-    const mission = ensureDelegationMission({
-      task: job.task,
-      backend: job.backend,
-      parentSessionId: job.parentSessionId || null,
-      childSessionId: job.childSessionId || null,
-      agentId: job.agentId || null,
-      parentMissionId: inferredParentMissionId,
-      jobId: job.id,
-    })
-    if (mission) {
-      job.missionId = mission.id
-      upsertDelegationJob(job.id, job)
-    }
-  }
-  syncDelegationMissionFromJob(job.id)
   notifyDelegationJobsChanged()
 
   const sid = job.childSessionId || job.parentSessionId || ''
@@ -151,7 +127,6 @@ export function updateDelegationJob(
     }
   })
   if (!result) return null
-  syncDelegationMissionFromJob(id)
   notifyDelegationJobsChanged()
   return getDelegationJob(id) || result
 }

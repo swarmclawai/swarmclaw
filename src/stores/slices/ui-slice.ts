@@ -95,8 +95,6 @@ export interface UiSlice {
   setFleetFilter: (filter: FleetFilter) => void
   chatFilter: 'all' | 'active' | 'recent'
   setChatFilter: (filter: 'all' | 'active' | 'recent') => void
-  walletPanelAgentId: string | null
-  setWalletPanelAgentId: (id: string | null) => void
   heartbeatHistoryOpen: boolean
   setHeartbeatHistoryOpen: (open: boolean) => void
   agentPrefill: Partial<Agent> | null
@@ -195,8 +193,6 @@ export const createUiSlice: StateCreator<AppState, [], [], UiSlice> = (set, get)
   setFleetFilter: (filter) => { safeStorageSet('sc_fleet_filter', filter); set({ fleetFilter: filter }) },
   chatFilter: 'all' as const,
   setChatFilter: (filter) => set({ chatFilter: filter }),
-  walletPanelAgentId: null,
-  setWalletPanelAgentId: (id) => set({ walletPanelAgentId: id }),
   heartbeatHistoryOpen: false,
   setHeartbeatHistoryOpen: (open) => set({ heartbeatHistoryOpen: open }),
   agentPrefill: null,

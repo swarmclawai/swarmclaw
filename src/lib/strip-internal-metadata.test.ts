@@ -31,7 +31,7 @@ describe('stripInternalJson', () => {
   })
 
   it('removes JSON with nested objects when internal keys are present', () => {
-    const input = '{ "walletIntent": "send", "details": { "amount": 100 } }'
+    const input = '{ "isDeliverableTask": true, "details": { "amount": 100 } }'
     assert.equal(stripInternalJson(input).trim(), '')
   })
 

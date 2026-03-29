@@ -6,7 +6,6 @@ import type {
   BoardTask,
   Chatroom,
   MessageToolEvent,
-  Mission,
   ProtocolBranchCase,
   ProtocolPhaseDefinition,
   ProtocolRepeatConfig,
@@ -31,7 +30,6 @@ export interface ProtocolRunDetail {
   template: ProtocolTemplate | null
   transcript: Chatroom | null
   parentChatroom: Chatroom | null
-  linkedMission: Mission | null
   linkedTask: BoardTask | null
   events: ProtocolRunEvent[]
 }

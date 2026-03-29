@@ -1095,7 +1095,6 @@ If media sending fails, report the exact error and retry with a corrected path/t
 
     const queued = enqueueSessionRun({
       sessionId: session.id,
-      missionId: session.missionId || null,
       message: modelInputText,
       imagePath: firstImagePath,
       imageUrl: firstImageUrl,

@@ -46,9 +46,6 @@ import {
 import { normalizeProviderEndpoint, isLocalOpenClawEndpoint } from '@/lib/openclaw/openclaw-endpoint'
 import { NON_LANGGRAPH_PROVIDER_IDS } from '@/lib/provider-sets'
 import {
-  resolveMissionForTurn,
-} from '@/lib/server/missions/mission-service'
-import {
   bridgeHumanReplyFromChat,
 } from '@/lib/server/chatrooms/session-mailbox'
 import { runLinkUnderstanding } from '@/lib/server/link-understanding'
@@ -465,7 +462,7 @@ export interface PreparedExecutableChatTurn {
   appSettings: ReturnType<typeof loadSettings>
   lifecycleRunId: string
   agentForSession: ReturnType<typeof getAgent>
-  mission: Awaited<ReturnType<typeof resolveMissionForTurn>>
+  mission: null
   executionBrief: ExecutionBrief
   executionBriefContextBlock?: string
   extensionsForRun: string[]
@@ -503,7 +500,6 @@ export async function prepareChatTurn(input: ExecuteChatTurnInput): Promise<Prep
     imagePath,
     imageUrl,
     attachedFiles,
-    missionId: explicitMissionId,
     internal = false,
     runId,
     source = 'chat',
@@ -580,17 +576,7 @@ export async function prepareChatTurn(input: ExecuteChatTurnInput): Promise<Prep
     try { syncSessionArchiveMemory(session, { agent: agentForSession }) } catch { /* best-effort */ }
   }
 
-  const mission = await resolveMissionForTurn({
-    session,
-    message,
-    source,
-    internal,
-    runId: lifecycleRunId,
-    explicitMissionId: explicitMissionId || null,
-  })
-  if (mission?.id) {
-    session.missionId = mission.id
-  }
+  const mission = null
   const extensionsForRun = toolPolicy.enabledExtensions
   if (runMessageStartIndex === 0) {
     await runCapabilityHook(
@@ -606,12 +592,6 @@ export async function prepareChatTurn(input: ExecuteChatTurnInput): Promise<Prep
   let sessionForRun = JSON.stringify(runtimeCapabilityIds) === JSON.stringify(extensionsForRun)
     ? session
     : { ...session, tools: sessionForRunSelection.tools, extensions: sessionForRunSelection.extensions }
-  if (mission?.id) {
-    sessionForRun = {
-      ...sessionForRun,
-      missionId: mission.id,
-    }
-  }
   if (agentForSession) {
     const preferredRoute = resolvePrimaryAgentRoute(agentForSession, undefined, {
       preferredGatewayTags: session.routePreferredGatewayTags || [],

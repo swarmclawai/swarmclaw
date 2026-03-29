@@ -2,7 +2,6 @@ import type {
   EvidenceRef,
   ExecutionBrief,
   ExecutionBriefPlanStep,
-  Mission,
   Session,
   SessionWorkingState,
   WorkingPlanStep,
@@ -75,14 +74,8 @@ function dedupePlan(steps: ExecutionBriefPlanStep[]): ExecutionBriefPlanStep[] {
   return out
 }
 
-function inferStatus(mission: Mission | null | undefined, workingState: SessionWorkingState | null): WorkingStateStatus {
+function inferStatus(workingState: SessionWorkingState | null): WorkingStateStatus {
   if (workingState?.status) return workingState.status
-  if (!mission) return 'idle'
-  if (mission.status === 'completed') return 'completed'
-  if (mission.status === 'waiting') return 'waiting'
-  if (mission.status === 'failed' || mission.phase === 'failed') return 'blocked'
-  if (mission.waitState) return 'waiting'
-  if (mission.phase === 'executing' || mission.phase === 'dispatching' || mission.phase === 'verifying') return 'progress'
   return 'idle'
 }
 
@@ -121,15 +114,14 @@ function buildFacts(workingState: SessionWorkingState | null, session: Session |
   return uniqueStrings([...activeFacts, ...runContextFacts], MAX_FACTS, 240)
 }
 
-function buildBlockers(workingState: SessionWorkingState | null, mission: Mission | null | undefined, session: Session | null): string[] {
+function buildBlockers(workingState: SessionWorkingState | null, session: Session | null): string[] {
   const activeBlockers = workingState
     ? workingState.blockers
       .filter((blocker) => blocker.status === 'active')
       .map((blocker) => blocker.nextAction ? `${blocker.summary} | next: ${blocker.nextAction}` : blocker.summary)
     : []
-  const missionBlockers = mission?.waitState?.reason ? [cleanText(mission.waitState.reason, 280)] : []
   const runContextBlockers = session?.runContext ? ensureRunContext(session.runContext).blockers : []
-  return uniqueStrings([...activeBlockers, ...missionBlockers, ...runContextBlockers], MAX_BLOCKERS, 280)
+  return uniqueStrings([...activeBlockers, ...runContextBlockers], MAX_BLOCKERS, 280)
 }
 
 function buildArtifacts(workingState: SessionWorkingState | null): string[] {
@@ -147,8 +139,8 @@ function buildConstraints(workingState: SessionWorkingState | null, session: Ses
   return uniqueStrings([...(workingConstraints || []), ...(runContext?.constraints || [])], 10, 220)
 }
 
-function buildSuccessCriteria(workingState: SessionWorkingState | null, mission: Mission | null | undefined): string[] {
-  return uniqueStrings([...(workingState?.successCriteria || []), ...(mission?.successCriteria || [])], 10, 220)
+function buildSuccessCriteria(workingState: SessionWorkingState | null): string[] {
+  return uniqueStrings([...(workingState?.successCriteria || [])], 10, 220)
 }
 
 function buildEvidenceRefs(workingState: SessionWorkingState | null): EvidenceRef[] {
@@ -161,49 +153,40 @@ function buildEvidenceRefs(workingState: SessionWorkingState | null): EvidenceRe
 export function buildExecutionBrief(params: {
   sessionId?: string | null
   session?: Session | null
-  mission?: Mission | null
+  mission?: null
   workingState?: SessionWorkingState | null
 }): ExecutionBrief {
   const session = params.session
     || (params.sessionId ? getSession(params.sessionId) || null : null)
-  const mission = params.mission || null
   const workingState = params.workingState
-    || (session?.id ? loadSessionWorkingState(session.id, { mission }) : null)
+    || (session?.id ? loadSessionWorkingState(session.id) : null)
   const runContext = session?.runContext ? ensureRunContext(session.runContext) : null
   const plan = buildPlan(workingState, session)
   const nextAction = cleanText(
     workingState?.nextAction
-      || mission?.currentStep
       || plan.find((step) => step.status === 'active')?.text,
     240,
   ) || null
 
   return {
     sessionId: session?.id || params.sessionId || null,
-    missionId: mission?.id || workingState?.missionId || null,
     objective: cleanMultiline(
       workingState?.objective
-        || mission?.objective
         || runContext?.objective,
       900,
     ) || null,
     summary: cleanMultiline(
-      workingState?.summary
-        || mission?.verifierSummary
-        || mission?.plannerSummary,
+      workingState?.summary,
       700,
     ) || null,
-    status: inferStatus(mission, workingState),
+    status: inferStatus(workingState),
     nextAction,
     plan,
-    blockers: buildBlockers(workingState, mission, session),
+    blockers: buildBlockers(workingState, session),
     facts: buildFacts(workingState, session),
     artifacts: buildArtifacts(workingState),
     constraints: buildConstraints(workingState, session),
-    successCriteria: buildSuccessCriteria(workingState, mission),
-    missionStatus: mission?.status || null,
-    missionPhase: mission?.phase || null,
-    waitState: mission?.waitState || null,
+    successCriteria: buildSuccessCriteria(workingState),
     evidenceRefs: buildEvidenceRefs(workingState),
     parentContext: cleanMultiline(runContext?.parentContext, 900) || null,
   }
@@ -238,10 +221,7 @@ export function buildExecutionBriefContextBlock(
     || brief.artifacts.length > 0
     || brief.constraints.length > 0
     || brief.successCriteria.length > 0
-    || brief.evidenceRefs.length > 0
-    || brief.missionStatus
-    || brief.missionPhase
-    || brief.waitState?.reason,
+    || brief.evidenceRefs.length > 0,
   )
   if (!hasContent && brief.status === 'idle') return ''
   const sections = [
@@ -250,9 +230,6 @@ export function buildExecutionBriefContextBlock(
     brief.objective ? `Objective: ${brief.objective}` : '',
     brief.summary ? `Summary: ${brief.summary}` : '',
     `Status: ${brief.status}`,
-    brief.missionStatus ? `Mission status: ${brief.missionStatus}` : '',
-    brief.missionPhase ? `Mission phase: ${brief.missionPhase}` : '',
-    brief.waitState?.reason ? `Waiting reason: ${cleanText(brief.waitState.reason, 280)}` : '',
     brief.nextAction ? `Next action: ${brief.nextAction}` : '',
     brief.successCriteria.length > 0 ? `Success criteria: ${brief.successCriteria.join(' | ')}` : '',
     brief.constraints.length > 0 ? `Constraints: ${brief.constraints.join(' | ')}` : '',

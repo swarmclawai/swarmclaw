@@ -7,11 +7,6 @@ import { createNotification } from '@/lib/server/create-notification'
 import { validateDag, cascadeUnblock } from '@/lib/server/dag-validation'
 import { getExtensionManager } from '@/lib/server/extensions'
 import {
-  enrichTaskWithMissionSummary,
-  ensureMissionForTask,
-  noteMissionTaskFinished,
-} from '@/lib/server/missions/mission-service'
-import {
   disableSessionHeartbeat,
   enqueueTask,
   recoverStalledRunningTasks,
@@ -64,9 +59,7 @@ export function prepareTasksForListing() {
   validateCompletedTasksQueue()
   recoverStalledRunningTasks()
   const allTasks = loadTasks()
-  return Object.fromEntries(
-    Object.entries(allTasks).map(([id, task]) => [id, enrichTaskWithMissionSummary(task)]),
-  )
+  return allTasks
 }
 
 export function updateTaskFromRoute(id: string, body: Record<string, unknown>): ServiceResult<BoardTask> {
@@ -128,10 +121,6 @@ export function updateTaskFromRoute(id: string, body: Record<string, unknown>): 
   }
 
   saveTask(id, tasks[id])
-  const mission = ensureMissionForTask(tasks[id], { source: 'manual' })
-  if (tasks[id].status === 'completed' || tasks[id].status === 'failed' || tasks[id].status === 'cancelled') {
-    noteMissionTaskFinished(tasks[id], tasks[id].status, tasks[id].id)
-  }
   logActivity({ entityType: 'task', entityId: id, action: 'updated', actor: 'user', summary: `Task updated: "${tasks[id].title}" (${prevStatus} → ${tasks[id].status})` })
   if (prevStatus !== tasks[id].status) {
     pushMainLoopEventToMainSessions({
@@ -143,10 +132,7 @@ export function updateTaskFromRoute(id: string, body: Record<string, unknown>): 
   if (prevStatus !== tasks[id].status && tasks[id].status === 'cancelled') {
     disableSessionHeartbeat(tasks[id].sessionId)
     notify('tasks')
-    return serviceOk(enrichTaskWithMissionSummary({
-      ...tasks[id],
-      missionId: mission?.id || tasks[id].missionId || null,
-    }))
+    return serviceOk(tasks[id])
   }
 
   if (prevStatus !== tasks[id].status && (tasks[id].status === 'completed' || tasks[id].status === 'failed')) {
@@ -216,10 +202,7 @@ export function updateTaskFromRoute(id: string, body: Record<string, unknown>): 
   }
 
   notify('tasks')
-  return serviceOk(enrichTaskWithMissionSummary({
-    ...tasks[id],
-    missionId: mission?.id || tasks[id].missionId || null,
-  }))
+  return serviceOk(tasks[id])
 }
 
 export function archiveTaskFromRoute(id: string): ServiceResult<BoardTask> {
@@ -346,11 +329,6 @@ export function createTaskFromRoute(body: Record<string, unknown>): ServiceResul
   }
 
   saveTask(id, task)
-  const mission = ensureMissionForTask(task, { source: 'manual' })
-  const finalTask = enrichTaskWithMissionSummary({
-    ...task,
-    missionId: mission?.id || task.missionId || null,
-  })
   logActivity({ entityType: 'task', entityId: id, action: 'created', actor: 'user', summary: `Task created: "${task.title}"` })
   pushMainLoopEventToMainSessions({
     type: 'task_created',
@@ -360,7 +338,7 @@ export function createTaskFromRoute(body: Record<string, unknown>): ServiceResul
     enqueueTask(id)
   }
   notify('tasks')
-  return serviceOk(finalTask)
+  return serviceOk(task)
 }
 
 export function bulkUpdateTasksFromRoute(body: Record<string, unknown>): ServiceResult<{ updated: number; ids: string[] }> {

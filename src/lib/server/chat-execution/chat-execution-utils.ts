@@ -321,7 +321,6 @@ export function requestedToolNamesFromMessage(message: string): string[] {
     'memory_get',
     'memory_store',
     'memory_update',
-    'wallet_tool',
     'http_request',
     'send_file',
     'schedule_wake',
@@ -339,7 +338,6 @@ export function requestedToolNamesFromMessage(message: string): string[] {
     'execute',
     'files',
     'edit_file',
-    'canvas',
     'mailbox',
     'email',
   ]

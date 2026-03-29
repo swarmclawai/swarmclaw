@@ -43,7 +43,6 @@ export {
   runProtocolRun,
   performProtocolRunAction,
   launchProtocolRunForSchedule,
-  launchProtocolRunForMission,
   launchProtocolRunForTask,
 } from '@/lib/server/protocols/protocol-run-lifecycle'
 

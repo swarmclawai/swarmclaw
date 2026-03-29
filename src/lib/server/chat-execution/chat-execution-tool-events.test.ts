@@ -108,31 +108,31 @@ describe('collectToolEvent', () => {
     const bag: MessageToolEvent[] = []
     collectToolEvent({
       t: 'tool_call',
-      toolName: 'wallet_tool',
-      toolInput: '{"action":"balance","chain":"solana"}',
-      toolCallId: 'call-sol',
+      toolName: 'http_request',
+      toolInput: '{"method":"GET","url":"https://api-a.example.com"}',
+      toolCallId: 'call-a',
     }, bag)
     collectToolEvent({
       t: 'tool_call',
-      toolName: 'wallet_tool',
-      toolInput: '{"action":"balance","chain":"ethereum"}',
-      toolCallId: 'call-eth',
+      toolName: 'http_request',
+      toolInput: '{"method":"GET","url":"https://api-b.example.com"}',
+      toolCallId: 'call-b',
     }, bag)
     collectToolEvent({
       t: 'tool_result',
-      toolName: 'wallet_tool',
-      toolOutput: '{"chain":"solana"}',
-      toolCallId: 'call-sol',
+      toolName: 'http_request',
+      toolOutput: '{"source":"api-a"}',
+      toolCallId: 'call-a',
     }, bag)
     collectToolEvent({
       t: 'tool_result',
-      toolName: 'wallet_tool',
-      toolOutput: '{"chain":"ethereum"}',
-      toolCallId: 'call-eth',
+      toolName: 'http_request',
+      toolOutput: '{"source":"api-b"}',
+      toolCallId: 'call-b',
     }, bag)
 
-    assert.equal(bag[0].output, '{"chain":"solana"}')
-    assert.equal(bag[1].output, '{"chain":"ethereum"}')
+    assert.equal(bag[0].output, '{"source":"api-a"}')
+    assert.equal(bag[1].output, '{"source":"api-b"}')
   })
 })
 

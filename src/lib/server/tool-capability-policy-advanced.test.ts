@@ -423,17 +423,17 @@ describe('compound scenarios', () => {
     assert.match(tasksBlock.reason, /task management is disabled/)
   })
 
-  it('20 tools requested: correctly partitioned into enabled vs blocked', () => {
+  it('19 tools requested: correctly partitioned into enabled vs blocked', () => {
     const tools = [
       'shell', 'files', 'web', 'web_search', 'web_fetch', 'browser',
       'memory', 'delegate', 'manage_platform', 'manage_tasks',
-      'manage_schedules', 'wallet', 'delete_file', 'canvas',
+      'manage_schedules', 'wallet', 'delete_file',
       'manage_connectors', 'git', 'sandbox', 'claude_code',
       'monitor', 'http_request',
     ]
     const d = resolveSessionToolPolicy(tools, { capabilityPolicyMode: 'strict' })
-    assert.equal(d.requestedExtensions.length, 20)
-    assert.equal(d.enabledExtensions.length + d.blockedExtensions.length, 20)
+    assert.equal(d.requestedExtensions.length, 19)
+    assert.equal(d.enabledExtensions.length + d.blockedExtensions.length, 19)
 
     // memory, web, web_search, web_fetch should be enabled
     assert.ok(d.enabledExtensions.includes('memory'))

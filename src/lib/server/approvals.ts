@@ -5,7 +5,6 @@ import { notify } from './ws-hub'
 import { dispatchWake } from '@/lib/server/runtime/wake-dispatcher'
 import { enqueueSystemEvent } from '@/lib/server/runtime/system-events'
 import { enqueueSessionRun } from '@/lib/server/runtime/session-run-manager'
-import { requestMissionTicksForApprovalDecision } from '@/lib/server/missions/mission-service'
 
 function trimToString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
@@ -122,11 +121,6 @@ async function persistApprovalDecision(request: ApprovalRequest, approved: boole
       // best-effort trigger only
     })
   if (request.sessionId) notify(`session:${request.sessionId}`)
-  requestMissionTicksForApprovalDecision({
-    approvalId: request.id,
-    status: approved ? 'approved' : 'rejected',
-    sessionId: request.sessionId || null,
-  })
   return request
 }
 

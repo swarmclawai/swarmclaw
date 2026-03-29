@@ -2,8 +2,6 @@
 
 export type ApprovalCategory =
   | 'tool_access'
-  | 'wallet_transfer'
-  | 'wallet_action'
   | 'extension_scaffold'
   | 'extension_install'
   | 'task_tool'

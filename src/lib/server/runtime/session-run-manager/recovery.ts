@@ -48,7 +48,6 @@ function resolveRecoveredQueuedEntry(entry: SessionRunQueueEntry, reason: string
   entry.resolve({
     runId: entry.run.id,
     sessionId: entry.run.sessionId,
-    ...(entry.run.missionId ? { missionId: entry.run.missionId } : {}),
     text: '',
     persisted: false,
     toolEvents: [],

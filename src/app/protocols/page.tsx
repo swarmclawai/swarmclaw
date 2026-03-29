@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useAgentsQuery } from '@/features/agents/queries'
 import { useChatroomsQuery } from '@/features/chatrooms/queries'
-import { useMissionsQuery } from '@/features/missions/queries'
 import {
   useCreateProtocolRunMutation,
   useDeleteProtocolTemplateMutation,
@@ -21,7 +20,6 @@ import { timeAgo } from '@/lib/time-format'
 import type {
   BoardTask,
   Chatroom,
-  Mission,
   ProtocolRun,
   ProtocolRunEvent,
   ProtocolStepDefinition,
@@ -33,7 +31,6 @@ type ProtocolRunDetail = {
   template: ProtocolTemplate | null
   transcript: Chatroom | null
   parentChatroom: Chatroom | null
-  linkedMission: Mission | null
   linkedTask: BoardTask | null
   events: ProtocolRunEvent[]
 }
@@ -153,7 +150,6 @@ export default function ProtocolsPage() {
     facilitatorAgentId: '',
     participantAgentIds: [] as string[],
     parentChatroomId: '',
-    missionId: '',
     taskId: '',
     autoStart: true,
   })
@@ -162,7 +158,6 @@ export default function ProtocolsPage() {
   const runsQuery = useProtocolRunsQuery({ limit: 120 })
   const agentsQuery = useAgentsQuery()
   const chatroomsQuery = useChatroomsQuery()
-  const missionsQuery = useMissionsQuery({ limit: 80 })
   const tasksQuery = useTasksQuery({ includeArchived: true })
   const detailQuery = useProtocolRunDetailQuery(selectedRunId, { enabled: Boolean(selectedRunId) })
   const createRunMutation = useCreateProtocolRunMutation()
@@ -174,14 +169,12 @@ export default function ProtocolsPage() {
   const detail = detailQuery.data ?? null
   const agents = agentsQuery.data ?? {}
   const chatrooms = chatroomsQuery.data ?? {}
-  const missions = missionsQuery.data ?? []
   const tasks = tasksQuery.data ?? {}
   const loading = (
     templatesQuery.isLoading
     || runsQuery.isLoading
     || agentsQuery.isLoading
     || chatroomsQuery.isLoading
-    || missionsQuery.isLoading
     || tasksQuery.isLoading
   )
   const detailLoading = detailQuery.isLoading || detailQuery.isFetching
@@ -190,7 +183,6 @@ export default function ProtocolsPage() {
     runsQuery.error,
     agentsQuery.error,
     chatroomsQuery.error,
-    missionsQuery.error,
     tasksQuery.error,
     detailQuery.error,
   ].find(Boolean)
@@ -237,7 +229,6 @@ export default function ProtocolsPage() {
         participantAgentIds: form.participantAgentIds,
         facilitatorAgentId: form.facilitatorAgentId || null,
         parentChatroomId: form.parentChatroomId || null,
-        missionId: form.missionId || null,
         taskId: form.taskId || null,
         autoStart: form.autoStart,
         config: {
@@ -364,7 +355,7 @@ export default function ProtocolsPage() {
                 </div>
                 <h1 className="mt-4 font-display text-[34px] font-700 tracking-[-0.03em] text-text">Bounded Collaboration Runs</h1>
                 <p className="mt-3 max-w-[720px] text-[15px] leading-relaxed text-text-3/72">
-                  Start structured sessions from chats, chatrooms, tasks, missions, or schedules. Runs stay temporary and bounded, while templates remain reusable for the next time you need them.
+                  Start structured sessions from chats, chatrooms, tasks, or schedules. Runs stay temporary and bounded, while templates remain reusable for the next time you need them.
                 </p>
               </div>
               <div className="w-full max-w-[520px] rounded-[20px] border border-white/[0.06] bg-surface/70 p-4">
@@ -372,7 +363,7 @@ export default function ProtocolsPage() {
                   <div>
                     <div className="text-[11px] font-700 uppercase tracking-[0.12em] text-text-3/55">Launch and Templates</div>
                     <div className="mt-1 text-[13px] leading-relaxed text-text-3/68">
-                      Start from here when you need a blank run. Normal use should start from the chat, task, mission, or chatroom you are already in.
+                      Start from here when you need a blank run. Normal use should start from the chat, task, or chatroom you are already in.
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -469,16 +460,6 @@ export default function ProtocolsPage() {
                         <option value="">No parent chatroom</option>
                         {Object.values(chatrooms).map((chatroom) => (
                           <option key={chatroom.id} value={chatroom.id}>{chatroom.name}</option>
-                        ))}
-                      </select>
-                      <select
-                        value={form.missionId}
-                        onChange={(event) => setForm((current) => ({ ...current, missionId: event.target.value }))}
-                        className="rounded-[12px] border border-white/[0.06] bg-white/[0.04] px-3 py-2.5 text-[14px] text-text outline-none"
-                      >
-                        <option value="">No linked mission</option>
-                        {missions.map((mission) => (
-                          <option key={mission.id} value={mission.id}>{mission.objective}</option>
                         ))}
                       </select>
                       <select

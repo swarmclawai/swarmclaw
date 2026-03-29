@@ -22,7 +22,6 @@ const EXTENSION_ALIAS_GROUPS: string[][] = [
   ['schedule_wake', 'schedule'],
   // http_request/http now aliased into web group above
   ['memory', 'memory_tool', 'memory_search', 'memory_get', 'memory_store', 'memory_update'],
-  ['wallet', 'wallet_tool'],
   ['monitor', 'monitor_tool'],
   ['context_mgmt', 'context_status', 'context_summarize'],
   ['openclaw_workspace'],

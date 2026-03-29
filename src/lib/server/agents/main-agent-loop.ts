@@ -10,7 +10,6 @@ import {
 import { loadAgents } from '@/lib/server/agents/agent-repository'
 import { assessAutonomyRun } from '@/lib/server/autonomy/supervisor-reflection'
 import { enqueueSystemEvent } from '@/lib/server/runtime/system-events'
-import { buildMissionHeartbeatPrompt as buildMissionHeartbeatPromptFromMission, getMissionForSession } from '@/lib/server/missions/mission-service'
 import { loadSettings } from '@/lib/server/settings/settings-repository'
 import { getSession, loadSessions } from '@/lib/server/sessions/session-repository'
 import { deleteSessionWorkingState, loadSessionWorkingState, syncWorkingStateFromMainLoopState } from '@/lib/server/working-state/service'
@@ -37,7 +36,6 @@ export interface MainLoopState {
   currentPlanStep: string | null
   reviewNote: string | null
   reviewConfidence: number | null
-  missionTaskId: string | null
   momentumScore: number
   paused: boolean
   status: 'idle' | 'progress' | 'blocked' | 'ok'
@@ -55,8 +53,6 @@ export interface MainLoopState {
     note: string
     status?: 'idle' | 'progress' | 'blocked' | 'ok' | 'reflection'
   }>
-  missionTokens: number
-  missionCostUsd: number
   followupChainCount: number
   lifetimeIterations: number
   metaMissCount: number
@@ -137,15 +133,12 @@ function defaultState(): MainLoopState {
     currentPlanStep: null,
     reviewNote: null,
     reviewConfidence: null,
-    missionTaskId: null,
     momentumScore: 0,
     paused: false,
     status: 'idle',
     autonomyMode: 'assist',
     pendingEvents: [],
     timeline: [],
-    missionTokens: 0,
-    missionCostUsd: 0,
     followupChainCount: 0,
     lifetimeIterations: 0,
     metaMissCount: 0,
@@ -304,8 +297,6 @@ function clampState(state: MainLoopState): MainLoopState {
   state.followupChainCount = Math.max(0, Math.min(10, Math.trunc(state.followupChainCount || 0)))
   state.lifetimeIterations = Math.max(0, Math.trunc(state.lifetimeIterations || 0))
   state.metaMissCount = Math.max(0, Math.min(100, Math.trunc(state.metaMissCount || 0)))
-  state.missionTokens = Math.max(0, Math.trunc(state.missionTokens || 0))
-  state.missionCostUsd = Math.max(0, Number.isFinite(state.missionCostUsd) ? Number(state.missionCostUsd) : 0)
   state.skillBlocker = normalizeSkillBlocker(state.skillBlocker)
   state.updatedAt = typeof state.updatedAt === 'number' && Number.isFinite(state.updatedAt) ? Math.trunc(state.updatedAt) : now()
   return state
@@ -325,15 +316,12 @@ function normalizeState(input?: Partial<MainLoopState> | null): MainLoopState {
     if (typeof input.reviewConfidence === 'number' || typeof input.reviewConfidence === 'string' || input.reviewConfidence === null) {
       next.reviewConfidence = normalizeConfidence(input.reviewConfidence)
     }
-    if (typeof input.missionTaskId === 'string' || input.missionTaskId === null) next.missionTaskId = input.missionTaskId
     if (typeof input.momentumScore === 'number') next.momentumScore = input.momentumScore
     if (typeof input.paused === 'boolean') next.paused = input.paused
     if (input.status) next.status = normalizeStatus(input.status, next.status)
     if (input.autonomyMode) next.autonomyMode = normalizeAutonomyMode(input.autonomyMode, next.autonomyMode)
     if (Array.isArray(input.pendingEvents)) next.pendingEvents = [...input.pendingEvents]
     if (Array.isArray(input.timeline)) next.timeline = [...input.timeline]
-    if (typeof input.missionTokens === 'number') next.missionTokens = input.missionTokens
-    if (typeof input.missionCostUsd === 'number') next.missionCostUsd = input.missionCostUsd
     if (typeof input.followupChainCount === 'number') next.followupChainCount = input.followupChainCount
     if (typeof input.lifetimeIterations === 'number') next.lifetimeIterations = input.lifetimeIterations
     if (typeof input.metaMissCount === 'number') next.metaMissCount = input.metaMissCount
@@ -435,10 +423,8 @@ function persistState(sessionId: string, state: MainLoopState): void {
   upsertPersistedMainLoopState(sessionId, normalized as unknown as Record<string, unknown>)
   const session = getSession(sessionId)
   if (!session) return
-  const mission = getMissionForSession(session)
   void syncWorkingStateFromMainLoopState({
     sessionId,
-    mission,
     goal: normalized.goal,
     summary: normalized.summary,
     status: normalized.status === 'ok'
@@ -797,11 +783,6 @@ export function buildMainLoopHeartbeatPrompt(session: unknown, fallbackPrompt: s
   const candidate = asSession(session)
   if (!candidate?.id) return fallbackPrompt
   const persistedSession = getSession(String(candidate.id)) as Session | undefined
-  const missionPrompt = buildMissionHeartbeatPromptFromMission(
-    persistedSession || candidate as Session,
-    fallbackPrompt,
-  )
-  if (missionPrompt) return missionPrompt
   const state = getOrCreateState(String(candidate.id))
   if (!state) return fallbackPrompt
   const latestExternalGoal = extractLatestGoal(Array.isArray(candidate.messages) ? candidate.messages as Message[] : [])
@@ -812,7 +793,6 @@ export function buildMainLoopHeartbeatPrompt(session: unknown, fallbackPrompt: s
   const heartbeatSession = (persistedSession || candidate as Session)
   const executionBrief = buildExecutionBrief({
     session: heartbeatSession,
-    mission: getMissionForSession(heartbeatSession),
   })
   const executionBriefBlock = buildExecutionBriefContextBlock(executionBrief)
   const boundedFallbackPrompt = cleanMultiline(fallbackPrompt, 500)
@@ -969,8 +949,6 @@ export function handleMainLoopRunResult(input: HandleMainLoopRunResultInput): Ma
   const messageGoal = shouldCaptureMessageGoal ? parseGoalContractFromText(input.message || '') : null
   const nowTs = now()
   state.lifetimeIterations++
-  const mission = session ? getMissionForSession(session) : null
-
   if (messageGoal) state.goalContract = mergeGoalContracts(state.goalContract, messageGoal)
   if (!state.goal && shouldCaptureMessageGoal) state.goal = cleanMultiline(input.message, 900)
   if (heartbeat?.goal) state.goal = heartbeat.goal
@@ -1011,8 +989,6 @@ export function handleMainLoopRunResult(input: HandleMainLoopRunResultInput): Ma
 
   state.lastTickAt = nowTs
   state.updatedAt = nowTs
-  state.missionTokens += Math.max(0, Math.trunc((input.inputTokens || 0) + (input.outputTokens || 0)))
-  state.missionCostUsd += Math.max(0, Number(input.estimatedCost || 0))
   const cleanedResult = persistedText.trim()
   const waitingForExternal = extractWaitSignal(resultText)
   const gotTerminalAck = /^HEARTBEAT_OK$/i.test(cleanedResult) || /^NO_MESSAGE$/i.test(cleanedResult)
@@ -1073,32 +1049,8 @@ export function handleMainLoopRunResult(input: HandleMainLoopRunResultInput): Ma
   const needsReplan = review?.needs_replan === true || ((review?.confidence ?? 1) < 0.45)
   const limit = followupLimit(input.sessionId)
 
-  if (mission) {
-    state.goal = cleanMultiline(mission.objective, 900)
-    state.missionTaskId = mission.rootTaskId || null
-    state.summary = cleanMultiline(mission.verifierSummary || mission.plannerSummary || state.summary, 500)
-    state.nextAction = cleanText(mission.currentStep, 280) || null
-    state.currentPlanStep = cleanText(mission.currentStep, 280) || null
-    state.planSteps = mission.currentStep ? [mission.currentStep] : []
-    state.status = mission.status === 'completed'
-      ? 'ok'
-      : mission.status === 'waiting' || mission.status === 'failed' || mission.status === 'cancelled'
-        ? 'blocked'
-        : 'progress'
-    state.paused = mission.status === 'waiting' || mission.status === 'failed' || mission.status === 'cancelled'
-  }
-
   let followup: MainLoopFollowupRequest | null = null
-  if (mission) {
-    state.followupChainCount = 0
-    if (mission.status === 'completed') {
-      state.status = 'ok'
-      state.paused = false
-    }
-    if (mission.status === 'waiting' || mission.status === 'failed' || mission.status === 'cancelled') {
-      state.paused = true
-    }
-  } else if (isDirectUserChat) {
+  if (isDirectUserChat) {
     state.followupChainCount = 0
     state.lifetimeIterations = 0
     if (successfulChatDelivery) {

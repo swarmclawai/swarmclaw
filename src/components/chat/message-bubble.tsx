@@ -337,23 +337,6 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
     return null
   }, [message.text, isUser])
 
-  const walletRequest = useMemo(() => {
-    if (isUser) return null
-    try {
-      const data = JSON.parse(message.text)
-      if (data.type === 'extension_wallet_transfer_request') return data
-    } catch { /* ignore */ }
-    return null
-  }, [message.text, isUser])
-
-  const walletActionRequest = useMemo(() => {
-    if (isUser) return null
-    try {
-      const data = JSON.parse(message.text)
-      if (data.type === 'extension_wallet_action_request') return data
-    } catch { /* ignore */ }
-    return null
-  }, [message.text, isUser])
   const currentUser = useAppStore((s) => s.currentUser)
   const isDesktop = useMediaQuery('(min-width: 768px)')
   const setPreviewContent = useChatStore((s) => s.setPreviewContent)
@@ -560,8 +543,6 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
   const hasPrimaryAttachments = Boolean(message.imagePath || message.imageUrl || message.attachedFiles?.length)
   const shouldRenderBubbleShell = hasPrimaryAttachments
     || Boolean(allToolMedia)
-    || Boolean(walletRequest)
-    || Boolean(walletActionRequest)
     || Boolean(installRequest)
     || Boolean(scaffoldRequest)
     || isExtensionUI
@@ -703,95 +684,7 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
       ) : shouldRenderBubbleShell ? (
         /* Message bubble */
         <div className={`${isStructured ? 'max-w-[92%] md:max-w-[85%]' : 'max-w-[85%] md:max-w-[72%]'} ${isUser ? 'bubble-user px-5 py-3.5' : isHeartbeat ? 'bubble-ai px-4 py-3' : 'bubble-ai px-5 py-3.5'}`}>
-          {walletRequest ? (
-          <div className="flex flex-col gap-3 p-4 rounded-[18px] bg-sky-500/[0.03] border border-sky-500/20 shadow-[0_0_20px_rgba(14,165,233,0.05)]">
-            <div className="flex items-center gap-2 mb-1">
-              <div className="w-5 h-5 rounded-full bg-sky-500/20 flex items-center justify-center text-sky-400">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                  <path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
-                </svg>
-              </div>
-              <span className="text-[11px] font-700 uppercase tracking-wider text-sky-400/80">Wallet Transfer Request</span>
-            </div>
-            <p className="text-[13px] text-text-2/90 leading-relaxed">{walletRequest.message}</p>
-            <div className="p-3 rounded-[12px] bg-black/40 border border-white/5 flex flex-col gap-2">
-              <div className="flex justify-between items-center">
-                <span className="text-[11px] text-text-3/60 font-600 uppercase">Amount</span>
-                <span className="text-[13px] font-700 text-sky-400">{walletRequest.amountDisplay || `${walletRequest.amountSol} SOL`}</span>
-              </div>
-              <div className="flex flex-col gap-1">
-                <span className="text-[11px] text-text-3/60 font-600 uppercase">To Address</span>
-                <span className="text-[11px] font-mono text-text-2/70 break-all">{walletRequest.toAddress}</span>
-              </div>
-              {walletRequest.memo && (
-                <div className="flex flex-col gap-1 border-t border-white/5 pt-2">
-                  <span className="text-[11px] text-text-3/60 font-600 uppercase">Memo</span>
-                  <span className="text-[12px] text-text-3/80 italic">&quot;{walletRequest.memo}&quot;</span>
-                </div>
-              )}
-            </div>
-            <div className="flex gap-2 mt-1">
-              <button
-                onClick={() => useChatStore.getState().sendMessage(`I approve this transfer of ${walletRequest.amountDisplay || `${walletRequest.amountSol} SOL`} to ${walletRequest.toAddress}. Proceed with wallet_tool and set approved=true.`)}
-                className="px-4 py-2 rounded-[12px] bg-sky-500 text-black text-[13px] font-700 hover:bg-sky-400 transition-all active:scale-[0.98]"
-              >
-                Approve & Send
-              </button>
-              <button
-                onClick={() => useChatStore.getState().sendMessage(`I do not approve this transaction. Cancel it.`)}
-                className="px-4 py-2 rounded-[12px] bg-white/[0.05] hover:bg-white/[0.1] text-text-2 text-[13px] font-600 transition-all border border-white/10"
-              >
-                Reject
-              </button>
-            </div>
-          </div>
-        ) : walletActionRequest ? (
-          <div className="flex flex-col gap-3 p-4 rounded-[18px] bg-violet-500/[0.03] border border-violet-500/20 shadow-[0_0_20px_rgba(139,92,246,0.05)]">
-            <div className="flex items-center gap-2 mb-1">
-              <div className="w-5 h-5 rounded-full bg-violet-500/20 flex items-center justify-center text-violet-400">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                  <path d="M12 2v8" />
-                  <path d="M8 6h8" />
-                  <path d="m5 19 4-4 3 3 7-7" />
-                </svg>
-              </div>
-              <span className="text-[11px] font-700 uppercase tracking-wider text-violet-400/80">Wallet Action Request</span>
-            </div>
-            <p className="text-[13px] text-text-2/90 leading-relaxed">{walletActionRequest.message}</p>
-            <div className="p-3 rounded-[12px] bg-black/40 border border-white/5 flex flex-col gap-2">
-              <div className="flex justify-between items-center gap-3">
-                <span className="text-[11px] text-text-3/60 font-600 uppercase">Action</span>
-                <span className="text-[13px] font-700 text-violet-400">{walletActionRequest.action || 'wallet_action'}</span>
-              </div>
-              {(walletActionRequest.chain || walletActionRequest.network) && (
-                <div className="flex justify-between items-center gap-3">
-                  <span className="text-[11px] text-text-3/60 font-600 uppercase">Chain</span>
-                  <span className="text-[12px] text-text-2/80">{[walletActionRequest.chain, walletActionRequest.network].filter(Boolean).join(' / ')}</span>
-                </div>
-              )}
-              {walletActionRequest.summary && (
-                <div className="flex flex-col gap-1 border-t border-white/5 pt-2">
-                  <span className="text-[11px] text-text-3/60 font-600 uppercase">Summary</span>
-                  <span className="text-[12px] text-text-2/80 whitespace-pre-wrap break-words">{walletActionRequest.summary}</span>
-                </div>
-              )}
-            </div>
-            <div className="flex gap-2 mt-1">
-              <button
-                onClick={() => useChatStore.getState().sendMessage(`I approve this wallet action (${walletActionRequest.action || 'wallet_action'}). Proceed with wallet_tool and set approved=true.`)}
-                className="px-4 py-2 rounded-[12px] bg-violet-500 text-black text-[13px] font-700 hover:bg-violet-400 transition-all active:scale-[0.98]"
-              >
-                Approve Action
-              </button>
-              <button
-                onClick={() => useChatStore.getState().sendMessage('I do not approve this wallet action. Cancel it.')}
-                className="px-4 py-2 rounded-[12px] bg-white/[0.05] hover:bg-white/[0.1] text-text-2 text-[13px] font-600 transition-all border border-white/10"
-              >
-                Reject
-              </button>
-            </div>
-          </div>
-        ) : installRequest ? (
+          {installRequest ? (
           <div className="flex flex-col gap-3 p-4 rounded-[18px] bg-emerald-500/[0.03] border border-emerald-500/20 shadow-[0_0_20px_rgba(16,185,129,0.05)]">
             <div className="flex items-center gap-2 mb-1">
               <div className="w-5 h-5 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-400">

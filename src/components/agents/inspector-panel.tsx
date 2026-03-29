@@ -6,7 +6,6 @@ import type { Agent, MemoryEntry, Session } from '@/types'
 import { useAppStore } from '@/stores/use-app-store'
 import { useChatStore } from '@/stores/use-chat-store'
 import { api } from '@/lib/app/api-client'
-import { dedup } from '@/lib/shared-utils'
 import { AgentAvatar } from './agent-avatar'
 import { AgentFilesEditor } from './agent-files-editor'
 import { OpenClawSkillsPanel } from './openclaw-skills-panel'
@@ -205,25 +204,6 @@ function ToggleSwitch({ on, onChange, disabled }: { on: boolean; onChange: () =>
   )
 }
 
-// --- Wallet helpers (extracted from chat-header) ---
-
-function getAgentWalletIds(agent: { walletIds?: string[]; walletId?: string | null } | null | undefined): string[] {
-  const ids = Array.isArray(agent?.walletIds)
-    ? agent.walletIds.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
-    : []
-  const legacy = typeof agent?.walletId === 'string' && agent.walletId.trim()
-    ? [agent.walletId.trim()]
-    : []
-  return dedup([...ids, ...legacy])
-}
-
-function getAgentActiveWalletId(agent: { activeWalletId?: string | null; walletIds?: string[]; walletId?: string | null } | null | undefined): string | null {
-  const walletIds = getAgentWalletIds(agent)
-  if (typeof agent?.activeWalletId === 'string' && walletIds.includes(agent.activeWalletId)) return agent.activeWalletId
-  if (typeof agent?.walletId === 'string' && walletIds.includes(agent.walletId)) return agent.walletId
-  return walletIds[0] || null
-}
-
 // --- Main component ---
 
 export function InspectorPanel({ agent, session, onEditAgent, onDuplicateAgent, onClearHistory, onDeleteAgent, onDeleteChat, isMainChat }: Props) {
@@ -345,7 +325,6 @@ function DashboardTab({ agent, session }: { agent: Agent; session: Session }) {
       <IdentityCard agent={agent} />
       {agent.provider === 'openclaw' && <OpenClawActionsSection agent={agent} />}
       <HeartbeatSection agent={agent} session={session} />
-      <WalletSection agent={agent} />
       <ToolsSection agent={agent} session={session} />
       <AudioSection />
       <MemorySection agentId={agent.id} />
@@ -609,68 +588,6 @@ function HeartbeatSection({ agent, session }: { agent: Agent; session: Session }
           View History
         </button>
       )}
-    </div>
-  )
-}
-
-// ─── Wallet Section ──────────────────────────────────────────────
-
-function WalletSection({ agent }: { agent: Agent }) {
-  const setWalletPanelAgentId = useAppStore((s) => s.setWalletPanelAgentId)
-  const navigateTo = useNavigate()
-  const agentWalletIds = useMemo(() => getAgentWalletIds(agent), [agent])
-  const activeWalletId = useMemo(() => getAgentActiveWalletId(agent), [agent])
-  const [walletBalance, setWalletBalance] = useState<{ formatted: string; symbol: string; assets?: number } | null>(null)
-
-  useEffect(() => {
-    if (!activeWalletId) return
-    let cancelled = false
-    api<{ balanceFormatted?: string; balanceSymbol?: string; portfolioSummary?: { nonZeroAssets?: number } }>('GET', `/wallets/${activeWalletId}?cached=1`)
-      .then((data) => {
-        if (cancelled) return
-        if (data.balanceFormatted && data.balanceSymbol) {
-          setWalletBalance({
-            formatted: data.balanceFormatted,
-            symbol: data.balanceSymbol,
-            assets: typeof data.portfolioSummary?.nonZeroAssets === 'number' ? data.portfolioSummary.nonZeroAssets : undefined,
-          })
-        }
-      })
-      .catch(() => {})
-    return () => { cancelled = true }
-  }, [activeWalletId])
-
-  if (agentWalletIds.length === 0) return null
-
-  const handleClick = () => {
-    setWalletPanelAgentId(agent.id)
-    navigateTo('wallets')
-  }
-
-  return (
-    <div className={panelCardClass('p-4')}>
-      <SectionLabel>Wallet</SectionLabel>
-      <button
-        type="button"
-        onClick={handleClick}
-        className="flex items-center gap-2 w-full bg-transparent border-none cursor-pointer text-left group"
-      >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-text-3/50 shrink-0">
-          <rect x="2" y="6" width="20" height="14" rx="2" />
-          <path d="M22 10H18a2 2 0 0 0 0 4h4" />
-        </svg>
-        {walletBalance ? (
-          <span className="text-[13px] text-text-2 font-600 group-hover:text-accent-bright transition-colors">
-            {walletBalance.formatted} {walletBalance.symbol}
-            {walletBalance.assets && walletBalance.assets > 1 ? ` +${walletBalance.assets - 1} assets` : ''}
-          </span>
-        ) : (
-          <span className="text-[13px] text-text-3/50 group-hover:text-text-3 transition-colors">View wallet</span>
-        )}
-        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="ml-auto text-text-3/30 group-hover:text-text-3/60 transition-colors shrink-0">
-          <polyline points="9 18 15 12 9 6" />
-        </svg>
-      </button>
     </div>
   )
 }

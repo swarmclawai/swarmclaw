@@ -10,17 +10,15 @@ import { logActivity } from '@/lib/server/activity/activity-log'
 import { loadApprovals } from '@/lib/server/approvals/approval-repository'
 import { loadAgents, patchAgent } from '@/lib/server/agents/agent-repository'
 import { loadChatrooms } from '@/lib/server/chatrooms/chatroom-repository'
-import { loadMission } from '@/lib/server/missions/mission-repository'
 import { loadSessions, patchSession } from '@/lib/server/sessions/session-repository'
 import { loadSettings } from '@/lib/server/settings/settings-repository'
-import { buildGoalAncestrySection, buildPlatformStatusSummary } from '@/lib/server/chat-execution/situational-awareness'
+import { buildPlatformStatusSummary } from '@/lib/server/chat-execution/situational-awareness'
 import { drainDeferredWakes, hasDeferredWakes } from '@/lib/server/runtime/wake-dispatcher'
 import { buildWakeTriggerContext } from '@/lib/server/runtime/heartbeat-wake'
 import { enqueueSessionRun, getSessionRunState } from '@/lib/server/runtime/session-run-manager'
 import { log } from '@/lib/server/logger'
 import { WORKSPACE_DIR } from '@/lib/server/data-dir'
 import { drainSystemEvents, drainOrchestratorEvents } from '@/lib/server/runtime/system-events'
-import { buildMissionContextBlock } from '@/lib/server/missions/mission-service'
 import { getMessages, getRecentMessages, clearMessages } from '@/lib/server/messages/message-repository'
 import type { Agent, AppSettings, ApprovalRequest, Chatroom, Message, Session } from '@/types'
 import { isOrchestratorEligible } from '@/lib/orchestrator-config'
@@ -357,12 +355,7 @@ export function buildAgentHeartbeatPrompt(
     }
   }
 
-  // ── Phase 3: Goal ancestry ──
-  const missionId = (session.missionId || (agent as Record<string, unknown>).missionId || null) as string | null
-  const goalAncestry = buildGoalAncestrySection(missionId)
-  if (goalAncestry) sections.push(goalAncestry)
-
-  // ── Phase 4: Active task checkout & events ──
+  // ── Phase 3: Active task checkout & events ──
   const events = drainSystemEvents(session.id!)
   if (events.length > 0) {
     const eventBlock = events.map((e) => `- [${new Date(e.timestamp).toISOString()}] ${e.text}`).join('\n')
@@ -983,20 +976,7 @@ export function buildOrchestratorWakePrompt(session: any, agent: Agent): string 
     addSection(`## System Events\n${eventBlock}`)
   }
 
-  // 7. Active mission state
-  const missionId = session.missionId || null
-  if (missionId) {
-    try {
-      const missionBlock = buildMissionContextBlock(loadMission(missionId))
-      if (missionBlock) addSection(missionBlock)
-    } catch { /* ignore */ }
-  }
-
-  // 8. Goal ancestry
-  const goalAncestry = buildGoalAncestrySection(missionId)
-  if (goalAncestry) addSection(goalAncestry)
-
-  // 9. Chatroom membership
+  // 7. Chatroom membership
   try {
     const chatrooms = Object.values(loadChatrooms()) as Chatroom[]
     const myChatrooms = chatrooms.filter((c) => !c.archivedAt && c.agentIds?.includes(agent.id))

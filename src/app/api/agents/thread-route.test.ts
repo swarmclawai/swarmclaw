@@ -116,7 +116,6 @@ test('POST /api/agents/[id]/thread reuses an existing thread for a disabled agen
     file: null,
     queuedCount: 0,
     currentRunId: null,
-    canvasContent: null,
   }
   saveSessions(sessions)
 

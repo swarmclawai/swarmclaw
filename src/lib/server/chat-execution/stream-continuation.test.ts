@@ -46,36 +46,6 @@ describe('stream-continuation', () => {
     })
   })
 
-  // ---- looksLikeExternalWalletTask ----
-  describe('looksLikeExternalWalletTask', () => {
-    it('matches wallet keywords', () => {
-      assert.equal(mod.looksLikeExternalWalletTask('swap 100 USDC on Arbitrum'), true)
-      assert.equal(mod.looksLikeExternalWalletTask('check my wallet balance'), true)
-      assert.equal(mod.looksLikeExternalWalletTask('trade ETH for SOL'), true)
-    })
-
-    it('returns false for empty/unrelated text', () => {
-      assert.equal(mod.looksLikeExternalWalletTask(''), false)
-      assert.equal(mod.looksLikeExternalWalletTask('write me a poem about cats'), false)
-    })
-  })
-
-  // ---- looksLikeBoundedExternalExecutionTask ----
-  describe('looksLikeBoundedExternalExecutionTask', () => {
-    it('requires wallet keywords + action verbs', () => {
-      assert.equal(mod.looksLikeBoundedExternalExecutionTask('swap 100 USDC on Arbitrum'), true)
-      assert.equal(mod.looksLikeBoundedExternalExecutionTask('buy ETH on the exchange'), true)
-    })
-
-    it('returns false without action verbs', () => {
-      assert.equal(mod.looksLikeBoundedExternalExecutionTask('check my wallet balance'), false)
-    })
-
-    it('returns false for non-wallet text', () => {
-      assert.equal(mod.looksLikeBoundedExternalExecutionTask('execute the test suite'), false)
-    })
-  })
-
   // ---- looksLikeOpenEndedDeliverableTask ----
   describe('looksLikeOpenEndedDeliverableTask', () => {
     it('matches deliverable patterns', () => {
@@ -112,24 +82,6 @@ describe('stream-continuation', () => {
     })
   })
 
-  // ---- hasStateChangingWalletEvidence ----
-  describe('hasStateChangingWalletEvidence', () => {
-    it('detects send_transaction action in wallet_tool', () => {
-      const events = [{ name: 'wallet_tool', input: '{"action":"send_transaction"}', output: '{}' }]
-      assert.equal(mod.hasStateChangingWalletEvidence(events), true)
-    })
-
-    it('returns false for non-wallet tools', () => {
-      const events = [{ name: 'web', input: 'search', output: 'results' }]
-      assert.equal(mod.hasStateChangingWalletEvidence(events), false)
-    })
-
-    it('returns false for read-only wallet actions', () => {
-      const events = [{ name: 'wallet_tool', input: '{"action":"balance"}', output: '{}' }]
-      assert.equal(mod.hasStateChangingWalletEvidence(events), false)
-    })
-  })
-
   // ---- countExternalExecutionResearchSteps ----
   describe('countExternalExecutionResearchSteps', () => {
     it('counts http/web/browser tools', () => {
@@ -141,12 +93,12 @@ describe('stream-continuation', () => {
       assert.equal(mod.countExternalExecutionResearchSteps(events), 2)
     })
 
-    it('counts read-only wallet actions', () => {
+    it('does not count non-research tools', () => {
       const events = [
-        { name: 'wallet_tool', input: '{"action":"balance"}', output: '{}' },
-        { name: 'wallet_tool', input: '{"action":"send_transaction"}', output: '{}' },
+        { name: 'shell', input: 'ls', output: 'files' },
+        { name: 'files', input: 'read', output: 'content' },
       ]
-      assert.equal(mod.countExternalExecutionResearchSteps(events), 1)
+      assert.equal(mod.countExternalExecutionResearchSteps(events), 0)
     })
   })
 

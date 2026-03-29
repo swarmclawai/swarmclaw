@@ -24,8 +24,6 @@ import type {
   GuardianCheckpoint,
   LearnedSkill,
   Message,
-  Mission,
-  MissionEvent,
   ProtocolTemplate,
   ProtocolRun,
   ProtocolRunEvent,
@@ -138,9 +136,6 @@ const COLLECTIONS = [
   'webhook_retry_queue',
   'notifications',
   'chatrooms',
-  'wallets',
-  'wallet_transactions',
-  'wallet_balance_history',
   'moderation_logs',
   'connector_health',
   'connector_outbox',
@@ -152,8 +147,6 @@ const COLLECTIONS = [
   'watch_jobs',
   'delegation_jobs',
   'external_agents',
-  'missions',
-  'mission_events',
   'protocol_templates',
   'protocol_runs',
   'protocol_run_events',
@@ -162,6 +155,8 @@ const COLLECTIONS = [
   'main_loop_states',
   'working_states',
   'daemon_status',
+  'wallets',
+  'wallet_transactions',
 ] as const
 
 export type StorageCollection = (typeof COLLECTIONS)[number]
@@ -545,8 +540,6 @@ const JSON_FILES: Record<string, string> = {
   documents: path.join(DATA_DIR, 'documents.json'),
   webhooks: path.join(DATA_DIR, 'webhooks.json'),
   external_agents: path.join(DATA_DIR, 'external-agents.json'),
-  missions: path.join(DATA_DIR, 'missions.json'),
-  mission_events: path.join(DATA_DIR, 'mission-events.json'),
   protocol_templates: path.join(DATA_DIR, 'protocol-templates.json'),
   protocol_runs: path.join(DATA_DIR, 'protocol-runs.json'),
   protocol_run_events: path.join(DATA_DIR, 'protocol-run-events.json'),
@@ -1208,25 +1201,6 @@ export const loadProjects = projectsStore.load
 export const saveProjects = projectsStore.save
 export const deleteProject = projectsStore.deleteItem
 
-// --- Missions ---
-const missionsStore = createCollectionStore('missions')
-export const loadMissions = missionsStore.load as () => Record<string, Mission>
-export const saveMissions = missionsStore.save as (items: Record<string, Mission>) => void
-export const loadMission = missionsStore.loadItem as (id: string) => Mission | null
-export const upsertMission = missionsStore.upsert as (id: string, value: Mission) => void
-export const patchMission = missionsStore.patch as (
-  id: string,
-  updater: (current: Mission | null) => Mission | null,
-) => Mission | null
-export const deleteMission = missionsStore.deleteItem
-
-const missionEventsStore = createCollectionStore('mission_events')
-export const loadMissionEvents = missionEventsStore.load as () => Record<string, MissionEvent>
-export const saveMissionEvents = missionEventsStore.save as (items: Record<string, MissionEvent>) => void
-export const loadMissionEvent = missionEventsStore.loadItem as (id: string) => MissionEvent | null
-export const upsertMissionEvent = missionEventsStore.upsert as (id: string, value: MissionEvent) => void
-export const upsertMissionEvents = missionEventsStore.upsertMany as (entries: Array<[string, MissionEvent]>) => void
-
 const protocolTemplatesStore = createCollectionStore('protocol_templates')
 export const loadProtocolTemplates = protocolTemplatesStore.load as () => Record<string, ProtocolTemplate>
 export const saveProtocolTemplates = protocolTemplatesStore.save as (items: Record<string, ProtocolTemplate>) => void
@@ -1541,23 +1515,6 @@ export function markNotificationRead(id: string) {
   }
 }
 
-// --- Wallets ---
-const walletsStore = createCollectionStore('wallets')
-export const loadWallets = walletsStore.load
-export const upsertWallet = walletsStore.upsert
-export const deleteWallet = walletsStore.deleteItem
-
-// --- Wallet Transactions ---
-const walletTransactionsStore = createCollectionStore('wallet_transactions')
-export const loadWalletTransactions = walletTransactionsStore.load
-export const upsertWalletTransaction = walletTransactionsStore.upsert
-export const deleteWalletTransaction = walletTransactionsStore.deleteItem
-
-// --- Wallet Balance History ---
-const walletBalanceHistoryStore = createCollectionStore('wallet_balance_history')
-export const loadWalletBalanceHistory = walletBalanceHistoryStore.load
-export const upsertWalletBalanceSnapshot = walletBalanceHistoryStore.upsert
-
 // --- Moderation Logs ---
 const moderationLogsStore = createCollectionStore('moderation_logs')
 export const loadModerationLogs = moderationLogsStore.load
@@ -1612,6 +1569,22 @@ const workingStatesStore = createCollectionStore('working_states')
 export const loadPersistedWorkingState = workingStatesStore.loadItem
 export const upsertPersistedWorkingState = workingStatesStore.upsert
 export const deletePersistedWorkingState = workingStatesStore.deleteItem
+
+// --- Wallets ---
+const walletsStore = createCollectionStore('wallets')
+export const loadWallets = walletsStore.load
+export const saveWallets = walletsStore.save
+export const loadWallet = walletsStore.loadItem
+export const upsertWallet = walletsStore.upsert
+export const deleteWalletItem = walletsStore.deleteItem
+
+// --- Wallet Transactions ---
+const walletTransactionsStore = createCollectionStore('wallet_transactions')
+export const loadWalletTransactions = walletTransactionsStore.load
+export const saveWalletTransactions = walletTransactionsStore.save
+export const loadWalletTransaction = walletTransactionsStore.loadItem
+export const upsertWalletTransaction = walletTransactionsStore.upsert
+export const deleteWalletTransaction = walletTransactionsStore.deleteItem
 
 export function getSessionMessages(sessionId: string): Message[] {
   const session = loadSession(sessionId)

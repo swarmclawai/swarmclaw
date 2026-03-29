@@ -43,6 +43,11 @@ import type {
 } from '@/types'
 import type { ServiceResult } from '@/lib/server/service-result'
 import type { DaemonConnectorRuntimeState } from '@/lib/server/daemon/types'
+import {
+  ensureSwarmdockConnectorCredential,
+  prepareSwarmdockConnectorInput,
+  redactConnectorSecrets,
+} from './swarmdock-secret'
 
 function cloneConnector<T extends Connector>(connector: T): T {
   return {
@@ -124,35 +129,52 @@ function requireSenderId(body: Record<string, unknown>): string {
 export async function listConnectorsWithRuntime(): Promise<Record<string, Connector>> {
   await ensureDaemonProcessRunning('api/connectors:get')
   const connectors = Object.fromEntries(
-    Object.entries(loadConnectors()).map(([id, connector]) => [id, cloneConnector(connector)]),
+    Object.entries(loadConnectors()).map(([id, connector]) => {
+      const prepared = ensureSwarmdockConnectorCredential(connector, {
+        allowMigrationFailureFallback: true,
+      })
+      return [id, cloneConnector(prepared.connector)]
+    }),
   ) as Record<string, Connector>
   const runtimeByConnector = await listDaemonConnectorRuntime()
   for (const connector of Object.values(connectors)) {
     applyRuntimeFields(connector, runtimeByConnector[connector.id] || null)
   }
-  return connectors
+  return Object.fromEntries(
+    Object.entries(connectors).map(([id, connector]) => [id, redactConnectorSecrets(connector)]),
+  )
 }
 
 export async function getConnectorWithRuntime(id: string): Promise<Connector | null> {
   await ensureDaemonProcessRunning('api/connectors/[id]:get')
   const connector = loadConnector(id)
   if (!connector) return null
-  const current = cloneConnector(connector)
-  return applyRuntimeFields(current, await getDaemonConnectorRuntime(id))
+  const prepared = ensureSwarmdockConnectorCredential(connector, {
+    allowMigrationFailureFallback: true,
+  })
+  const current = cloneConnector(prepared.connector)
+  return redactConnectorSecrets(applyRuntimeFields(current, await getDaemonConnectorRuntime(id)))
 }
 
 export function createConnector(body: Record<string, unknown>): Connector {
   const id = genId()
+  const rawConfig = body.config && typeof body.config === 'object' && !Array.isArray(body.config)
+    ? body.config as Record<string, string>
+    : {}
+  const prepared = prepareSwarmdockConnectorInput({
+    platform: body.platform as Connector['platform'],
+    name: (body.name as string) || `${String(body.platform || '')} Connector`,
+    credentialId: (body.credentialId as string | null | undefined) || null,
+    config: rawConfig,
+  })
   const connector: Connector = {
     id,
     name: (body.name as string) || `${String(body.platform || '')} Connector`,
     platform: body.platform as Connector['platform'],
     agentId: (body.agentId as string | null | undefined) || null,
     chatroomId: (body.chatroomId as string | null | undefined) || null,
-    credentialId: (body.credentialId as string | null | undefined) || null,
-    config: body.config && typeof body.config === 'object' && !Array.isArray(body.config)
-      ? body.config as Record<string, string>
-      : {},
+    credentialId: prepared.credentialId,
+    config: prepared.config,
     isEnabled: false,
     status: 'stopped',
     lastError: null,
@@ -210,6 +232,14 @@ export async function updateConnectorFromRoute(id: string, body: Record<string, 
   if (body.credentialId !== undefined) next.credentialId = typeof body.credentialId === 'string' || body.credentialId === null ? body.credentialId : next.credentialId
   if (body.config !== undefined) next.config = body.config && typeof body.config === 'object' && !Array.isArray(body.config) ? body.config as Record<string, string> : next.config
   if (body.isEnabled !== undefined) next.isEnabled = typeof body.isEnabled === 'boolean' ? body.isEnabled : next.isEnabled
+  const prepared = prepareSwarmdockConnectorInput({
+    platform: next.platform,
+    name: next.name,
+    credentialId: next.credentialId || null,
+    config: next.config,
+  })
+  next.credentialId = prepared.credentialId
+  next.config = prepared.config
   persistConnector(next)
 
   try {
@@ -235,7 +265,7 @@ export async function updateConnectorFromRoute(id: string, body: Record<string, 
   }
 
   notify('connectors')
-  return serviceOk(await getConnectorWithRuntime(id) || next)
+  return serviceOk(await getConnectorWithRuntime(id) || redactConnectorSecrets(next))
 }
 
 export async function deleteConnectorFromRoute(id: string): Promise<ServiceResult<{ ok: true }>> {

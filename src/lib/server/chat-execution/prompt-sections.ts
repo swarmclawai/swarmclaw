@@ -310,7 +310,6 @@ export async function buildSituationalSection(
     return buildSituationalAwarenessBlock({
       agentId: session.agentId,
       sessionId: session.id,
-      missionId: session.missionId || null,
     }) || null
   } catch { return null }
 }

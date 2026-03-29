@@ -235,7 +235,6 @@ describe('supervisor-reflection', () => {
               semantics: {
                 taskIntent: 'general',
                 workType: 'general',
-                walletIntent: 'none',
                 isDeliverableTask: false,
                 isBroadGoal: false,
                 isResearchSynthesis: false,

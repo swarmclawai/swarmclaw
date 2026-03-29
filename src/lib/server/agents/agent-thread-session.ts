@@ -89,7 +89,6 @@ function buildThreadSession(agent: Agent, sessionId: string, user: string, creat
     vibe: existing?.vibe,
     theme: existing?.theme,
     avatar: existing?.avatar,
-    canvasContent: existing?.canvasContent || null,
   }
   return applyResolvedRoute(
     baseSession,

@@ -249,34 +249,6 @@ describe('session-run-manager', () => {
       assert.ok(run.queuedAt > 0)
     })
 
-    it('copies the session mission id into queued run snapshots', () => {
-      storage.upsertSession('sess-mission', {
-        id: 'sess-mission',
-        cwd: process.cwd(),
-        user: 'tester',
-        provider: 'ollama',
-        model: 'test-model',
-        claudeSessionId: null,
-        messages: [],
-        createdAt: Date.now(),
-        lastActiveAt: Date.now(),
-        agentId: 'test-agent',
-        missionId: 'mission-123',
-      })
-      const release = mgr.acquireExternalSessionExecutionHold('sess-mission')
-
-      const result = enqueue({
-        sessionId: 'sess-mission',
-        message: 'Continue the release mission',
-      })
-
-      const run = mgr.getRunById(result.runId)
-      const snapshot = mgr.getSessionQueueSnapshot('sess-mission')
-      assert.equal(run?.missionId, 'mission-123')
-      assert.equal(snapshot.items[0]?.missionId, 'mission-123')
-      release()
-    })
-
     it('persists run records and replay events in storage', () => {
       const result = enqueue({
         sessionId: 'sess-persisted',

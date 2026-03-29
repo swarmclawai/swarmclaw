@@ -36,7 +36,6 @@ import {
   updateRun,
 } from '@/lib/server/protocols/protocol-agent-turn'
 import { isTerminalProtocolRunStatus } from '@/lib/server/protocols/protocol-templates'
-import { requestMissionTick } from '@/lib/server/missions/mission-service'
 
 // ---- BranchDecisionSchema ----
 
@@ -329,9 +328,6 @@ export function completeProtocolRun(run: ProtocolRun, deps?: ProtocolRunDeps, su
     summary,
   }, deps)
   emitSummaryToParentChatroom(completed, deps)
-  if (completed.missionId) {
-    requestMissionTick(completed.missionId, 'protocol_run_completed', { protocolRunId: completed.id })
-  }
   return completed
 }
 

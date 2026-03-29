@@ -6,10 +6,10 @@ import { z } from 'zod'
 import {
   autoStartConnectorIfNeeded,
   createConnector,
+  getConnectorWithRuntime,
   listConnectorsWithRuntime,
 } from '@/lib/server/connectors/connector-service'
 import { ensureDaemonProcessRunning } from '@/lib/server/daemon/controller'
-import { loadConnector } from '@/lib/server/connectors/connector-repository'
 export const dynamic = 'force-dynamic'
 
 export async function GET() {
@@ -29,5 +29,5 @@ export async function POST(req: Request) {
   }
   const connector = createConnector(parsed.data as unknown as Record<string, unknown>)
   await autoStartConnectorIfNeeded(connector, parsed.data as unknown as Record<string, unknown>)
-  return NextResponse.json(loadConnector(connector.id) || connector)
+  return NextResponse.json(await getConnectorWithRuntime(connector.id) || connector)
 }

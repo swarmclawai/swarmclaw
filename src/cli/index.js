@@ -106,14 +106,6 @@ const COMMAND_GROUPS = [
     ],
   },
   {
-    name: 'canvas',
-    description: 'Read/update per-session canvas content',
-    commands: [
-      cmd('get', 'GET', '/canvas/:sessionId', 'Get current canvas content for a session'),
-      cmd('set', 'POST', '/canvas/:sessionId', 'Set/clear canvas content for a session', { expectsJsonBody: true }),
-    ],
-  },
-  {
     name: 'connectors',
     description: 'Manage chat connectors',
     commands: [
@@ -307,16 +299,7 @@ const COMMAND_GROUPS = [
       cmd('get', 'GET', '/memory-images/:filename', 'Download memory image by filename', { responseType: 'binary' }),
     ],
   },
-  {
-    name: 'missions',
-    description: 'Inspect and control durable missions',
-    commands: [
-      cmd('list', 'GET', '/missions', 'List missions (use --query status=, --query phase=, --query source=, --query sessionId=, --query agentId=, --query projectId=)'),
-      cmd('get', 'GET', '/missions/:id', 'Get mission detail by id'),
-      cmd('events', 'GET', '/missions/:id/events', 'Get mission event timeline', { expectsQueryHint: true }),
-      cmd('action', 'POST', '/missions/:id/actions', 'Run a mission control action (resume, replan, retry_verification, wait, cancel)', { expectsJsonBody: true }),
-    ],
-  },
+
   {
     name: 'notifications',
     description: 'Manage in-app notifications',
@@ -697,21 +680,6 @@ const COMMAND_GROUPS = [
     ],
   },
   {
-    name: 'wallets',
-    description: 'Manage agent wallets and wallet transactions',
-    commands: [
-      cmd('list', 'GET', '/wallets', 'List wallets'),
-      cmd('get', 'GET', '/wallets/:id', 'Get wallet by id'),
-      cmd('create', 'POST', '/wallets', 'Create wallet', { expectsJsonBody: true }),
-      cmd('update', 'PATCH', '/wallets/:id', 'Update wallet settings', { expectsJsonBody: true }),
-      cmd('delete', 'DELETE', '/wallets/:id', 'Delete wallet'),
-      cmd('send', 'POST', '/wallets/:id/send', 'Send funds from wallet', { expectsJsonBody: true }),
-      cmd('approve', 'POST', '/wallets/:id/approve', 'Approve or deny a pending wallet transaction', { expectsJsonBody: true }),
-      cmd('transactions', 'GET', '/wallets/:id/transactions', 'List wallet transactions'),
-      cmd('balance-history', 'GET', '/wallets/:id/balance-history', 'Get wallet balance history'),
-    ],
-  },
-  {
     name: 'upload',
     description: 'Upload raw file/blob',
     commands: [
@@ -767,6 +735,26 @@ const COMMAND_GROUPS = [
         waitEntityFrom: 'runId',
       }),
       cmd('history', 'GET', '/webhooks/:id/history', 'Get webhook delivery history'),
+    ],
+  },
+  {
+    name: 'portability',
+    description: 'Export and import agent configurations',
+    commands: [
+      cmd('export', 'GET', '/portability/export', 'Export agents, skills, and schedules as a portable JSON manifest'),
+      cmd('import', 'POST', '/portability/import', 'Import a portable JSON manifest', { expectsJsonBody: true }),
+    ],
+  },
+  {
+    name: 'wallets',
+    description: 'Manage agent wallets',
+    commands: [
+      cmd('list', 'GET', '/wallets', 'List wallets'),
+      cmd('get', 'GET', '/wallets/:id', 'Get wallet by id'),
+      cmd('create', 'POST', '/wallets', 'Create a wallet', { expectsJsonBody: true }),
+      cmd('generate', 'POST', '/wallets/generate', 'Generate a new wallet for an agent', { expectsJsonBody: true }),
+      cmd('update', 'PATCH', '/wallets/:id', 'Update wallet settings', { expectsJsonBody: true }),
+      cmd('delete', 'DELETE', '/wallets/:id', 'Delete a wallet'),
     ],
   },
 ]
