@@ -1,4 +1,4 @@
-import { loadActivity as loadStoredActivity, logActivity as writeActivityLog } from '@/lib/server/storage'
+import { loadActivity as loadStoredActivity, logActivity as writeActivityLog, queryActivity as queryStoredActivity } from '@/lib/server/storage'
 import { perf } from '@/lib/server/runtime/perf'
 
 export function loadActivity() {
@@ -17,5 +17,20 @@ export function logActivity(entry: {
   perf.measureSync('repository', 'activity.log', () => writeActivityLog(entry), {
     entityType: entry.entityType,
     action: entry.action,
+  })
+}
+
+/** Paginated activity query — uses SQL WHERE + LIMIT/OFFSET for efficiency. */
+export function queryActivity(filters: {
+  entityType?: string
+  entityId?: string
+  actor?: string
+  action?: string
+  since?: number
+  limit?: number
+  offset?: number
+}): unknown[] {
+  return perf.measureSync('repository', 'activity.query', () => queryStoredActivity(filters), {
+    entityType: filters.entityType ?? 'all',
   })
 }

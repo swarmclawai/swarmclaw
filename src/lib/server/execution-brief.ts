@@ -12,6 +12,7 @@ import { getSession } from '@/lib/server/sessions/session-repository'
 import { loadSessionWorkingState } from '@/lib/server/working-state/service'
 import { ensureRunContext } from '@/lib/server/run-context'
 import { cleanText, cleanMultiline } from '@/lib/server/text-normalization'
+import { resolveEffectiveGoal, getGoalChain, formatGoalChainForBrief } from '@/lib/server/goals/goal-service'
 
 const MAX_PLAN_ITEMS = 8
 const MAX_FACTS = 8
@@ -224,8 +225,25 @@ export function buildExecutionBriefContextBlock(
     || brief.evidenceRefs.length > 0,
   )
   if (!hasContent && brief.status === 'idle') return ''
+  // Resolve goal chain for the session's agent/task/project context
+  let goalBlock = ''
+  if (brief.sessionId) {
+    const session = getSession(brief.sessionId)
+    if (session) {
+      const goal = resolveEffectiveGoal({
+        agentId: session.agentId || null,
+        projectId: session.projectId || null,
+      })
+      if (goal) {
+        const chain = getGoalChain(goal.id)
+        goalBlock = formatGoalChainForBrief(chain)
+      }
+    }
+  }
+
   const sections = [
     options?.title || '## Execution Brief',
+    goalBlock,
     brief.parentContext ? `Parent context:\n${brief.parentContext}` : '',
     brief.objective ? `Objective: ${brief.objective}` : '',
     brief.summary ? `Summary: ${brief.summary}` : '',

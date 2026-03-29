@@ -507,6 +507,11 @@ function normalizeStoredRecordInner(
       agent.delegationEnabled = false
       agent.heartbeatEnabled = false
     }
+    // Persisted spend rollup defaults
+    if (typeof agent.spentMonthlyCents !== 'number') agent.spentMonthlyCents = 0
+    if (typeof agent.spentDailyCents !== 'number') agent.spentDailyCents = 0
+    if (typeof agent.spentHourlyCents !== 'number') agent.spentHourlyCents = 0
+    if (typeof agent.lastSpendRollupAt !== 'number') agent.lastSpendRollupAt = 0
     // Org chart normalization
     if (agent.orgChart && typeof agent.orgChart === 'object' && !Array.isArray(agent.orgChart)) {
       const oc = agent.orgChart as Record<string, unknown>

@@ -35,6 +35,7 @@ interface SwarmDockConfig {
   skills: string
   autoDiscover: boolean
   maxBudget: string
+  paymentPrivateKey?: string
 }
 
 function parseConfig(connector: Connector): SwarmDockConfig {
@@ -46,6 +47,7 @@ function parseConfig(connector: Connector): SwarmDockConfig {
     skills: c.skills || '',
     autoDiscover: c.autoDiscover === 'true',
     maxBudget: c.maxBudget || '0',
+    paymentPrivateKey: c.paymentPrivateKey || undefined,
   }
 }
 
@@ -73,11 +75,13 @@ export async function submitSwarmdockTaskResult(
   client: { tasks: { submit: (taskId: string, input: TaskSubmitInput) => Promise<unknown> } },
   swarmdockTaskId: string,
   text: string,
+  notes?: string,
 ): Promise<void> {
   const payload: TaskSubmitInput = {
     artifacts: [{ type: 'text/markdown', content: text }],
     files: [],
   }
+  if (notes) payload.notes = notes
   await client.tasks.submit(swarmdockTaskId, payload)
 }
 
@@ -106,6 +110,9 @@ const swarmdock: PlatformConnector = {
     const client = new SwarmDockClient({
       baseUrl: config.apiUrl,
       privateKey,
+      ...(config.paymentPrivateKey?.startsWith('0x')
+        ? { paymentPrivateKey: config.paymentPrivateKey as `0x${string}` }
+        : {}),
     })
 
     // Register agent on SwarmDock (Ed25519 challenge-response)
@@ -119,6 +126,8 @@ const swarmdock: PlatformConnector = {
         description: `${skillId} capability`,
         category: skillId,
         basePrice: '1000000', // $1.00 default
+        inputModes: ['text'],
+        outputModes: ['text'],
       }))
 
     log.info(TAG, `Registering agent "${connector.name}" on SwarmDock at ${config.apiUrl}`)
@@ -192,6 +201,27 @@ const swarmdock: PlatformConnector = {
           case 'task.failed': {
             const taskId = (event.data as Record<string, string>).taskId
             if (taskId) await updateBoardTaskFromEvent(taskId, event.type)
+            break
+          }
+
+          case 'task.review': {
+            const taskId = (event.data as Record<string, string>).taskId
+            if (taskId) await updateBoardTaskFromEvent(taskId, 'task.review')
+            break
+          }
+
+          case 'task.disputed': {
+            const taskId = (event.data as Record<string, string>).taskId
+            if (taskId) {
+              await updateBoardTaskFromEvent(taskId, 'task.disputed')
+              logActivity({
+                entityType: 'connector',
+                entityId: connectorId,
+                action: 'incident',
+                actor: 'system',
+                summary: `SwarmDock task ${taskId} disputed`,
+              })
+            }
             break
           }
 

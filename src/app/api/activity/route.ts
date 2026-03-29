@@ -1,32 +1,18 @@
 import { NextResponse } from 'next/server'
-import { loadActivity } from '@/lib/server/storage'
+import { queryActivity } from '@/lib/server/activity/activity-log'
 export const dynamic = 'force-dynamic'
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
-  const entityType = searchParams.get('entityType')
-  const entityId = searchParams.get('entityId')
-  const actor = searchParams.get('actor')
-  const action = searchParams.get('action')
-  const since = searchParams.get('since')
+  const entityType = searchParams.get('entityType') ?? undefined
+  const entityId = searchParams.get('entityId') ?? undefined
+  const actor = searchParams.get('actor') ?? undefined
+  const action = searchParams.get('action') ?? undefined
+  const sinceRaw = searchParams.get('since')
+  const since = sinceRaw ? Number(sinceRaw) : undefined
   const limit = Math.min(200, Math.max(1, Number(searchParams.get('limit')) || 50))
+  const offset = Math.max(0, Number(searchParams.get('offset')) || 0)
 
-  const all = loadActivity()
-  let entries = Object.values(all) as unknown as Array<Record<string, unknown>>
-
-  if (entityType) entries = entries.filter((e) => e.entityType === entityType)
-  if (entityId) entries = entries.filter((e) => e.entityId === entityId)
-  if (actor) entries = entries.filter((e) => e.actor === actor)
-  if (action) entries = entries.filter((e) => e.action === action)
-  if (since) {
-    const sinceMs = Number(since)
-    if (Number.isFinite(sinceMs)) {
-      entries = entries.filter((e) => typeof e.timestamp === 'number' && e.timestamp >= sinceMs)
-    }
-  }
-
-  entries.sort((a, b) => (b.timestamp as number) - (a.timestamp as number))
-  entries = entries.slice(0, limit)
-
+  const entries = queryActivity({ entityType, entityId, actor, action, since, limit, offset })
   return NextResponse.json(entries)
 }

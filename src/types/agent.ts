@@ -88,6 +88,8 @@ export interface Agent {
   monthlyBudget?: number | null
   dailyBudget?: number | null
   hourlyBudget?: number | null
+  /** Reference to a Goal in the goal hierarchy. */
+  goalId?: string | null
   autoRecovery?: boolean
   proactiveMemory?: boolean
   /** Auto-refresh a reviewed skill draft from meaningful chat turns for this agent. */
@@ -152,6 +154,14 @@ export interface Agent {
   dailySpend?: number
   /** Runtime-enriched: trailing 1-hour spend. Populated by GET /api/agents when hourlyBudget is set. */
   hourlySpend?: number
+  /** Persisted: accumulated spend in current monthly window (USD). Updated on each usage event. */
+  spentMonthlyCents?: number
+  /** Persisted: accumulated spend in current daily window (USD). Updated on each usage event. */
+  spentDailyCents?: number
+  /** Persisted: accumulated spend in current hourly window (USD). Updated on each usage event. */
+  spentHourlyCents?: number
+  /** Timestamp of last spend rollup; used to detect window resets. */
+  lastSpendRollupAt?: number
   maxFollowupChain?: number
 
   // Orchestrator Mode

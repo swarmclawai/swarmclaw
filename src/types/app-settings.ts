@@ -148,6 +148,12 @@ export interface AppSettings {
   toolLoopCircuitBreaker?: number
   // Per-extension settings (keyed by extensionId)
   extensionSettings?: Record<string, Record<string, unknown>>
+  // Approval policies — opt-in governance gates for sensitive operations
+  approvalPolicies?: {
+    requireApprovalForAgentCreate?: boolean
+    requireApprovalForBudgetChange?: boolean
+    requireApprovalForDelegationEnable?: boolean
+  }
 }
 
 export interface EstopState {

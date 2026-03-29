@@ -35,6 +35,8 @@ export interface BoardTask {
   rootTaskId?: string | null
   projectId?: string
   goalContract?: GoalContract | null
+  /** Reference to a Goal in the goal hierarchy. Takes precedence over goalContract when set. */
+  goalId?: string | null
   cwd?: string | null
   file?: string | null
   sessionId?: string | null

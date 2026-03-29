@@ -1,6 +1,4 @@
 import { z } from 'zod'
-import type { ProtocolStepDefinition } from '@/types'
-import { validateStepDag, validateStepRefs } from '@/lib/server/protocols/step-dag-validation'
 
 const OllamaModeSchema = z.enum(['local', 'cloud']).nullable().optional().default(null)
 
@@ -424,7 +422,9 @@ export const ProtocolRunCreateSchema = z.object({
   entryStepId: z.string().nullable().optional().default(null),
 })
 
-export const ProtocolTemplateUpsertSchema = z.object({
+/** Base protocol template schema without server-side DAG validation.
+ *  Use ProtocolTemplateUpsertSchema from '@/lib/validation/server-schemas' for full server-side validation. */
+export const ProtocolTemplateUpsertBaseSchema = z.object({
   name: z.string().min(1, 'A template name is required'),
   description: z.string().min(1, 'A template description is required'),
   singleAgentAllowed: z.boolean().optional().default(true),
@@ -433,33 +433,6 @@ export const ProtocolTemplateUpsertSchema = z.object({
   defaultPhases: z.array(ProtocolPhaseDefinitionSchema).optional().default([]),
   steps: z.array(ProtocolStepDefinitionSchema).optional().default([]),
   entryStepId: z.string().nullable().optional().default(null),
-}).superRefine((value, ctx) => {
-  if (value.defaultPhases.length === 0 && value.steps.length === 0) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ['steps'],
-      message: 'Provide at least one phase or one step.',
-    })
-  }
-  if (value.steps.length > 0) {
-    const steps = value.steps as ProtocolStepDefinition[]
-    const dagResult = validateStepDag(steps)
-    if (!dagResult.valid) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['steps'],
-        message: `Cycle detected in step dependencies: ${dagResult.cycle?.join(' → ')}`,
-      })
-    }
-    const invalidRefs = validateStepRefs(steps)
-    for (const ref of invalidRefs) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['steps'],
-        message: `Step references unknown step ID: "${ref}"`,
-      })
-    }
-  }
 })
 
 export const ProtocolRunActionSchema = z.object({

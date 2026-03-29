@@ -5,6 +5,8 @@ import { AgentCreateSchema, formatZodError } from '@/lib/validation/schemas'
 import { ensureDaemonProcessRunning } from '@/lib/server/daemon/controller'
 import { z } from 'zod'
 import { safeParseBody } from '@/lib/server/safe-parse-body'
+import { loadSettings } from '@/lib/server/storage'
+import { requestApproval } from '@/lib/server/approvals'
 export const dynamic = 'force-dynamic'
 
 
@@ -36,6 +38,20 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     return NextResponse.json(formatZodError(parsed.error as z.ZodError), { status: 400 })
   }
-  const agent = createAgent({ body: parsed.data as unknown as Record<string, unknown>, rawRecord })
+  const body = parsed.data as unknown as Record<string, unknown>
+
+  // Check approval policy — if enabled, create an approval request instead of the agent
+  const settings = loadSettings()
+  if (settings.approvalPolicies?.requireApprovalForAgentCreate) {
+    const approval = requestApproval({
+      category: 'agent_create',
+      title: `Create agent: ${body.name}`,
+      description: `Request to create agent "${body.name}" with provider ${body.provider}`,
+      data: { pendingAgentConfig: body, agentName: String(body.name || ''), provider: String(body.provider || '') },
+    })
+    return NextResponse.json({ pendingApproval: true, approvalId: approval.id }, { status: 202 })
+  }
+
+  const agent = createAgent({ body, rawRecord })
   return NextResponse.json(agent)
 }

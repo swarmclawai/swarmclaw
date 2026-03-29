@@ -8,6 +8,7 @@ import {
   saveUsage as saveStoredUsage,
 } from '@/lib/server/storage'
 import { perf } from '@/lib/server/runtime/perf'
+import { rollupCostToAgent } from './cost-rollup'
 
 export function loadUsage(): Record<string, UsageRecord[]> {
   return perf.measureSync('repository', 'usage.list', () => loadStoredUsage())
@@ -19,6 +20,11 @@ export function saveUsage(data: Record<string, UsageRecord[]>): void {
 
 export function appendUsage(sessionId: string, record: unknown): void {
   perf.measureSync('repository', 'usage.append', () => appendStoredUsage(sessionId, record), { sessionId })
+  // Push-based cost rollup: update persisted spend fields and check budgets
+  const rec = record as Partial<UsageRecord>
+  if (rec.agentId && typeof rec.estimatedCost === 'number' && rec.estimatedCost > 0) {
+    rollupCostToAgent(rec.agentId, rec.estimatedCost)
+  }
 }
 
 export function getUsageSpendSince(minTimestamp: number): number {

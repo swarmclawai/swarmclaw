@@ -71,6 +71,20 @@ export function buildApprovalComparablePayload(
         toolName: trimString(data.toolName),
         args: canonicalizeValue(data.args),
       }
+    case 'agent_create':
+      return {
+        agentName: trimString(data.agentName),
+        provider: trimString(data.provider),
+      }
+    case 'budget_change':
+      return {
+        agentId: trimString(data.agentId),
+        budgetChanges: canonicalizeValue(data.budgetChanges),
+      }
+    case 'delegation_enable':
+      return {
+        agentId: trimString(data.agentId),
+      }
     default:
       return canonicalizeValue(data) as Record<string, unknown>
   }

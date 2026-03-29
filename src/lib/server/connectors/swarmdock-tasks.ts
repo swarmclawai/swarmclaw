@@ -100,6 +100,14 @@ export async function updateBoardTaskFromEvent(
       boardTask.status = 'failed'
       boardTask.checkoutRunId = null
       break
+    case 'task.review':
+      // Work submitted, awaiting requester review on SwarmDock
+      if (boardTask.externalSource) boardTask.externalSource.state = 'review'
+      break
+    case 'task.disputed':
+      // Task disputed on SwarmDock
+      if (boardTask.externalSource) boardTask.externalSource.state = 'disputed'
+      break
   }
 
   boardTask.updatedAt = now

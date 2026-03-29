@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createCredentialRecord, listCredentialSummaries } from '@/lib/server/credentials/credential-service'
 import { safeParseBody } from '@/lib/server/safe-parse-body'
+import { logActivity } from '@/lib/server/activity/activity-log'
 export const dynamic = 'force-dynamic'
 
 
@@ -16,7 +17,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'provider and apiKey are required' }, { status: 400 })
   }
   try {
-    return NextResponse.json(createCredentialRecord({ provider, name, apiKey }))
+    const result = createCredentialRecord({ provider, name, apiKey })
+    logActivity({ entityType: 'credential', entityId: result.id, action: 'created', actor: 'user', summary: `Credential created: "${name}" (${provider})` })
+    return NextResponse.json(result)
   } catch (err: unknown) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'Failed to create credential' },

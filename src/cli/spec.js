@@ -535,6 +535,16 @@ const COMMAND_GROUPS = {
       delete: { description: 'Delete a wallet', method: 'DELETE', path: '/wallets/:id', params: ['id'] },
     },
   },
+  goals: {
+    description: 'Manage goal hierarchy',
+    commands: {
+      list: { description: 'List goals', method: 'GET', path: '/goals' },
+      get: { description: 'Get goal by id', method: 'GET', path: '/goals/:id', params: ['id'] },
+      create: { description: 'Create a goal', method: 'POST', path: '/goals' },
+      update: { description: 'Update a goal', method: 'PATCH', path: '/goals/:id', params: ['id'], body: true },
+      delete: { description: 'Delete a goal', method: 'DELETE', path: '/goals/:id', params: ['id'] },
+    },
+  },
 }
 
 const GROUP_NAMES = Object.keys(COMMAND_GROUPS)

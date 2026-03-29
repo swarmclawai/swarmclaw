@@ -757,6 +757,17 @@ const COMMAND_GROUPS = [
       cmd('delete', 'DELETE', '/wallets/:id', 'Delete a wallet'),
     ],
   },
+  {
+    name: 'goals',
+    description: 'Manage goal hierarchy',
+    commands: [
+      cmd('list', 'GET', '/goals', 'List goals'),
+      cmd('get', 'GET', '/goals/:id', 'Get goal by id'),
+      cmd('create', 'POST', '/goals', 'Create a goal', { expectsJsonBody: true }),
+      cmd('update', 'PATCH', '/goals/:id', 'Update a goal', { expectsJsonBody: true }),
+      cmd('delete', 'DELETE', '/goals/:id', 'Delete a goal'),
+    ],
+  },
 ]
 
 const GROUP_MAP = new Map(COMMAND_GROUPS.map((group) => [group.name, group]))

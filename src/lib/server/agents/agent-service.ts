@@ -66,19 +66,22 @@ function detachAgentSessions(agentId: string): number {
 
 export function listAgentsForApi(): Record<string, Agent> {
   const agents = loadAgents()
-  const sessions = listSessions()
-  const usage = loadUsage()
-  const now = Date.now()
   for (const agent of Object.values(agents)) {
-    if (
-      (typeof agent.monthlyBudget === 'number' && agent.monthlyBudget > 0)
+    const hasBudget = (typeof agent.monthlyBudget === 'number' && agent.monthlyBudget > 0)
       || (typeof agent.dailyBudget === 'number' && agent.dailyBudget > 0)
       || (typeof agent.hourlyBudget === 'number' && agent.hourlyBudget > 0)
-    ) {
-      const spend = getAgentSpendWindows(agent.id, now, {
-        sessions,
-        usage,
-      })
+    if (!hasBudget) continue
+
+    // Use persisted spend fields when available (push-based rollup)
+    if (typeof agent.lastSpendRollupAt === 'number' && agent.lastSpendRollupAt > 0) {
+      if (typeof agent.monthlyBudget === 'number' && agent.monthlyBudget > 0) agent.monthlySpend = (agent.spentMonthlyCents ?? 0) / 100
+      if (typeof agent.dailyBudget === 'number' && agent.dailyBudget > 0) agent.dailySpend = (agent.spentDailyCents ?? 0) / 100
+      if (typeof agent.hourlyBudget === 'number' && agent.hourlyBudget > 0) agent.hourlySpend = (agent.spentHourlyCents ?? 0) / 100
+    } else {
+      // Fallback: full scan for agents that predate the rollup system
+      const sessions = listSessions()
+      const usage = loadUsage()
+      const spend = getAgentSpendWindows(agent.id, Date.now(), { sessions, usage })
       if (typeof agent.monthlyBudget === 'number' && agent.monthlyBudget > 0) agent.monthlySpend = spend.monthly
       if (typeof agent.dailyBudget === 'number' && agent.dailyBudget > 0) agent.dailySpend = spend.daily
       if (typeof agent.hourlyBudget === 'number' && agent.hourlyBudget > 0) agent.hourlySpend = spend.hourly
@@ -301,7 +304,17 @@ export function updateAgent(agentId: string, body: Record<string, unknown>): Age
     updateThreadShortcutSession(agentId, updated)
   }
 
-  logActivity({ entityType: 'agent', entityId: agentId, action: 'updated', actor: 'user', summary: `Agent updated: "${updated.name}"` })
+  const budgetFields = ['monthlyBudget', 'dailyBudget', 'hourlyBudget', 'budgetAction'] as const
+  const budgetChanges: Record<string, unknown> = {}
+  for (const key of budgetFields) {
+    if (key in body) budgetChanges[key] = body[key]
+  }
+  const detail: Record<string, unknown> = {}
+  if (Object.keys(budgetChanges).length > 0) detail.budgetChanges = budgetChanges
+  logActivity({ entityType: 'agent', entityId: agentId, action: 'updated', actor: 'user', summary: `Agent updated: "${updated.name}"`, detail: Object.keys(detail).length > 0 ? detail : undefined })
+  if (Object.keys(budgetChanges).length > 0) {
+    logActivity({ entityType: 'budget', entityId: agentId, action: 'configured', actor: 'user', summary: `Budget updated for agent "${updated.name}"`, detail: budgetChanges })
+  }
   return updated
 }
 

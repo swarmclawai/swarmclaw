@@ -126,9 +126,9 @@ export interface Chatroom {
 
 export interface ActivityEntry {
   id: string
-  entityType: 'agent' | 'task' | 'connector' | 'session' | 'webhook' | 'schedule' | 'delegation' | 'swarm' | 'chatroom' | 'coordination'
+  entityType: 'agent' | 'task' | 'connector' | 'session' | 'webhook' | 'schedule' | 'delegation' | 'swarm' | 'chatroom' | 'coordination' | 'approval' | 'settings' | 'budget' | 'credential'
   entityId: string
-  action: 'created' | 'updated' | 'deleted' | 'started' | 'stopped' | 'queued' | 'completed' | 'failed' | 'archived' | 'restored' | 'approved' | 'rejected' | 'delegated' | 'queried' | 'spawned' | 'timeout' | 'cancelled' | 'incident' | 'running' | 'claimed'
+  action: 'created' | 'updated' | 'deleted' | 'started' | 'stopped' | 'queued' | 'completed' | 'failed' | 'archived' | 'restored' | 'approved' | 'rejected' | 'delegated' | 'queried' | 'spawned' | 'timeout' | 'cancelled' | 'incident' | 'running' | 'claimed' | 'configured' | 'budget_exceeded' | 'budget_warning'
   actor: 'user' | 'agent' | 'system' | 'daemon'
   actorId?: string
   summary: string

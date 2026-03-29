@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "generatedAt": "2026-03-22T16:34:54.193Z",
-  "totalIssues": 364,
-  "uniqueIssues": 124,
+  "generatedAt": "2026-03-29T22:58:24.281Z",
+  "totalIssues": 367,
+  "uniqueIssues": 131,
   "issues": [
     {
       "filePath": "bin/worker-cmd.js",
@@ -103,13 +103,6 @@
       "count": 1
     },
     {
-      "filePath": "src/app/api/wallets/[id]/route.ts",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 5
-    },
-    {
       "filePath": "src/app/api/webhooks/route.test.ts",
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
@@ -141,35 +134,35 @@
       "filePath": "src/app/protocols/page.tsx",
       "ruleId": "react-hooks/exhaustive-deps",
       "severity": 1,
-      "message": "The 'runs' logical expression could make the dependencies of useEffect Hook (at line 209) change on every render. To fix this, wrap the initialization of 'runs' in its own useMemo() Hook.",
+      "message": "The 'runs' logical expression could make the dependencies of useEffect Hook (at line 201) change on every render. To fix this, wrap the initialization of 'runs' in its own useMemo() Hook.",
       "count": 1
     },
     {
       "filePath": "src/app/protocols/page.tsx",
       "ruleId": "react-hooks/exhaustive-deps",
       "severity": 1,
-      "message": "The 'runs' logical expression could make the dependencies of useMemo Hook (at line 222) change on every render. To fix this, wrap the initialization of 'runs' in its own useMemo() Hook.",
+      "message": "The 'runs' logical expression could make the dependencies of useMemo Hook (at line 214) change on every render. To fix this, wrap the initialization of 'runs' in its own useMemo() Hook.",
       "count": 1
     },
     {
       "filePath": "src/app/protocols/page.tsx",
       "ruleId": "react-hooks/exhaustive-deps",
       "severity": 1,
-      "message": "The 'templates' logical expression could make the dependencies of useMemo Hook (at line 211) change on every render. To fix this, wrap the initialization of 'templates' in its own useMemo() Hook.",
+      "message": "The 'templates' logical expression could make the dependencies of useMemo Hook (at line 203) change on every render. To fix this, wrap the initialization of 'templates' in its own useMemo() Hook.",
       "count": 1
     },
     {
       "filePath": "src/app/protocols/page.tsx",
       "ruleId": "react-hooks/exhaustive-deps",
       "severity": 1,
-      "message": "The 'templates' logical expression could make the dependencies of useMemo Hook (at line 212) change on every render. To fix this, wrap the initialization of 'templates' in its own useMemo() Hook.",
+      "message": "The 'templates' logical expression could make the dependencies of useMemo Hook (at line 204) change on every render. To fix this, wrap the initialization of 'templates' in its own useMemo() Hook.",
       "count": 1
     },
     {
       "filePath": "src/app/protocols/page.tsx",
       "ruleId": "react-hooks/exhaustive-deps",
       "severity": 1,
-      "message": "The 'templates' logical expression could make the dependencies of useMemo Hook (at line 213) change on every render. To fix this, wrap the initialization of 'templates' in its own useMemo() Hook.",
+      "message": "The 'templates' logical expression could make the dependencies of useMemo Hook (at line 205) change on every render. To fix this, wrap the initialization of 'templates' in its own useMemo() Hook.",
       "count": 1
     },
     {
@@ -192,6 +185,13 @@
       "severity": 2,
       "message": "A `require()` style import is forbidden.",
       "count": 6
+    },
+    {
+      "filePath": "src/components/chat/chat-card.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'router' is assigned a value but never used.",
+      "count": 1
     },
     {
       "filePath": "src/components/chat/chat-preview-panel.tsx",
@@ -243,6 +243,27 @@
       "count": 1
     },
     {
+      "filePath": "src/components/projects/project-detail.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'api' is defined but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/projects/project-detail.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'useState' is defined but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/projects/tabs/overview-tab.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'relativeDate' is defined but never used.",
+      "count": 1
+    },
+    {
       "filePath": "src/components/protocols/structured-session-launcher.tsx",
       "ruleId": "@typescript-eslint/no-unused-vars",
       "severity": 1,
@@ -254,13 +275,6 @@
       "ruleId": "@typescript-eslint/no-unused-vars",
       "severity": 1,
       "message": "'Chatroom' is defined but never used.",
-      "count": 1
-    },
-    {
-      "filePath": "src/components/protocols/structured-session-launcher.tsx",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'Mission' is defined but never used.",
       "count": 1
     },
     {
@@ -281,21 +295,21 @@
       "filePath": "src/components/protocols/structured-session-launcher.tsx",
       "ruleId": "react-hooks/exhaustive-deps",
       "severity": 1,
-      "message": "The 'agents' logical expression could make the dependencies of useMemo Hook (at line 138) change on every render. To fix this, wrap the initialization of 'agents' in its own useMemo() Hook.",
+      "message": "The 'agents' logical expression could make the dependencies of useMemo Hook (at line 129) change on every render. To fix this, wrap the initialization of 'agents' in its own useMemo() Hook.",
       "count": 1
     },
     {
       "filePath": "src/components/protocols/structured-session-launcher.tsx",
       "ruleId": "react-hooks/exhaustive-deps",
       "severity": 1,
-      "message": "The 'agents' logical expression could make the dependencies of useMemo Hook (at line 155) change on every render. To fix this, wrap the initialization of 'agents' in its own useMemo() Hook.",
+      "message": "The 'agents' logical expression could make the dependencies of useMemo Hook (at line 145) change on every render. To fix this, wrap the initialization of 'agents' in its own useMemo() Hook.",
       "count": 1
     },
     {
       "filePath": "src/components/protocols/structured-session-launcher.tsx",
       "ruleId": "react-hooks/exhaustive-deps",
       "severity": 1,
-      "message": "The 'templates' logical expression could make the dependencies of useMemo Hook (at line 142) change on every render. To fix this, wrap the initialization of 'templates' in its own useMemo() Hook.",
+      "message": "The 'templates' logical expression could make the dependencies of useMemo Hook (at line 133) change on every render. To fix this, wrap the initialization of 'templates' in its own useMemo() Hook.",
       "count": 1
     },
     {
@@ -402,6 +416,34 @@
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
       "count": 22
+    },
+    {
+      "filePath": "src/lib/server/chat-execution/chat-streaming-utils.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'_params' is defined but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "src/lib/server/chat-execution/iteration-event-handler.ts",
+      "ruleId": "prefer-const",
+      "severity": 2,
+      "message": "'reachedExecutionBoundary' is never reassigned. Use 'const' instead.",
+      "count": 1
+    },
+    {
+      "filePath": "src/lib/server/chat-execution/prompt-builder.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'getEnabledDisplayTool' is defined but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "src/lib/server/chat-execution/stream-continuation.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'_params' is defined but never used.",
+      "count": 2
     },
     {
       "filePath": "src/lib/server/connectors/discord.ts",
@@ -516,13 +558,6 @@
       "count": 9
     },
     {
-      "filePath": "src/lib/server/evm-swap.ts",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'normalizeLowerAddress' is defined but never used.",
-      "count": 1
-    },
-    {
       "filePath": "src/lib/server/langgraph-checkpoint.test.ts",
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
@@ -570,6 +605,20 @@
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
       "count": 12
+    },
+    {
+      "filePath": "src/lib/server/portability/import.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'PortableSchedule' is defined but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "src/lib/server/portability/import.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'PortableSkill' is defined but never used.",
+      "count": 1
     },
     {
       "filePath": "src/lib/server/protocols/protocol-foreach.ts",
@@ -789,24 +838,10 @@
       "count": 2
     },
     {
-      "filePath": "src/lib/server/session-tools/wallet-tool.test.ts",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 1
-    },
-    {
-      "filePath": "src/lib/server/session-tools/wallet.ts",
+      "filePath": "src/lib/server/session-tools/team-context.ts",
       "ruleId": "@typescript-eslint/no-unused-vars",
       "severity": 1,
-      "message": "'parseArrayValue' is defined but never used.",
-      "count": 1
-    },
-    {
-      "filePath": "src/lib/server/session-tools/wallet.ts",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'summaryParts' is assigned a value but never used.",
+      "message": "'activeSession' is assigned a value but never used.",
       "count": 1
     },
     {
@@ -824,11 +859,25 @@
       "count": 4
     },
     {
-      "filePath": "src/lib/server/wallet/wallet-service.ts",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 2
+      "filePath": "src/lib/server/wallets/wallet-repository.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'saveWalletsStore' is defined but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "src/lib/server/wallets/wallet-service.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'_' is assigned a value but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "src/lib/server/working-state/normalization.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'WorkingPlanStepPatch' is defined but never used.",
+      "count": 1
     },
     {
       "filePath": "src/lib/server/ws-hub.ts",

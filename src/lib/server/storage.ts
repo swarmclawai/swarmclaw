@@ -157,6 +157,7 @@ const COLLECTIONS = [
   'daemon_status',
   'wallets',
   'wallet_transactions',
+  'goals',
 ] as const
 
 export type StorageCollection = (typeof COLLECTIONS)[number]
@@ -167,6 +168,10 @@ for (const table of COLLECTIONS) {
 
 // Index for efficient protocol_run_events queries by runId
 db.exec(`CREATE INDEX IF NOT EXISTS idx_protocol_run_events_runid ON protocol_run_events (json_extract(data, '$.runId'))`)
+
+// Indexes for efficient activity log queries
+db.exec(`CREATE INDEX IF NOT EXISTS idx_activity_timestamp ON activity (json_extract(data, '$.timestamp'))`)
+db.exec(`CREATE INDEX IF NOT EXISTS idx_activity_entity ON activity (json_extract(data, '$.entityType'), json_extract(data, '$.entityId'))`)
 
 // Singleton tables (single row)
 db.exec(`CREATE TABLE IF NOT EXISTS settings (id INTEGER PRIMARY KEY CHECK (id = 1), data TEXT NOT NULL)`)
@@ -1465,6 +1470,51 @@ export function logActivity(entry: {
   notify('activity')
 }
 
+/** Paginated activity query using SQL WHERE + LIMIT/OFFSET instead of loading the full collection. */
+export function queryActivity(filters: {
+  entityType?: string
+  entityId?: string
+  actor?: string
+  action?: string
+  since?: number
+  limit?: number
+  offset?: number
+}): unknown[] {
+  const conditions: string[] = []
+  const params: unknown[] = []
+
+  if (filters.entityType) {
+    conditions.push(`json_extract(data, '$.entityType') = ?`)
+    params.push(filters.entityType)
+  }
+  if (filters.entityId) {
+    conditions.push(`json_extract(data, '$.entityId') = ?`)
+    params.push(filters.entityId)
+  }
+  if (filters.actor) {
+    conditions.push(`json_extract(data, '$.actor') = ?`)
+    params.push(filters.actor)
+  }
+  if (filters.action) {
+    conditions.push(`json_extract(data, '$.action') = ?`)
+    params.push(filters.action)
+  }
+  if (typeof filters.since === 'number' && Number.isFinite(filters.since)) {
+    conditions.push(`json_extract(data, '$.timestamp') >= ?`)
+    params.push(filters.since)
+  }
+
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
+  const limit = Math.min(200, Math.max(1, filters.limit ?? 50))
+  const offset = Math.max(0, filters.offset ?? 0)
+
+  const sql = `SELECT data FROM activity ${where} ORDER BY json_extract(data, '$.timestamp') DESC LIMIT ? OFFSET ?`
+  params.push(limit, offset)
+
+  const rows = db.prepare(sql).all(...params) as Array<{ data: string }>
+  return rows.map((r) => JSON.parse(r.data))
+}
+
 // --- Webhook Retry Queue ---
 const webhookRetryQueueStore = createCollectionStore('webhook_retry_queue')
 export const loadWebhookRetryQueue = webhookRetryQueueStore.load
@@ -1585,6 +1635,13 @@ export const saveWalletTransactions = walletTransactionsStore.save
 export const loadWalletTransaction = walletTransactionsStore.loadItem
 export const upsertWalletTransaction = walletTransactionsStore.upsert
 export const deleteWalletTransaction = walletTransactionsStore.deleteItem
+
+// --- Goals ---
+const goalsStore = createCollectionStore('goals')
+export const loadGoals = goalsStore.load
+export const loadGoal = goalsStore.loadItem
+export const upsertGoal = goalsStore.upsert
+export const deleteGoalItem = goalsStore.deleteItem
 
 export function getSessionMessages(sessionId: string): Message[] {
   const session = loadSession(sessionId)

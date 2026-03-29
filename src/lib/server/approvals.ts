@@ -5,6 +5,8 @@ import { notify } from './ws-hub'
 import { dispatchWake } from '@/lib/server/runtime/wake-dispatcher'
 import { enqueueSystemEvent } from '@/lib/server/runtime/system-events'
 import { enqueueSessionRun } from '@/lib/server/runtime/session-run-manager'
+import { logActivity } from '@/lib/server/activity/activity-log'
+import { onApprovalDecision } from '@/lib/server/approvals/approval-hooks'
 
 function trimToString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
@@ -131,6 +133,15 @@ export async function submitDecision(id: string, approved: boolean): Promise<App
   if (request.status === (approved ? 'approved' : 'rejected')) return request
   if (request.status !== 'pending') return request
   const updated = await persistApprovalDecision(request, approved)
+  logActivity({
+    entityType: 'approval',
+    entityId: id,
+    action: approved ? 'approved' : 'rejected',
+    actor: 'user',
+    summary: `Approval ${approved ? 'approved' : 'rejected'}: ${request.title}`,
+    detail: { category: request.category, agentId: request.agentId, sessionId: request.sessionId },
+  })
+  onApprovalDecision(updated)
   wakeForApprovalDecision(updated, approved)
   return updated
 }

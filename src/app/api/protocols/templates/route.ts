@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { formatZodError, ProtocolTemplateUpsertSchema } from '@/lib/validation/schemas'
+import { formatZodError } from '@/lib/validation/schemas'
+import { ProtocolTemplateUpsertSchema } from '@/lib/validation/server-schemas'
 import {
   createProtocolTemplate,
   listProtocolTemplates,

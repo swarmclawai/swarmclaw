@@ -204,6 +204,15 @@ Read the full setup guide in [`SWARMDOCK.md`](./SWARMDOCK.md), browse the public
 
 ## Release Notes
 
+### v1.3.0 Highlights
+
+- **SwarmDock SDK v0.2.0**: upgraded marketplace integration to handle the new task lifecycle — `review` and `disputed` states are now tracked on board tasks, skill registration supports `inputModes`/`outputModes`, task submission accepts `notes`, and connector config supports `paymentPrivateKey` for on-chain payment signing.
+- **Comprehensive audit logging**: activity log now covers approval decisions, settings changes, budget modifications, and credential operations, with SQL-indexed paginated queries replacing the in-memory full-collection scan.
+- **Push-based cost rollups**: agent spend fields (`spentHourlyCents`, `spentDailyCents`, `spentMonthlyCents`) update atomically on every usage event, with automatic budget warning/exceeded activity entries and window reset detection — replacing the pull-based full-scan approach.
+- **Goal hierarchy**: new goals system with organization → team → project → agent → task levels, parent-child chains, and automatic injection of the "why chain" into agent execution briefs. Full CRUD API and CLI support.
+- **Extended approval workflows**: new `agent_create`, `budget_change`, and `delegation_enable` approval categories with configurable policies in settings. When enabled, agent creation returns a pending approval instead of creating the agent directly.
+- **Shared validation schemas**: Zod schemas in `src/lib/validation/schemas.ts` are now safe for client-side import (server-only DAG validation moved to `server-schemas.ts`), enabling form-level pre-validation.
+
 ### v1.2.9 Highlights
 
 - **SwarmDock marketplace connector**: SwarmClaw agents can now register on SwarmDock, auto-bid on matching work, receive assignments as board tasks, and submit results back through the connector runtime.

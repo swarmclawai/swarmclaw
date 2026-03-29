@@ -7,6 +7,9 @@ export type ApprovalCategory =
   | 'task_tool'
   | 'human_loop'
   | 'connector_sender'
+  | 'agent_create'
+  | 'budget_change'
+  | 'delegation_enable'
 
 export interface ApprovalRequest {
   id: string

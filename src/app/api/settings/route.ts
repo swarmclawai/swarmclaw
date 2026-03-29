@@ -6,6 +6,7 @@ import { loadPublicSettings, loadSettings, saveSettings } from '@/lib/server/sto
 import { normalizeRuntimeSettingFields } from '@/lib/runtime/runtime-loop'
 import { normalizeSupervisorSettings } from '@/lib/autonomy/supervisor-settings'
 import { ensureDaemonProcessRunning } from '@/lib/server/daemon/controller'
+import { logActivity } from '@/lib/server/activity/activity-log'
 export const dynamic = 'force-dynamic'
 
 
@@ -163,6 +164,18 @@ export async function PUT(req: Request) {
   if (typeof settings.sessionResetTimezone === 'string') settings.sessionResetTimezone = settings.sessionResetTimezone.trim() || null
 
   saveSettings(settings)
+
+  const changedKeys = Object.keys(sanitizedBody).filter((k) => !SECRET_SETTING_KEYS.includes(k as typeof SECRET_SETTING_KEYS[number]))
+  if (changedKeys.length > 0) {
+    logActivity({
+      entityType: 'settings',
+      entityId: 'app',
+      action: 'configured',
+      actor: 'user',
+      summary: `Settings updated: ${changedKeys.join(', ')}`,
+      detail: { changedKeys },
+    })
+  }
 
   if ('daemonAutostartEnabled' in sanitizedBody && settings.daemonAutostartEnabled) {
     void ensureDaemonProcessRunning('api/settings:put:daemon-autostart', { manualStart: true }).catch(() => {
