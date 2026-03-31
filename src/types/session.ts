@@ -70,11 +70,13 @@ export interface Session {
   codexThreadId?: string | null
   opencodeSessionId?: string | null
   geminiSessionId?: string | null
+  copilotSessionId?: string | null
   delegateResumeIds?: {
     claudeCode?: string | null
     codex?: string | null
     opencode?: string | null
     gemini?: string | null
+    copilot?: string | null
   }
   /** @deprecated Messages are stored in session_messages table. Use message-repository. */
   messages: Message[]

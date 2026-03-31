@@ -1,4 +1,4 @@
-export type ProviderType = 'claude-cli' | 'codex-cli' | 'opencode-cli' | 'gemini-cli' | 'openai' | 'ollama' | 'anthropic' | 'openclaw' | 'google' | 'deepseek' | 'groq' | 'together' | 'mistral' | 'xai' | 'fireworks' | 'nebius' | 'deepinfra'
+export type ProviderType = 'claude-cli' | 'codex-cli' | 'opencode-cli' | 'gemini-cli' | 'copilot-cli' | 'openai' | 'ollama' | 'anthropic' | 'openclaw' | 'google' | 'deepseek' | 'groq' | 'together' | 'mistral' | 'xai' | 'fireworks' | 'nebius' | 'deepinfra'
 export type ProviderId = ProviderType | (string & {})
 
 export interface ProviderInfo {

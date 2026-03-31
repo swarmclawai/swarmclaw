@@ -160,7 +160,7 @@ function notifySwarmChanged() {
 function persistSwarmSnapshot(swarm: SwarmHandle): void {
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { upsertStoredItem } = require('@/lib/server/storage')
+    const { upsertStoredItem } = require('../storage')
     upsertStoredItem('swarm_snapshots', swarm.swarmId, {
       swarmId: swarm.swarmId,
       parentSessionId: swarm.parentSessionId,
@@ -550,7 +550,7 @@ export function getSwarmSnapshot(swarmId: string): SwarmSnapshot | null {
   // Fallback to persisted store for swarms from previous process lifetimes
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { loadStoredItem } = require('@/lib/server/storage')
+    const { loadStoredItem } = require('../storage')
     const persisted = loadStoredItem('swarm_snapshots', swarmId)
     return persisted ? (persisted as SwarmSnapshot) : null
   } catch { return null }
@@ -641,7 +641,7 @@ function buildSwarmSnapshot(swarm: SwarmHandle): SwarmSnapshot {
 export function restoreSwarmRegistry(): number {
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { loadCollection, upsertStoredItem } = require('@/lib/server/storage')
+    const { loadCollection, upsertStoredItem } = require('../storage')
     const persisted = loadCollection('swarm_snapshots') as Record<string, SwarmSnapshot>
     let lost = 0
     for (const [id, record] of Object.entries(persisted)) {

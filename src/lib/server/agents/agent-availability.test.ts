@@ -4,7 +4,7 @@ import type { Agent, ProviderType } from '@/types'
 import { isWorkerOnlyAgent, buildWorkerOnlyAgentMessage } from './agent-availability'
 
 describe('isWorkerOnlyAgent', () => {
-  const CLI_PROVIDERS = ['claude-cli', 'codex-cli', 'opencode-cli', 'gemini-cli', 'openclaw'] satisfies ProviderType[]
+  const CLI_PROVIDERS = ['claude-cli', 'codex-cli', 'opencode-cli', 'gemini-cli', 'copilot-cli', 'openclaw'] satisfies ProviderType[]
   const NON_CLI_PROVIDERS = ['openai', 'anthropic', 'google', 'deepseek', 'groq', 'together'] satisfies ProviderType[]
 
   function withProvider(provider: unknown): Pick<Agent, 'provider'> {

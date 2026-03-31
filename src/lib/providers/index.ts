@@ -2,6 +2,7 @@ import { streamClaudeCliChat } from './claude-cli'
 import { streamCodexCliChat } from './codex-cli'
 import { streamOpenCodeCliChat } from './opencode-cli'
 import { streamGeminiCliChat } from './gemini-cli'
+import { streamCopilotCliChat } from './copilot-cli'
 import { streamOpenAiChat } from './openai'
 import { streamOllamaChat } from './ollama'
 import { streamAnthropicChat } from './anthropic'
@@ -101,6 +102,14 @@ export const PROVIDERS: Record<string, BuiltinProviderConfig> = {
     requiresApiKey: false,
     requiresEndpoint: false,
     handler: { streamChat: streamGeminiCliChat },
+  },
+  'copilot-cli': {
+    id: 'copilot-cli',
+    name: 'GitHub Copilot CLI',
+    models: ['claude-sonnet-4-5', 'gpt-4.1', 'gemini-3-pro'],
+    requiresApiKey: false,
+    requiresEndpoint: false,
+    handler: { streamChat: streamCopilotCliChat },
   },
   google: {
     id: 'google',
@@ -281,7 +290,7 @@ export const PROVIDERS: Record<string, BuiltinProviderConfig> = {
 function getCustomProviders(): Record<string, CustomProviderConfig> {
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { loadProviderConfigs } = require('@/lib/server/storage') as typeof import('@/lib/server/storage')
+    const { loadProviderConfigs } = require('../server/storage') as typeof import('@/lib/server/storage')
     const configs = loadProviderConfigs() as Record<string, CustomProviderConfig>
     return Object.fromEntries(
       Object.entries(configs).filter(([, config]) => config?.type === 'custom'),
@@ -295,7 +304,7 @@ function getCustomProviders(): Record<string, CustomProviderConfig> {
 function getModelOverrides(): Record<string, string[]> {
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { loadModelOverrides } = require('@/lib/server/storage') as typeof import('@/lib/server/storage')
+    const { loadModelOverrides } = require('../server/storage') as typeof import('@/lib/server/storage')
     return loadModelOverrides()
   } catch {
     return {}
@@ -313,7 +322,7 @@ export function getProviderList(): ProviderInfo[] {
         ...info,
         models: overrides[info.id] || info.models,
         defaultModels: info.models,
-        supportsModelDiscovery: !['claude-cli', 'codex-cli', 'opencode-cli', 'gemini-cli', 'fireworks'].includes(info.id),
+        supportsModelDiscovery: !['claude-cli', 'codex-cli', 'opencode-cli', 'gemini-cli', 'copilot-cli', 'fireworks'].includes(info.id),
       }
     })
   
@@ -383,7 +392,7 @@ export function getProvider(id: string): BuiltinProviderConfig | null {
   if (id.startsWith('custom-') && !custom) {
     try {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { loadStoredItem } = require('@/lib/server/storage') as typeof import('@/lib/server/storage')
+      const { loadStoredItem } = require('../server/storage') as typeof import('@/lib/server/storage')
       const directConfig = loadStoredItem('provider_configs', id) as CustomProviderConfig | null
       if (directConfig?.type === 'custom' && directConfig.isEnabled) {
         log.info(TAG, `Resolved custom provider '${id}' via direct DB lookup (batch load missed it)`)
@@ -447,7 +456,7 @@ export async function streamChatWithFailover(
       if (credId && i > 0) {
         // Need to decrypt fallback credential
         // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const { loadCredentials, decryptKey } = require('@/lib/server/storage') as typeof import('@/lib/server/storage')
+        const { loadCredentials, decryptKey } = require('../server/storage') as typeof import('@/lib/server/storage')
         const creds = loadCredentials()
         const cred = creds[credId]
         if (cred?.encryptedKey) {

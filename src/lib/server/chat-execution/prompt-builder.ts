@@ -45,9 +45,9 @@ function buildExtensionCapabilityLines(enabledExtensions: string[], opts?: { del
       if (opts.agentId) {
         try {
           // eslint-disable-next-line @typescript-eslint/no-require-imports
-          const { loadAgents } = require('@/lib/server/storage')
+          const { loadAgents } = require('../storage')
           // eslint-disable-next-line @typescript-eslint/no-require-imports
-          const { resolveTeam } = require('@/lib/server/agents/team-resolution')
+          const { resolveTeam } = require('../agents/team-resolution')
           const agents = loadAgents() as Record<string, Record<string, unknown>>
           const team = resolveTeam(opts.agentId, agents)
           if (team.mode === 'team') {

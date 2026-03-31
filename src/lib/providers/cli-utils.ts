@@ -39,6 +39,12 @@ const KNOWN_BINARY_PATHS: Record<string, string[]> = {
     '/usr/local/bin/gemini',
     '/opt/homebrew/bin/gemini',
   ],
+  copilot: [
+    path.join(os.homedir(), '.local/bin/copilot'),
+    '/usr/local/bin/copilot',
+    '/opt/homebrew/bin/copilot',
+    path.join(os.homedir(), '.npm-global/bin/copilot'),
+  ],
 }
 
 function getNvmBinaryPaths(name: string): string[] {
@@ -144,7 +150,7 @@ export interface AuthProbeResult {
  */
 export function probeCliAuth(
   binary: string,
-  backend: 'claude' | 'codex' | 'opencode' | 'gemini',
+  backend: 'claude' | 'codex' | 'opencode' | 'gemini' | 'copilot',
   env: NodeJS.ProcessEnv,
   cwd?: string,
 ): AuthProbeResult {
@@ -219,6 +225,37 @@ export function probeCliAuth(
       return {
         authenticated: false,
         errorMessage: 'Gemini CLI is not authenticated. Run `gemini auth login` or set GEMINI_API_KEY and try again.',
+      }
+    }
+    return { authenticated: true }
+  }
+
+  if (backend === 'copilot') {
+    // Check for GitHub token in env first
+    if (process.env.GH_TOKEN || process.env.GITHUB_TOKEN || process.env.COPILOT_GITHUB_TOKEN) {
+      return { authenticated: true }
+    }
+    // Try `gh auth status` as fallback (copilot inherits gh auth)
+    try {
+      const probe = spawnSync('gh', ['auth', 'status'], {
+        cwd, env, encoding: 'utf-8', timeout: 8000,
+      })
+      const probeText = `${probe.stdout || ''}\n${probe.stderr || ''}`.toLowerCase()
+      if ((probe.status ?? 1) === 0 || probeText.includes('logged in')) {
+        return { authenticated: true }
+      }
+    } catch { /* gh may not be installed */ }
+
+    // Fall back to config file check
+    const configPaths = [
+      path.join(os.homedir(), '.copilot/config.json'),
+      path.join(os.homedir(), '.config/copilot/config.json'),
+    ]
+    const hasConfig = configPaths.some((p) => fs.existsSync(p))
+    if (!hasConfig) {
+      return {
+        authenticated: false,
+        errorMessage: 'Copilot CLI is not authenticated. Run `copilot /login`, `gh auth login`, or set GH_TOKEN and try again.',
       }
     }
     return { authenticated: true }
@@ -308,6 +345,7 @@ export const CLI_PROVIDER_CAPABILITIES: Record<string, string> = {
   'codex-cli': 'code generation, file creation, automated coding tasks',
   'opencode-cli': 'code analysis, generation across multiple LLM backends',
   'gemini-cli': 'code generation, analysis with Gemini models',
+  'copilot-cli': 'code generation, analysis, multi-model support via GitHub Copilot',
 }
 
 /** Check if a provider ID is a CLI-based provider. */

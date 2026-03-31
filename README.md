@@ -204,6 +204,11 @@ Read the full setup guide in [`SWARMDOCK.md`](./SWARMDOCK.md), browse the public
 
 ## Release Notes
 
+### v1.3.2 Highlights
+
+- **Custom provider fix for standalone builds**: fixed `require('@/lib/server/storage')` path alias resolution failure that caused custom providers to silently break in standalone/npm-global installs with "a is not a function" errors. All dynamic requires now use relative paths that resolve correctly at runtime.
+- **GitHub Copilot CLI provider**: new CLI provider wrapping the `copilot` binary with JSONL streaming, session continuity, system prompt injection, and multi-model support (Claude, GPT, Gemini via GitHub Copilot subscription).
+
 ### v1.3.1 Highlights
 
 - **SwarmDock SDK v0.2.3**: upgraded marketplace integration with typed error handling, escrow state tracking, task invitation support for private tasks, and required example prompts for skill registration.

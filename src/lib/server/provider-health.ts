@@ -71,7 +71,7 @@ export function markProviderFailure(providerId: string, error: string, credentia
   })
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { upsertStoredItem } = require('@/lib/server/storage')
+    const { upsertStoredItem } = require('./storage')
     upsertStoredItem('provider_health', key, states.get(key)!)
   } catch {}
 }
@@ -89,7 +89,7 @@ export function markProviderSuccess(providerId: string, credentialId?: string | 
   })
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { upsertStoredItem } = require('@/lib/server/storage')
+    const { upsertStoredItem } = require('./storage')
     upsertStoredItem('provider_health', key, states.get(key)!)
   } catch {}
 }
@@ -188,7 +188,7 @@ export function getProviderHealthSnapshot(): Record<string, ProviderHealthState 
 export function restoreProviderHealthState(): number {
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { loadCollection } = require('@/lib/server/storage')
+    const { loadCollection } = require('./storage')
     const persisted = loadCollection('provider_health') as Record<string, ProviderHealthState>
     let restored = 0
     for (const [id, record] of Object.entries(persisted)) {
@@ -323,7 +323,7 @@ export async function pingProvider(
   apiKey: string | undefined,
   endpoint: string | undefined,
 ): Promise<{ ok: boolean; message: string }> {
-  const CLI_PROVIDERS = ['claude-cli', 'codex-cli', 'opencode-cli', 'gemini-cli']
+  const CLI_PROVIDERS = ['claude-cli', 'codex-cli', 'opencode-cli', 'gemini-cli', 'copilot-cli']
   if (CLI_PROVIDERS.includes(provider)) return { ok: true, message: 'CLI provider — skipped.' }
 
   try {

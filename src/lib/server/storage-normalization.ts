@@ -620,6 +620,8 @@ function normalizeStoredRecordInner(
   }
   // Default geminiSessionId for new field
   if (session.geminiSessionId === undefined) session.geminiSessionId = null
+  // Default copilotSessionId for new field
+  if (session.copilotSessionId === undefined) session.copilotSessionId = null
   // Default injectedMemoryIds for proactive recall dedup
   if (!session.injectedMemoryIds || typeof session.injectedMemoryIds !== 'object') {
     session.injectedMemoryIds = {}
