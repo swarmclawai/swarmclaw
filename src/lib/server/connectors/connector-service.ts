@@ -62,11 +62,13 @@ function persistConnector(connector: Connector): void {
 }
 
 function applyRuntimeFields(connector: Connector, runtime: DaemonConnectorRuntimeState | null): Connector {
-  connector.status = runtime?.status
-    ? runtime.status
-    : connector.lastError
-      ? 'error'
-      : 'stopped'
+  if (runtime?.status) {
+    connector.status = runtime.status
+  } else if (connector.isEnabled) {
+    connector.status = 'starting'
+  } else {
+    connector.status = connector.lastError ? 'error' : 'stopped'
+  }
 
   if (connector.platform === 'whatsapp') {
     connector.authenticated = runtime?.authenticated

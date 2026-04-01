@@ -204,6 +204,11 @@ Read the full setup guide in [`SWARMDOCK.md`](./SWARMDOCK.md), browse the public
 
 ## Release Notes
 
+### v1.3.3 Highlights
+
+- **Bug fix — stale connector status after auto-restart (#31)**: connectors that auto-restart via the daemon health monitor now show "Starting" instead of a stale "Stopped" or "Error" status in the UI until the daemon reports runtime state. Added `starting` to the `ConnectorStatus` type and updated both the connector list and detail views.
+- **Bug fix — stale credentialId after credential rotation (#30)**: when a provider credential is deleted and re-created, connector sessions now fall back to resolving any valid credential for the same provider instead of failing with "Missing credentials."
+
 ### v1.3.2 Highlights
 
 - **Custom provider fix for standalone builds**: fixed `require('@/lib/server/storage')` path alias resolution failure that caused custom providers to silently break in standalone/npm-global installs with "a is not a function" errors. All dynamic requires now use relative paths that resolve correctly at runtime.
