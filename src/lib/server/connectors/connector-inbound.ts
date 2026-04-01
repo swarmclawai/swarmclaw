@@ -28,6 +28,7 @@ import {
   selectChatroomRecipients,
 } from '@/lib/server/chatrooms/chatroom-routing'
 import { markProviderFailure, markProviderSuccess } from '../provider-health'
+import { listCredentialIdsByProvider, resolveCredentialSecret } from '@/lib/server/credentials/credential-service'
 import { buildIdentityContinuityContext } from '../identity-continuity'
 import { buildRuntimeSkillPromptBlocks, resolveRuntimeSkills } from '@/lib/server/skills/runtime-skill-resolver'
 import { getProvider } from '@/lib/providers'
@@ -1005,6 +1006,18 @@ async function routeMessage(connector: Connector, msg: InboundMessage): Promise<
         break
       } catch {
         // Try the next candidate.
+      }
+    }
+  }
+
+  // Fallback: session credential was deleted — try any credential for this provider
+  if (!apiKey && session.provider) {
+    const providerCredentialIds = listCredentialIdsByProvider(session.provider)
+    for (const id of providerCredentialIds) {
+      const resolved = resolveCredentialSecret(id)
+      if (resolved) {
+        apiKey = resolved
+        break
       }
     }
   }

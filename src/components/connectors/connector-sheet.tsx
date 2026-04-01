@@ -1270,7 +1270,7 @@ export function ConnectorSheet() {
                   runtimeConnector?.status === 'error' ? 'bg-red-400' : 'bg-white/20'
                 }`} />
                 {effectiveRunning ? (waAuthenticated ? 'Connected and listening' : 'Connecting...') :
-                 runtimeConnector?.status === 'error' ? 'Error — see below' : 'Not connected'}
+                 runtimeConnector?.status === 'error' ? 'Error — see below' : runtimeConnector?.status === 'starting' ? 'Starting...' : 'Not connected'}
               </div>
             </div>
             {effectiveRunning ? (

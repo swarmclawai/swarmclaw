@@ -322,7 +322,7 @@ export function ConnectorList({ inSidebar }: { inSidebar?: boolean }) {
                                 {meta.label}
                               </span>
                               <span className="text-[11px] text-text-3">
-                                {isRunning ? 'Connected' : c.status === 'error' ? 'Error' : 'Stopped'}
+                                {isRunning ? 'Connected' : c.status === 'error' ? 'Error' : c.status === 'starting' ? 'Starting' : 'Stopped'}
                               </span>
                             </div>
                           </div>

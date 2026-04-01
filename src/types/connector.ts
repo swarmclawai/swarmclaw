@@ -29,7 +29,7 @@ export type ConnectorPlatform =
   | 'webchat'
   | 'mockmail'
   | 'swarmdock'
-export type ConnectorStatus = 'stopped' | 'running' | 'error'
+export type ConnectorStatus = 'stopped' | 'running' | 'error' | 'starting'
 
 export interface MessageSource {
   platform: ConnectorPlatform
