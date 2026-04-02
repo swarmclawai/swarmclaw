@@ -11,6 +11,7 @@ import { errorMessage, sleep, jitteredBackoff } from '@/lib/shared-utils'
 import { classifyProviderError } from './error-classification'
 import { log } from '@/lib/server/logger'
 import type { ProviderInfo, ProviderConfig as CustomProviderConfig, ProviderType, ProviderId } from '../../types'
+import { loadProviderConfigs } from '@/lib/server/storage'
 
 const TAG = 'providers'
 
@@ -289,13 +290,14 @@ export const PROVIDERS: Record<string, BuiltinProviderConfig> = {
 /** Merge built-in providers with custom providers from storage */
 function getCustomProviders(): Record<string, CustomProviderConfig> {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { loadProviderConfigs } = require('../server/storage') as typeof import('@/lib/server/storage')
+    // Use ES module import instead of require() for Next.js compatibility
     const configs = loadProviderConfigs() as Record<string, CustomProviderConfig>
-    return Object.fromEntries(
+    const result = Object.fromEntries(
       Object.entries(configs).filter(([, config]) => config?.type === 'custom'),
     )
+    return result
   } catch (err) {
+    console.error('[DEBUG] getCustomProviders error:', err)
     log.warn(TAG, 'Failed to load custom providers from storage', errorMessage(err))
     return {}
   }
