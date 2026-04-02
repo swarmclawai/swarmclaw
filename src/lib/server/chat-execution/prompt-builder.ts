@@ -11,6 +11,8 @@ import {
   collectCapabilityOperatingGuidance,
 } from '@/lib/server/native-capabilities'
 import { getExtensionManager } from '@/lib/server/extensions'
+import { loadAgents } from '../storage'
+import { resolveTeam } from '../agents/team-resolution'
 import {
   getEnabledToolPlanningView,
   getToolsForCapability,
@@ -44,12 +46,8 @@ function buildExtensionCapabilityLines(enabledExtensions: string[], opts?: { del
       // CLI team hint — if teammates run CLI providers, mention their strengths
       if (opts.agentId) {
         try {
-          // eslint-disable-next-line @typescript-eslint/no-require-imports
-          const { loadAgents } = require('../storage')
-          // eslint-disable-next-line @typescript-eslint/no-require-imports
-          const { resolveTeam } = require('../agents/team-resolution')
-          const agents = loadAgents() as Record<string, Record<string, unknown>>
-          const team = resolveTeam(opts.agentId, agents)
+          const agents = loadAgents()
+          const team = resolveTeam(opts.agentId, agents as Record<string, import('@/types').Agent>)
           if (team.mode === 'team') {
             const cliTeammates: string[] = []
             const allMembers = [...(team.coordinator ? [team.coordinator] : []), ...team.peers, ...team.directReports]

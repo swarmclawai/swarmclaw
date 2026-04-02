@@ -11,7 +11,8 @@ import { errorMessage, sleep, jitteredBackoff } from '@/lib/shared-utils'
 import { classifyProviderError } from './error-classification'
 import { log } from '@/lib/server/logger'
 import type { ProviderInfo, ProviderConfig as CustomProviderConfig, ProviderType, ProviderId } from '../../types'
-import { loadProviderConfigs } from '@/lib/server/storage'
+import { loadProviderConfigs, loadModelOverrides, loadStoredItem, loadCredentials, decryptKey } from '@/lib/server/storage'
+import { getExtensionManager } from '@/lib/server/extensions'
 
 const TAG = 'providers'
 
@@ -290,14 +291,11 @@ export const PROVIDERS: Record<string, BuiltinProviderConfig> = {
 /** Merge built-in providers with custom providers from storage */
 function getCustomProviders(): Record<string, CustomProviderConfig> {
   try {
-    // Use ES module import instead of require() for Next.js compatibility
     const configs = loadProviderConfigs() as Record<string, CustomProviderConfig>
-    const result = Object.fromEntries(
+    return Object.fromEntries(
       Object.entries(configs).filter(([, config]) => config?.type === 'custom'),
     )
-    return result
   } catch (err) {
-    console.error('[DEBUG] getCustomProviders error:', err)
     log.warn(TAG, 'Failed to load custom providers from storage', errorMessage(err))
     return {}
   }
@@ -305,8 +303,6 @@ function getCustomProviders(): Record<string, CustomProviderConfig> {
 
 function getModelOverrides(): Record<string, string[]> {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { loadModelOverrides } = require('../server/storage') as typeof import('@/lib/server/storage')
     return loadModelOverrides()
   } catch {
     return {}
@@ -344,17 +340,15 @@ export function getProviderList(): ProviderInfo[] {
 
   let extensionProviders: ProviderInfo[] = []
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { getExtensionManager } = require('../server/extensions')
-    extensionProviders = getExtensionManager().getProviders().map((p: Record<string, unknown>) => ({
-      id: String(p.id) as ProviderId,
-      name: String(p.name),
-      models: p.models as string[],
-      defaultModels: p.models as string[],
-      supportsModelDiscovery: Boolean(p.supportsModelDiscovery),
-      requiresApiKey: Boolean(p.requiresApiKey),
-      requiresEndpoint: Boolean(p.requiresEndpoint),
-      defaultEndpoint: p.defaultEndpoint as string | undefined,
+    extensionProviders = getExtensionManager().getProviders().map((p) => ({
+      id: p.id as ProviderId,
+      name: p.name,
+      models: p.models,
+      defaultModels: p.models,
+      supportsModelDiscovery: false,
+      requiresApiKey: p.requiresApiKey,
+      requiresEndpoint: p.requiresEndpoint,
+      defaultEndpoint: p.defaultEndpoint,
     }))
   } catch { /* ignore if running somewhere extensions aren't available */ }
 
@@ -393,8 +387,6 @@ export function getProvider(id: string): BuiltinProviderConfig | null {
   // Fallback: direct single-item DB lookup for custom-* providers
   if (id.startsWith('custom-') && !custom) {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { loadStoredItem } = require('../server/storage') as typeof import('@/lib/server/storage')
       const directConfig = loadStoredItem('provider_configs', id) as CustomProviderConfig | null
       if (directConfig?.type === 'custom' && directConfig.isEnabled) {
         log.info(TAG, `Resolved custom provider '${id}' via direct DB lookup (batch load missed it)`)
@@ -407,10 +399,8 @@ export function getProvider(id: string): BuiltinProviderConfig | null {
 
   // Check Extension Providers
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { getExtensionManager } = require('../server/extensions')
     const extensionProviders = getExtensionManager().getProviders()
-    const found = extensionProviders.find((p: Record<string, unknown>) => p.id === id)
+    const found = extensionProviders.find((p) => p.id === id)
     if (found) {
       return {
         id: found.id as ProviderId,
@@ -457,8 +447,6 @@ export async function streamChatWithFailover(
       let apiKey: string | null = opts.apiKey || null
       if (credId && i > 0) {
         // Need to decrypt fallback credential
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const { loadCredentials, decryptKey } = require('../server/storage') as typeof import('@/lib/server/storage')
         const creds = loadCredentials()
         const cred = creds[credId]
         if (cred?.encryptedKey) {

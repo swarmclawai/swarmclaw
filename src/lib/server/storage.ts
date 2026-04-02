@@ -242,7 +242,7 @@ function loadCollectionWithNormalizationState(table: string): {
   return { result, normalizedCount }
 }
 
-function loadCollection(table: string): Record<string, StoredObject> {
+export function loadCollection(table: string): Record<string, StoredObject> {
   const { result, normalizedCount } = loadCollectionWithNormalizationState(table)
   if (normalizedCount > 0) saveCollection(table, result)
   return result

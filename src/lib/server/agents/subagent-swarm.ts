@@ -17,6 +17,7 @@ import { logActivity } from '@/lib/server/activity/activity-log'
 import { createNotification } from '@/lib/server/create-notification'
 import { notify } from '@/lib/server/ws-hub'
 import { loadAgents } from '@/lib/server/agents/agent-repository'
+import { upsertStoredItem, loadStoredItem, loadCollection } from '../storage'
 import {
   spawnSubagent,
   type SubagentContext,
@@ -159,8 +160,6 @@ function notifySwarmChanged() {
 
 function persistSwarmSnapshot(swarm: SwarmHandle): void {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { upsertStoredItem } = require('../storage')
     upsertStoredItem('swarm_snapshots', swarm.swarmId, {
       swarmId: swarm.swarmId,
       parentSessionId: swarm.parentSessionId,
@@ -549,8 +548,6 @@ export function getSwarmSnapshot(swarmId: string): SwarmSnapshot | null {
   if (swarm) return buildSwarmSnapshot(swarm)
   // Fallback to persisted store for swarms from previous process lifetimes
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { loadStoredItem } = require('../storage')
     const persisted = loadStoredItem('swarm_snapshots', swarmId)
     return persisted ? (persisted as SwarmSnapshot) : null
   } catch { return null }
@@ -640,9 +637,7 @@ function buildSwarmSnapshot(swarm: SwarmHandle): SwarmSnapshot {
  */
 export function restoreSwarmRegistry(): number {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { loadCollection, upsertStoredItem } = require('../storage')
-    const persisted = loadCollection('swarm_snapshots') as Record<string, SwarmSnapshot>
+    const persisted = loadCollection('swarm_snapshots') as unknown as Record<string, SwarmSnapshot>
     let lost = 0
     for (const [id, record] of Object.entries(persisted)) {
       if (swarmRegistry.has(id)) continue

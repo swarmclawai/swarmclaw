@@ -8,6 +8,7 @@ import type { Agent } from '@/types'
 import { deriveOpenClawWsUrl } from '@/lib/openclaw/openclaw-endpoint'
 import { normalizeOpenClawAgentId } from '@/lib/openclaw/openclaw-agent-id'
 import { loadAgents } from '../server/storage'
+import { getSharedDeviceToken } from '../server/openclaw/sync'
 import {
   resolveOpenClawGatewayAgentIdFromList,
   type OpenClawGatewayAgentSummary,
@@ -74,8 +75,6 @@ function tryLoadIdentityFile(filePath: string): DeviceIdentity | null {
 function loadOrCreateDeviceIdentity(): DeviceIdentity {
   // 0. Check shared device token for cross-synced identity
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { getSharedDeviceToken } = require('../server/openclaw/sync')
     const sharedToken = getSharedDeviceToken()
     if (sharedToken) {
       // Shared token exists — the connector has already paired.

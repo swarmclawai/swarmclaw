@@ -1,5 +1,6 @@
 import { spawnSync } from 'child_process'
 import { errorMessage, hmrSingleton, jitteredBackoff } from '@/lib/shared-utils'
+import { upsertStoredItem, loadCollection } from './storage'
 
 type DelegateTool = 'delegate_to_claude_code' | 'delegate_to_codex_cli' | 'delegate_to_opencode_cli' | 'delegate_to_gemini_cli'
 
@@ -70,8 +71,6 @@ export function markProviderFailure(providerId: string, error: string, credentia
     cooldownUntil: now + cooldownMsForFailures(failures),
   })
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { upsertStoredItem } = require('./storage')
     upsertStoredItem('provider_health', key, states.get(key)!)
   } catch {}
 }
@@ -88,8 +87,6 @@ export function markProviderSuccess(providerId: string, credentialId?: string | 
     cooldownUntil: undefined,
   })
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { upsertStoredItem } = require('./storage')
     upsertStoredItem('provider_health', key, states.get(key)!)
   } catch {}
 }
@@ -187,9 +184,7 @@ export function getProviderHealthSnapshot(): Record<string, ProviderHealthState 
 
 export function restoreProviderHealthState(): number {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { loadCollection } = require('./storage')
-    const persisted = loadCollection('provider_health') as Record<string, ProviderHealthState>
+    const persisted = loadCollection('provider_health') as unknown as Record<string, ProviderHealthState>
     let restored = 0
     for (const [id, record] of Object.entries(persisted)) {
       if (states.has(id)) continue

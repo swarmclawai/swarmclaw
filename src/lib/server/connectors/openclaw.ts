@@ -13,6 +13,7 @@ import {
   type GatewayResponseFrame,
 } from '../gateway/protocol'
 import { log } from '@/lib/server/logger'
+import { setSharedDeviceToken } from '../openclaw/sync'
 
 const TAG = 'openclaw'
 
@@ -830,8 +831,6 @@ const openclaw: PlatformConnector = {
       // Cross-sync device token for provider identity resolution
       if (normalized) {
         try {
-          // eslint-disable-next-line @typescript-eslint/no-require-imports
-          const { setSharedDeviceToken } = require('../openclaw/sync')
           setSharedDeviceToken(normalized)
         } catch { /* openclaw-sync not available */ }
       }

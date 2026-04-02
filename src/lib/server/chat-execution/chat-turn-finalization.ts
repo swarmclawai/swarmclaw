@@ -1,4 +1,5 @@
 import type { Message, MessageToolEvent, SSEEvent, Session, UsageRecord } from '@/types'
+import { sendConnectorMessage } from '../connectors/manager'
 import { applyExactOutputContract, classifyExactOutputContract, type ExactOutputContract } from '@/lib/server/chat-execution/exact-output-contract'
 import { stripMainLoopMetaForPersistence } from '@/lib/server/agents/main-agent-loop'
 import { shouldSuppressHiddenControlText, stripHiddenControlTokens } from '@/lib/server/agents/assistant-control'
@@ -478,8 +479,6 @@ export async function finalizeChatTurn(params: {
           && heartbeatConfig.target !== 'none'
         ) {
           try {
-            // eslint-disable-next-line @typescript-eslint/no-require-imports
-            const { sendConnectorMessage } = require('../connectors/manager')
             let connectorId: string | undefined
             let channelId: string | undefined
             if (heartbeatConfig.target === 'last') {
@@ -527,9 +526,7 @@ export async function finalizeChatTurn(params: {
             : ''
           if (!recentInbound && channelId) {
             try {
-              // eslint-disable-next-line @typescript-eslint/no-require-imports
-              const { sendConnectorMessage: sendMsg } = require('../connectors/manager')
-              sendMsg({ connectorId: connectorId || undefined, channelId, text: nextAssistantMessage.text }).catch((err: unknown) => {
+              sendConnectorMessage({ connectorId: connectorId || undefined, channelId, text: nextAssistantMessage.text }).catch((err: unknown) => {
                 log.warn('connector', 'Auto-route connector delivery failed', {
                   connectorId,
                   channelId,

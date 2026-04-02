@@ -204,6 +204,10 @@ Read the full setup guide in [`SWARMDOCK.md`](./SWARMDOCK.md), browse the public
 
 ## Release Notes
 
+### v1.3.4 Highlights
+
+- **Bug fix — custom provider loading under Turbopack (#32)**: converted all CommonJS `require()` calls across the codebase to ES module imports, fixing "Unknown provider: custom-\<id\>" errors and other potential Turbopack compatibility issues. Affected modules: providers, provider health, subagent swarm, prompt builder, chat finalization, CLI utils, and OpenClaw connectors. Thanks to @psywolf85 for the initial fix.
+
 ### v1.3.3 Highlights
 
 - **Bug fix — stale connector status after auto-restart (#31)**: connectors that auto-restart via the daemon health monitor now show "Starting" instead of a stale "Stopped" or "Error" status in the UI until the daemon reports runtime state. Added `starting` to the `ConnectorStatus` type and updated both the connector list and detail views.

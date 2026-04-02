@@ -8,6 +8,7 @@
 
 import fs from 'fs'
 import os from 'os'
+import { findBinaryOnPath } from '../server/session-tools/context'
 import path from 'path'
 import { spawnSync, type ChildProcess } from 'child_process'
 import { log } from '../server/logger'
@@ -63,10 +64,8 @@ function getNvmBinaryPaths(name: string): string[] {
  * then falls back to known paths + nvm paths.
  */
 export function resolveCliBinary(name: string, extraPaths?: string[]): string | null {
-  // Lazy import to avoid circular dependency at module load
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { findBinaryOnPath } = require('../server/session-tools/context')
-  const fromPath = findBinaryOnPath(name) as string | null
+  const fromPath = findBinaryOnPath(name)
+
   if (fromPath) return fromPath
 
   const paths = [
