@@ -236,6 +236,9 @@ export function AgentSheet() {
   const [heartbeatIntervalSec, setHeartbeatIntervalSec] = useState('')  // '' = default (30m)
   const [heartbeatModel, setHeartbeatModel] = useState('')
   const [heartbeatPrompt, setHeartbeatPrompt] = useState('')
+  const [dreamEnabled, setDreamEnabled] = useState(false)
+  const [dreamCooldownMinutes, setDreamCooldownMinutes] = useState('360')
+  const [dreamTier2Enabled, setDreamTier2Enabled] = useState(true)
   const [orchestratorEnabled, setOrchestratorEnabled] = useState(false)
   const [orchestratorMission, setOrchestratorMission] = useState('')
   const [orchestratorWakeInterval, setOrchestratorWakeInterval] = useState('5m')
@@ -437,6 +440,9 @@ export function AgentSheet() {
         setHeartbeatIntervalSec(parseDurationToSec(editing.heartbeatInterval, editing.heartbeatIntervalSec))
         setHeartbeatModel(editing.heartbeatModel || '')
         setHeartbeatPrompt(editing.heartbeatPrompt || '')
+        setDreamEnabled(editing.dreamEnabled || false)
+        setDreamCooldownMinutes(editing.dreamConfig?.cooldownMinutes != null ? String(editing.dreamConfig.cooldownMinutes) : '360')
+        setDreamTier2Enabled(editing.dreamConfig?.tier2Enabled !== false)
         setOrchestratorEnabled(editing.orchestratorEnabled || false)
         setOrchestratorMission(editing.orchestratorMission || '')
         setOrchestratorWakeInterval(typeof editing.orchestratorWakeInterval === 'string' ? editing.orchestratorWakeInterval : typeof editing.orchestratorWakeInterval === 'number' ? `${editing.orchestratorWakeInterval}s` : '5m')
@@ -516,6 +522,9 @@ export function AgentSheet() {
         setHeartbeatIntervalSec(parseDurationToSec(src.heartbeatInterval, src.heartbeatIntervalSec))
         setHeartbeatModel(src.heartbeatModel || '')
         setHeartbeatPrompt(src.heartbeatPrompt || '')
+        setDreamEnabled(src.dreamEnabled || false)
+        setDreamCooldownMinutes(src.dreamConfig?.cooldownMinutes != null ? String(src.dreamConfig.cooldownMinutes) : '360')
+        setDreamTier2Enabled(src.dreamConfig?.tier2Enabled !== false)
         setOrchestratorEnabled(src.orchestratorEnabled || false)
         setOrchestratorMission(src.orchestratorMission || '')
         setOrchestratorWakeInterval(typeof src.orchestratorWakeInterval === 'string' ? src.orchestratorWakeInterval : typeof src.orchestratorWakeInterval === 'number' ? `${src.orchestratorWakeInterval}s` : '5m')
@@ -794,6 +803,10 @@ export function AgentSheet() {
       heartbeatIntervalSec: heartbeatIntervalSec ? Number(heartbeatIntervalSec) : null,
       heartbeatModel: heartbeatModel.trim() || null,
       heartbeatPrompt: heartbeatPrompt.trim() || null,
+      dreamEnabled,
+      dreamConfig: dreamEnabled
+        ? { cooldownMinutes: Number(dreamCooldownMinutes) || 360, tier2Enabled: dreamTier2Enabled }
+        : null,
       orchestratorEnabled,
       orchestratorMission: orchestratorMission.trim() || undefined,
       orchestratorWakeInterval: orchestratorWakeInterval.trim() || null,
@@ -818,6 +831,8 @@ export function AgentSheet() {
       data.heartbeatIntervalSec = null
       data.heartbeatModel = null
       data.heartbeatPrompt = null
+      data.dreamEnabled = false
+      data.dreamConfig = null
     }
     const savedAgent = editing
       ? await updateAgent(editing.id, data)
@@ -1007,6 +1022,7 @@ export function AgentSheet() {
     if (skills.length > 0 || skillIds.length > 0 || mcpServerIds.length > 0 || mcpDisabledTools.length > 0) badges.push('Skills & MCP')
     if (toolsDifferFromDefault || filesystemScope === 'machine') badges.push('Tools')
     if (budgetEnabled) badges.push('Budget')
+    if (dreamEnabled) badges.push('Dreaming')
     if (disabled) badges.push('Disabled')
     if (autoRecovery) badges.push('Recovery')
     if (projectId) badges.push('Project')
@@ -1018,6 +1034,7 @@ export function AgentSheet() {
     autoRecovery,
     budgetEnabled,
     disabled,
+    dreamEnabled,
     fallbackCredentialIds.length,
     filesystemScope,
     identityPersonaLabel,
@@ -1905,6 +1922,54 @@ export function AgentSheet() {
             <span className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white transition-transform duration-200 ${heartbeatEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
           </button>
         </div>
+        <div className="flex items-center justify-between gap-4 rounded-[14px] border border-white/[0.06] bg-white/[0.02] px-4 py-4 mt-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <p className="text-[14px] font-600 text-text">Dreaming</p>
+              <HintTip text="When enabled, this agent consolidates and optimizes its memories during idle periods" />
+            </div>
+            <p className="mt-1 text-[12px] leading-[1.6] text-text-3/75">
+              Consolidate, decay, and reflect on memories when the agent is idle.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setDreamEnabled((current) => !current)}
+            className={`relative h-6 w-11 shrink-0 rounded-full border-none transition-colors duration-200 ${dreamEnabled ? 'bg-accent-bright' : 'bg-white/[0.12]'}`}
+            aria-pressed={dreamEnabled}
+          >
+            <span className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white transition-transform duration-200 ${dreamEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
+          </button>
+        </div>
+        {dreamEnabled && (
+          <div className="mt-3 rounded-[14px] border border-white/[0.04] bg-white/[0.01] px-4 py-4 space-y-3">
+            <div>
+              <label className="flex items-center gap-2 text-[12px] font-600 text-text-2 mb-1.5">
+                Cooldown (minutes) <HintTip text="Minimum minutes between dream cycles" />
+              </label>
+              <input
+                type="number"
+                value={dreamCooldownMinutes}
+                onChange={(e) => setDreamCooldownMinutes(e.target.value)}
+                min={1}
+                placeholder="360"
+                className={inputClass}
+                style={{ fontFamily: 'inherit' }}
+              />
+            </div>
+            <label className="flex items-center gap-3 cursor-pointer">
+              <div
+                onClick={() => setDreamTier2Enabled((current) => !current)}
+                className={`w-11 h-6 rounded-full transition-all duration-200 relative cursor-pointer shrink-0 ${dreamTier2Enabled ? 'bg-accent-bright' : 'bg-white/[0.08]'}`}
+              >
+                <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all duration-200 ${dreamTier2Enabled ? 'left-[22px]' : 'left-0.5'}`} />
+              </div>
+              <span className="flex items-center gap-2 text-[13px] text-text-2">
+                Tier 2 Reflection <HintTip text="Use the agent's LLM to reflect on memories and produce consolidated insights" />
+              </span>
+            </label>
+          </div>
+        )}
       </SectionCard>
       )}
 

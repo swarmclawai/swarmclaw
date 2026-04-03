@@ -36,7 +36,7 @@ import { log } from '@/lib/server/logger'
 import { logExecution } from '@/lib/server/execution-log'
 import { buildCurrentDateTimePromptContext } from '@/lib/server/prompt-runtime-context'
 import { expandExtensionIds } from '@/lib/server/tool-aliases'
-import type { ExecutionBrief, Session, Message } from '@/types'
+import type { ExecutionBrief, KnowledgeRetrievalTrace, Session, Message } from '@/types'
 import { getEnabledCapabilityIds } from '@/lib/capability-selection'
 import { enqueueSystemEvent } from '@/lib/server/runtime/system-events'
 import { resolveActiveProjectContext } from '@/lib/server/project-context'
@@ -199,6 +199,7 @@ export interface StreamAgentChatResult {
   finalResponse: string
   /** Tool events emitted during the streamed run. */
   toolEvents: import('@/types').MessageToolEvent[]
+  knowledgeRetrievalTrace?: KnowledgeRetrievalTrace | null
 }
 
 type LangChainContentPart =
@@ -267,6 +268,7 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
     preferMinimalPrompt: lightweightDirectChat,
   })
   const isMinimalPrompt = promptMode === 'minimal'
+  let knowledgeRetrievalTrace: KnowledgeRetrievalTrace | null = null
 
   // Resolve agent's thinking level for provider-native params
   let agentThinkingLevel: 'minimal' | 'low' | 'medium' | 'high' | undefined
@@ -309,6 +311,7 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
       fullText: requestedToolPreflightResponse,
       finalResponse: requestedToolPreflightResponse,
       toolEvents: [],
+      knowledgeRetrievalTrace: null,
     }
   }
   const runtime = loadRuntimeSettings()
@@ -490,6 +493,7 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
       isMinimalPrompt, currentThreadRecallRequest,
     )
     if (memoryResult.section) promptParts.push(memoryResult.section)
+    knowledgeRetrievalTrace = memoryResult.knowledgeTrace || null
     // Persist injection dedup counts so repeated memories are suppressed
     if (Object.keys(memoryResult.injectedIds).length > 0) {
       session.injectedMemoryIds = memoryResult.injectedIds
@@ -1269,5 +1273,6 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
     cleanup,
     runId,
     classification,
+    knowledgeRetrievalTrace,
   })
 }

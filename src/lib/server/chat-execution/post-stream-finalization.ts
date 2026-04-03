@@ -5,7 +5,7 @@
  * usage recording, forced external service summary, capability hooks,
  * and OpenClaw sync.
  */
-import type { Session, UsageRecord } from '@/types'
+import type { KnowledgeRetrievalTrace, Session, UsageRecord } from '@/types'
 import { log } from '@/lib/server/logger'
 import type { ChatTurnState } from '@/lib/server/chat-execution/chat-turn-state'
 
@@ -51,6 +51,7 @@ export interface PostStreamResult {
   fullText: string
   finalResponse: string
   toolEvents: import('@/types').MessageToolEvent[]
+  knowledgeRetrievalTrace?: KnowledgeRetrievalTrace | null
 }
 
 export interface FinalizeStreamResultOpts {
@@ -70,6 +71,7 @@ export interface FinalizeStreamResultOpts {
   cleanup: () => Promise<void>
   runId: string
   classification?: MessageClassification | null
+  knowledgeRetrievalTrace?: KnowledgeRetrievalTrace | null
 }
 
 export async function finalizeStreamResult(opts: FinalizeStreamResultOpts): Promise<PostStreamResult> {
@@ -138,7 +140,12 @@ export async function finalizeStreamResult(opts: FinalizeStreamResultOpts): Prom
     const finalResponse = await resolveAndSummarize()
     await emitLlmOutputHook(finalResponse)
     await cleanup()
-    return { fullText: state.fullText, finalResponse, toolEvents: state.streamedToolEvents }
+    return {
+      fullText: state.fullText,
+      finalResponse,
+      toolEvents: state.streamedToolEvents,
+      knowledgeRetrievalTrace: opts.knowledgeRetrievalTrace || null,
+    }
   }
 
   // Strip leaked classification JSON from model output (e.g. `{ "isDeliverableTask": true, ... }`)
@@ -212,5 +219,10 @@ export async function finalizeStreamResult(opts: FinalizeStreamResultOpts): Prom
 
   await cleanup()
 
-  return { fullText: state.fullText, finalResponse, toolEvents: state.streamedToolEvents }
+  return {
+    fullText: state.fullText,
+    finalResponse,
+    toolEvents: state.streamedToolEvents,
+    knowledgeRetrievalTrace: opts.knowledgeRetrievalTrace || null,
+  }
 }

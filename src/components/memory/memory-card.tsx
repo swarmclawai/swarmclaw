@@ -19,6 +19,8 @@ export function MemoryCard({ entry, active, agentName, agentAvatarSeed, agentAva
   const [now] = useState(() => Date.now())
   const scope = deriveMemoryScope(entry)
   const tier = getMemoryTier(entry)
+  const isDreamOrigin = entry.category === 'dream_reflection'
+    || (entry.metadata as Record<string, unknown> | undefined)?.origin === 'dream'
 
   return (
     <div
@@ -36,6 +38,11 @@ export function MemoryCard({ entry, active, agentName, agentAvatarSeed, agentAva
         <span className="shrink-0 text-[9px] font-700 uppercase tracking-wider text-accent-bright/70 bg-accent-soft px-1.5 py-0.5 rounded-[5px]">
           {entry.category || 'note'}
         </span>
+        {isDreamOrigin && (
+          <span className="shrink-0 text-[9px] font-700 uppercase tracking-wider text-violet-300/70 bg-violet-400/10 px-1.5 py-0.5 rounded-[5px]">
+            dream
+          </span>
+        )}
         {entry.pinned && (
           <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" className="shrink-0 text-amber-400/80">
             <path d="M16 2l-4 4-4-4-2 2 4 4-5 5v1h1l5-5 4 4 2-2-4-4 4-4z" transform="rotate(45 12 12)" />

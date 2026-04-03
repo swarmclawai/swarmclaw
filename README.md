@@ -204,6 +204,20 @@ Read the full setup guide in [`SWARMDOCK.md`](./SWARMDOCK.md), browse the public
 
 ## Release Notes
 
+### v1.3.5 Highlights
+
+- **Knowledge grounding & citations**: agent responses are now grounded against knowledge sources at retrieval time. Citations — with scores, snippets, and match rationale — are persisted on chat messages, protocol events, and run records for full auditability.
+- **Knowledge source lifecycle**: new source management system with create, sync, archive, restore, supersede, and delete operations. Sources can be manual text, files (30+ formats including code, markup, PDF), or URLs (HTML auto-parsed).
+- **Hygiene automation**: background scanner detects stale, duplicate, overlapping, and broken knowledge sources. Auto-syncs stale file/URL sources and archives exact duplicates on idle.
+- **Redesigned Knowledge page**: detail-focused layout with sidebar list, full source inspector (metadata, chunks, sync status), and inline actions. Search/browse toggle, tag filtering, and archive visibility controls.
+- **Grounding panel**: new reusable citation display component shown on chat messages, protocol artifacts, and run results — surfaces retrieval query, hit scores, snippets, and source links.
+- **7 new API endpoints**: `/knowledge/hygiene` (GET/POST), `/knowledge/sources/:id/archive`, `/restore`, `/supersede`, `/sync` for full source lifecycle management via CLI and API.
+- **Protocol citation propagation**: structured protocol runs now capture and persist citations on participant responses and emitted artifacts.
+- **Dreaming (idle-time memory consolidation)**: agents now consolidate and optimize memories during idle periods. Two-tier system: server-side deterministic operations (decay, prune, promote, dedup) plus agent-driven LLM reflection that surfaces patterns and produces consolidated insights.
+- **Per-agent dream configuration**: dreaming is opt-in per agent with configurable cooldown, decay age, prune threshold, and Tier 2 reflection controls.
+- **Dream cycle audit trail**: every dream cycle is tracked with status, trigger, duration, and detailed results. Viewable in the memory UI and via CLI.
+- **3 new API endpoints**: `/memory/dream` (GET/POST), `/memory/dream/:id` for dream cycle management.
+
 ### v1.3.4 Highlights
 
 - **Bug fix — custom provider loading under Turbopack (#32)**: converted all CommonJS `require()` calls across the codebase to ES module imports, fixing "Unknown provider: custom-\<id\>" errors and other potential Turbopack compatibility issues. Affected modules: providers, provider health, subagent swarm, prompt builder, chat finalization, CLI utils, and OpenClaw connectors. Thanks to @psywolf85 for the initial fix.
@@ -235,82 +249,7 @@ Read the full setup guide in [`SWARMDOCK.md`](./SWARMDOCK.md), browse the public
 - **Extended approval workflows**: new `agent_create`, `budget_change`, and `delegation_enable` approval categories with configurable policies in settings. When enabled, agent creation returns a pending approval instead of creating the agent directly.
 - **Shared validation schemas**: Zod schemas in `src/lib/validation/schemas.ts` are now safe for client-side import (server-only DAG validation moved to `server-schemas.ts`), enabling form-level pre-validation.
 
-### v1.2.9 Highlights
-
-- **SwarmDock marketplace connector**: SwarmClaw agents can now register on SwarmDock, auto-bid on matching work, receive assignments as board tasks, and submit results back through the connector runtime.
-- **Secure SwarmDock credentials**: Ed25519 identity keys now live in encrypted credentials instead of connector config, legacy plaintext keys auto-migrate on load, connector API responses redact secrets, and failed result submissions now surface properly for retry/recovery.
-- **Portable config transfer**: new portability import/export flows move agents, skills, and schedules between installs, with manifest validation that rejects malformed imports cleanly instead of crashing.
-- **Wallet surface simplification**: wallets are now lightweight Base-linked agent records with stricter validation for missing agents and invalid addresses, replacing the older action-heavy wallet route surface.
-- **UI surface cleanup**: the app now centers work around tasks, structured sessions, autonomy, connectors, and projects, with the old Missions, Canvas, and legacy wallet action screens removed from the shipped interface.
-
-### v1.2.8 Highlights
-
-- **Linux/WSL compatibility**: subprocess spawning now uses `$SHELL` instead of hardcoded `/bin/zsh`, fixing `ENOENT` errors on Linux and WSL systems.
-- **nvm compatibility**: stripped `npm_config_prefix` from subprocess environment, fixing node PATH resolution for nvm users.
-- **Dev-mode daemon fix**: prevented duplicate daemon spawn failure when daemon runs in-process during development.
-- **Gateway sheet stability**: fixed infinite render loop when opening a gateway profile with a disconnected gateway.
-- **Auto-provision gateway on deploy**: "Deploy on this host" now automatically creates a gateway profile and credential, so agents can connect immediately without a manual save step.
-- **Credential cleanup on gateway delete**: deleting a gateway profile now cleans up its associated credential when no other gateway or agent references it.
-
-### v1.2.7 Highlights
-
-- **Tool primitives**: consolidated 50+ narrow tools into 6 action-based primitives — `execute`, `files`, `memory`, `platform`, `skills`, and `credential-env` — with skill teach files so agents learn usage patterns on demand.
-- **Type system decomposition**: split the monolithic 3500-line types file into 16 focused domain modules (`agent.ts`, `session.ts`, `message.ts`, `run.ts`, etc.) with full backward-compatible re-exports.
-- **Lightweight direct chat**: message classifier detects simple conversational turns and fast-paths them with minimal prompt assembly and reduced thinking budget.
-- **Prompt mode resolution**: root sessions receive full system prompts while delegated and lightweight turns get streamlined minimal prompts.
-- **Execute tool config UI**: inspector panel now has separate configuration sections for the execute tool (sandbox/host backend, network, timeout) and browser sandbox.
-- **Chat store pagination**: proper `messageStartIndex` tracking, improved queued-message deduplication, and active-turn transcript merging.
-- **Per-session WebSocket notifications**: message mutations now broadcast to session-specific topics for more targeted UI updates.
-- **Tool capability policy refactoring**: consolidated matching logic with extension ID canonicalization for reliable policy resolution.
-- **Validation schemas**: new `AgentExecuteConfigSchema` for Zod-based execute config validation.
-- **Bug fix — custom provider resolution**: fixed "Unknown provider" error when using custom providers in chat execution.
-- **Lint baseline maintained** at 364 violations (no regressions).
-
-### v1.2.5 Highlights
-
-- **Working memory hierarchy**: agents maintain structured working state (facts, plans, decisions, blockers, evidence) that persists across turns and survives context compaction.
-- **Execution brief**: each chat turn receives a concise briefing document synthesized from working state for faster, more focused agent reasoning.
-- **RunContext**: persistent structured context tracks session lineage, delegation chain, and accumulated working memory across run lifecycle.
-- **Unified message flow**: consolidated message handling and execution routing into a single coherent pipeline.
-- **Delegation advisory**: new advisory layer for structured capability analysis during delegation decisions.
-- **Real-time session sync**: session create, update, and delete events now push over WebSocket, replacing poll-only refresh for the chat list.
-- **HMR resilience**: module-level state in the WebSocket client, fallback polling, and API request dedup now survives Next.js hot-module reloads.
-- **Type safety sweep**: eliminated 16 `any` types across 7 API routes with proper narrowing and error guards.
-- **Bug fix — setup wizard crash**: replaced client-side `crypto.randomUUID()` with browser-safe alternative, fixing fresh-install failures with Ollama and other providers.
-- **Bug fix — custom provider validation**: connection-test endpoint now recognizes custom providers from storage instead of rejecting them as "Unsupported provider."
-- **Bug fix — session cwd normalization**: `updateChatSession` now expands `~` paths consistently with session creation.
-
-### v1.2.4 Highlights
-
-- **Custom providers in agent config**: agent setup and inline model switching now merge saved custom provider configs into the selectable provider list, so custom providers show up reliably even when the built-in provider feed is stale or incomplete.
-- **Custom provider save-only flow**: the Providers screen no longer forces connection tests or live model discovery for custom providers; operators can save the endpoint, linked key, and manual model list directly.
-- **Custom provider runtime routing**: saved custom-provider model lists and linked credentials now flow through the agent UI and runtime resolution paths consistently, including legacy `provider_configs` records normalized on load.
-
-### v1.2.3 Highlights
-
-- **Standalone asset staging repair**: `swarmclaw server` now copies `.next/static` and `public/` into the Next.js standalone runtime after the first build, preventing blank UI loads and 503s for CSS, JS, and image assets.
-- **OpenClaw SSH port fix**: remote OpenClaw deploys now preserve well-known SSH ports like `22` instead of clamping them to `1024`.
-- **OpenClaw image source fix**: generated remote deploy bundles and default upgrade actions now use the official `ghcr.io/openclaw/openclaw:latest` image instead of the missing Docker Hub shorthand.
-- **Standalone self-healing**: server startup now repairs older incomplete standalone bundles by staging missing runtime assets before launching `server.js`.
-
-### v1.2.2 Highlights
-
-- **Modular chat execution pipeline**: decomposed the monolithic chat-execution module into 6 focused stages (preflight, preparation, stream execution, partial persistence, finalization, types) for maintainability and testability.
-- **Repository pattern adoption**: extracted ~15 repository modules from `storage.ts`, giving each domain (agents, sessions, missions, credentials, tasks, etc.) its own data-access layer.
-- **Runtime state encapsulation**: moved process-local state (active sessions, dev servers) from storage into `runtime-state.ts` with proper HMR singleton usage.
-- **Streaming state improvements**: stable assistant render IDs, better live-row display logic, and smoother streaming phase transitions in the chat UI.
-- **8 new skills**: coding-agent, github, nano-banana-pro, nano-pdf, openai-image-gen, resourceful-problem-solving, skill-creator, summarize.
-- **Lint baseline improvements**: reduced lint violations from 414 to 396 (-18).
-
-### v1.2.1 Highlights
-
-- **System health endpoint**: new `/api/system/status` route returns lightweight health summary for external monitoring and uptime checks.
-- **Memory abstracts**: ~100-token LLM summaries attached to memories for efficient proactive recall without loading full content.
-- **Structured logging**: migrated 40+ files from `console.*` to the `log` module for consistent, level-aware logging across the codebase.
-- **Lint baseline improvements**: reduced lint violations from 440 to 414 (-26) through targeted fixes across server and UI code.
-- **Daemon housekeeping**: pruning for subagent processes, orchestrator state, connector sessions, and usage records to prevent resource leaks.
-- **SKILL.md v2.0.0**: comprehensive CLI documentation covering 40+ command groups with examples and usage patterns.
-- **New dev scripts**: added `type-check`, `test`, and `format` scripts to `package.json` for streamlined development workflows.
+*For older release notes (v1.2.x and earlier), see [swarmclaw.ai/docs/release-notes](https://swarmclaw.ai/docs/release-notes).*
 
 
 ## What SwarmClaw Focuses On

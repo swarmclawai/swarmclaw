@@ -113,6 +113,8 @@ export function persistEventForRun(entry: SessionRunQueueEntry, event: SSEEvent,
   phase?: RunEventRecord['phase']
   status?: SessionRunStatus
   summary?: string
+  citations?: import('@/types').KnowledgeCitation[]
+  retrievalTrace?: import('@/types').KnowledgeRetrievalTrace | null
 }): void {
   if (!shouldPersistRunEvent(event)) return
   appendPersistedRunEvent({
@@ -125,6 +127,8 @@ export function persistEventForRun(entry: SessionRunQueueEntry, event: SSEEvent,
     phase: opts?.phase || 'event',
     status: opts?.status,
     summary: opts?.summary,
+    citations: opts?.citations,
+    retrievalTrace: opts?.retrievalTrace || null,
     event,
   })
 }
@@ -149,7 +153,15 @@ export function emitToSubscribers(entry: SessionRunQueueEntry, event: SSEEvent) 
   }
 }
 
-export function emitRunMeta(entry: SessionRunQueueEntry, status: SessionRunStatus, extra?: Record<string, unknown>) {
+export function emitRunMeta(
+  entry: SessionRunQueueEntry,
+  status: SessionRunStatus,
+  extra?: Record<string, unknown>,
+  persist?: {
+    citations?: import('@/types').KnowledgeCitation[]
+    retrievalTrace?: import('@/types').KnowledgeRetrievalTrace | null
+  },
+) {
   const event: SSEEvent = {
     t: 'md',
     text: JSON.stringify({
@@ -163,7 +175,12 @@ export function emitRunMeta(entry: SessionRunQueueEntry, status: SessionRunStatu
       },
     }),
   }
-  persistEventForRun(entry, event, { phase: 'status', status })
+  persistEventForRun(entry, event, {
+    phase: 'status',
+    status,
+    citations: persist?.citations,
+    retrievalTrace: persist?.retrievalTrace || null,
+  })
   for (const send of entry.onEvents) {
     try {
       send(event)

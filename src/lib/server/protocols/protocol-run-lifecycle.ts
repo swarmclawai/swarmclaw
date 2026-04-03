@@ -47,6 +47,13 @@ const protocolExecutionState = hmrSingleton('__swarmclaw_protocol_engine_executi
   pendingRunIds: new Set<string>(),
 }))
 
+function shouldYieldBetweenProtocolSteps(deps?: ProtocolRunDeps): boolean {
+  // Dependency-injected runs are used for deterministic tests and nested orchestration.
+  // Keep the production scheduler cooperative, but let injected executions drain
+  // their step loop without requiring multiple timer turns.
+  return !deps
+}
+
 // ---- Scheduling/Recovery (G10) ----
 
 export function requestProtocolRunExecution(runId: string, deps?: ProtocolRunDeps): boolean {
@@ -54,7 +61,7 @@ export function requestProtocolRunExecution(runId: string, deps?: ProtocolRunDep
   if (!normalizedId) return false
   if (protocolExecutionState.pendingRunIds.has(normalizedId)) return false
   protocolExecutionState.pendingRunIds.add(normalizedId)
-  setTimeout(() => {
+  const invoke = () => {
     void runProtocolRun(normalizedId, deps)
       .catch((err: unknown) => {
         log.warn(TAG, `execution failed for ${normalizedId}: ${errorMessage(err)}`)
@@ -62,7 +69,9 @@ export function requestProtocolRunExecution(runId: string, deps?: ProtocolRunDep
       .finally(() => {
         protocolExecutionState.pendingRunIds.delete(normalizedId)
       })
-  }, 0)
+  }
+  if (deps) queueMicrotask(invoke)
+  else setTimeout(invoke, 0)
   return true
 }
 
@@ -115,8 +124,9 @@ export function wakeProtocolRunFromTaskCompletion(taskId: string, deps?: Protoco
 }
 
 export function ensureProtocolEngineRecovered(deps?: ProtocolRunDeps): void {
-  if (protocolRecoveryState.completed) return
-  protocolRecoveryState.completed = true
+  const bypassCompletedGuard = Boolean(deps)
+  if (!bypassCompletedGuard && protocolRecoveryState.completed) return
+  if (!bypassCompletedGuard) protocolRecoveryState.completed = true
   const runs = Object.values(loadProtocolRuns()).map((entry) => normalizeProtocolRun(entry))
   for (const run of runs) {
     if (run.parentRunId) {
@@ -321,8 +331,11 @@ export async function runProtocolRun(runId: string, deps?: ProtocolRunDeps): Pro
         appendProtocolEvent(run.id, { type: 'failed', summary: `Exceeded maximum step iterations (${MAX_STEP_ITERATIONS}).` }, deps)
         break
       }
-      // Yield between steps so I/O, HTTP responses, and timers can run.
-      await new Promise(r => setTimeout(r, 0))
+      if (shouldYieldBetweenProtocolSteps(deps)) {
+        // Yield between steps in the fire-and-forget runtime so I/O, HTTP responses,
+        // and timers can run.
+        await new Promise(r => setTimeout(r, 0))
+      }
       const latest = loadProtocolRunById(run.id)
       if (!latest) return null
       if (latest.status === 'paused' || latest.status === 'cancelled' || latest.status === 'archived' || latest.status === 'completed') {

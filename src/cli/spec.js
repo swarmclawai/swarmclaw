@@ -12,6 +12,8 @@ const COMMAND_GROUPS = {
       restore: { description: 'Restore a trashed agent', method: 'POST', path: '/agents/trash' },
       purge: { description: 'Permanently delete a trashed agent', method: 'DELETE', path: '/agents/trash' },
       status: { description: 'Get live status for an agent', method: 'GET', path: '/agents/:id/status', params: ['id'] },
+      dream: { description: 'Get agent dream config and recent cycles', method: 'GET', path: '/agents/:id/dream', params: ['id'] },
+      'dream-update': { description: 'Update agent dream config', method: 'PATCH', path: '/agents/:id/dream', params: ['id'] },
     },
   },
   activity: {
@@ -218,6 +220,9 @@ const COMMAND_GROUPS = {
       delete: { description: 'Delete memory entry', method: 'DELETE', path: '/memory/:id', params: ['id'] },
       maintenance: { description: 'Analyze memory dedupe/prune candidates', method: 'GET', path: '/memory/maintenance' },
       'maintenance-run': { description: 'Run memory dedupe/prune maintenance', method: 'POST', path: '/memory/maintenance' },
+      dream: { description: 'List dream cycles', method: 'GET', path: '/memory/dream' },
+      'dream-trigger': { description: 'Trigger a dream cycle', method: 'POST', path: '/memory/dream' },
+      'dream-get': { description: 'Get dream cycle by id', method: 'GET', path: '/memory/dream/:id', params: ['id'] },
     },
   },
   'memory-images': {

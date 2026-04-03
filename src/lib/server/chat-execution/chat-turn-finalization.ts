@@ -1,4 +1,11 @@
-import type { Message, MessageToolEvent, SSEEvent, Session, UsageRecord } from '@/types'
+import type {
+  KnowledgeRetrievalTrace,
+  Message,
+  MessageToolEvent,
+  SSEEvent,
+  Session,
+  UsageRecord,
+} from '@/types'
 import { sendConnectorMessage } from '../connectors/manager'
 import { applyExactOutputContract, classifyExactOutputContract, type ExactOutputContract } from '@/lib/server/chat-execution/exact-output-contract'
 import { stripMainLoopMetaForPersistence } from '@/lib/server/agents/main-agent-loop'
@@ -43,6 +50,7 @@ import {
 import { appendUsage } from '@/lib/server/usage/usage-repository'
 import { synchronizeWorkingStateForTurn } from '@/lib/server/working-state/service'
 import { notify } from '@/lib/server/ws-hub'
+import { selectKnowledgeCitations } from '@/lib/server/knowledge-sources'
 
 import type { ExecuteChatTurnInput, ExecuteChatTurnResult } from './chat-execution-types'
 import type { PartialAssistantPersistence } from '@/lib/server/chat-execution/chat-turn-partial-persistence'
@@ -154,6 +162,7 @@ export async function finalizeChatTurn(params: {
     received: boolean
   }
   durationMs: number
+  knowledgeRetrievalTrace?: KnowledgeRetrievalTrace | null
   emit: (event: SSEEvent) => void
 }): Promise<ExecuteChatTurnResult> {
   const {
@@ -164,6 +173,7 @@ export async function finalizeChatTurn(params: {
     responseCacheHit,
     directUsage,
     durationMs,
+    knowledgeRetrievalTrace,
     emit,
   } = params
   let { fullResponse, errorMessage } = params
@@ -313,6 +323,12 @@ export async function finalizeChatTurn(params: {
   const hiddenControlOnly = shouldSuppressHiddenControlText(rawTextForPersistence)
   const textForPersistence = stripHiddenControlTokens(rawTextForPersistence)
   const persistedText = getPersistedAssistantText(textForPersistence, persistedToolEvents)
+  const grounding = hiddenControlOnly
+    ? { citations: [], retrievalTrace: knowledgeRetrievalTrace || null }
+    : selectKnowledgeCitations({
+        responseText: persistedText,
+        retrievalTrace: knowledgeRetrievalTrace || null,
+      })
   let persistedResponseForHooks = textForPersistence
 
   if (isHeartbeatRun && rawTextForPersistence) {
@@ -413,6 +429,8 @@ export async function finalizeChatTurn(params: {
           thinking: thinkingText || undefined,
           toolEvents: persistedToolEvents.length ? persistedToolEvents : undefined,
           kind: persistedKind,
+          citations: grounding.citations.length > 0 ? grounding.citations : undefined,
+          retrievalTrace: grounding.retrievalTrace || undefined,
         },
         enabledIds: extensionsForRun,
         phase: isHeartbeatRun ? 'heartbeat' : 'assistant_final',
@@ -643,5 +661,7 @@ export async function finalizeChatTurn(params: {
     inputTokens: accumulatedUsage.inputTokens || undefined,
     outputTokens: accumulatedUsage.outputTokens || undefined,
     estimatedCost: accumulatedUsage.estimatedCost || undefined,
+    citations: grounding.citations.length > 0 ? grounding.citations : undefined,
+    retrievalTrace: grounding.retrievalTrace || undefined,
   }
 }

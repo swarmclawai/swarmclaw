@@ -1,4 +1,5 @@
 import type { MessageSource } from './connector'
+import type { KnowledgeCitation, KnowledgeRetrievalTrace } from './misc'
 
 export interface MessageToolEvent {
   name: string
@@ -53,4 +54,6 @@ export interface Message {
   runId?: string
   /** Cached turn semantics used for routing, delegation, and reflection. */
   semantics?: MessageSemanticsSummary
+  citations?: KnowledgeCitation[]
+  retrievalTrace?: KnowledgeRetrievalTrace | null
 }

@@ -10,7 +10,7 @@ export default function KnowledgeLayout({ children }: { children: React.ReactNod
     <>
       <SidebarPanelShell
         title="Knowledge"
-        createLabel="Knowledge Entry"
+        createLabel="New Source"
         onNew={() => useAppStore.getState().setKnowledgeSheetOpen(true)}
       >
         <KnowledgeList />

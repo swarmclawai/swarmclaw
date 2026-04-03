@@ -78,9 +78,16 @@ function parseKnowledgeQueryParams(url: string) {
   const q = searchParams.get('q')
   const tagsParam = searchParams.get('tags')
   const limitParam = searchParams.get('limit')
+  const includeArchivedParam = searchParams.get('includeArchived')
   const tags = tagsParam ? tagsParam.split(',').map((t) => t.trim()).filter(Boolean) : undefined
   const limit = limitParam ? Math.max(1, Math.min(500, Number.parseInt(limitParam, 10) || 50)) : undefined
-  return { q, tags, limit }
+  const normalizedIncludeArchived = typeof includeArchivedParam === 'string'
+    ? includeArchivedParam.trim().toLowerCase()
+    : ''
+  const includeArchived = normalizedIncludeArchived === '1'
+    || normalizedIncludeArchived === 'true'
+    || normalizedIncludeArchived === 'yes'
+  return { q, tags, limit, includeArchived }
 }
 
 // ---------------------------------------------------------------------------
@@ -91,7 +98,12 @@ const thisFile = new URL(import.meta.url).pathname
 const routeDir = path.resolve(path.dirname(thisFile), '../../app/api')
 
 function readRoute(...segments: string[]): string {
-  return fs.readFileSync(path.join(routeDir, ...segments), 'utf-8')
+  const direct = path.join(routeDir, ...segments)
+  if (fs.existsSync(direct)) {
+    return fs.readFileSync(direct, 'utf-8')
+  }
+  const withTs = direct.endsWith('.ts') ? direct : `${direct}.ts`
+  return fs.readFileSync(withTs, 'utf-8')
 }
 
 // ===========================================================================
@@ -225,6 +237,12 @@ describe('Knowledge API contract', () => {
     it('returns undefined limit when param is absent', () => {
       assert.equal(parseKnowledgeQueryParams('http://localhost/api/knowledge').limit, undefined)
     })
+
+    it('parses includeArchived as a boolean flag', () => {
+      assert.equal(parseKnowledgeQueryParams('http://localhost/api/knowledge?includeArchived=true').includeArchived, true)
+      assert.equal(parseKnowledgeQueryParams('http://localhost/api/knowledge?includeArchived=1').includeArchived, true)
+      assert.equal(parseKnowledgeQueryParams('http://localhost/api/knowledge?includeArchived=no').includeArchived, false)
+    })
   })
 
   // --- Route file structure -----------------------------------------------
@@ -240,6 +258,29 @@ describe('Knowledge API contract', () => {
       assert.match(src, /export\s+async\s+function\s+GET/)
       assert.match(src, /export\s+async\s+function\s+PUT/)
       assert.match(src, /export\s+async\s+function\s+DELETE/)
+    })
+
+    it('knowledge/hygiene/route.ts exports GET and POST', () => {
+      const src = readRoute('knowledge', 'hygiene', 'route.ts')
+      assert.match(src, /export\s+async\s+function\s+GET/)
+      assert.match(src, /export\s+async\s+function\s+POST/)
+    })
+
+    it('knowledge/sources/route.ts re-exports GET and POST', () => {
+      const src = readRoute('knowledge', 'sources', 'route.ts')
+      assert.match(src, /export\s+\{\s*GET,\s*POST\s*\}/)
+    })
+
+    it('knowledge/sources/[id]/route.ts re-exports GET, PUT, DELETE', () => {
+      const src = readRoute('knowledge', 'sources', '[id]', 'route.ts')
+      assert.match(src, /export\s+\{\s*GET,\s*PUT,\s*DELETE\s*\}/)
+    })
+
+    it('knowledge source action routes export POST', () => {
+      for (const route of ['archive', 'restore', 'supersede', 'sync']) {
+        const src = readRoute('knowledge', 'sources', '[id]', route, 'route.ts')
+        assert.match(src, /export\s+async\s+function\s+POST/)
+      }
     })
   })
 })

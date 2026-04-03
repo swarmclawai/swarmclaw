@@ -3,7 +3,7 @@ import { WORKSPACE_DIR } from '@/lib/server/data-dir'
 import { log } from '@/lib/server/logger'
 import { loadSettings } from '@/lib/server/settings/settings-repository'
 import { loadSessions } from '@/lib/server/sessions/session-repository'
-import { appendPersistedRunEvent, persistRun } from '@/lib/server/runtime/run-ledger'
+import { appendPersistedRunEvent, buildRetrievalSummary, persistRun } from '@/lib/server/runtime/run-ledger'
 import { notify } from '@/lib/server/ws-hub'
 import { captureGuardianCheckpoint } from '@/lib/server/agents/guardian'
 import {
@@ -68,6 +68,7 @@ function notifyExecutionState(sessionId: string): void {
 }
 
 function emitStatus(run: SessionRunRecord, status: SessionRunStatus, extra?: Record<string, unknown>): void {
+  const { citations, retrievalTrace, ...eventExtra } = extra || {}
   appendPersistedRunEvent({
     runId: run.id,
     sessionId: run.sessionId,
@@ -78,6 +79,8 @@ function emitStatus(run: SessionRunRecord, status: SessionRunStatus, extra?: Rec
     phase: 'status',
     status,
     summary: run.resultPreview || run.error || undefined,
+    citations: citations as import('@/types').KnowledgeCitation[] | undefined,
+    retrievalTrace: (retrievalTrace as import('@/types').KnowledgeRetrievalTrace | undefined) || undefined,
     event: {
       t: 'md',
       text: JSON.stringify({
@@ -90,7 +93,7 @@ function emitStatus(run: SessionRunRecord, status: SessionRunStatus, extra?: Rec
           status,
           source: run.source,
           internal: run.internal,
-          ...extra,
+          ...eventExtra,
         },
       }),
     },
@@ -268,6 +271,7 @@ export function enqueueTaskAttemptExecution(
       run.endedAt = Date.now()
       run.error = controller.signal.aborted ? (run.error || 'Cancelled') : result.error
       run.resultPreview = result.text?.slice(0, 280)
+      run.retrievalSummary = buildRetrievalSummary(result.citations)
       if (typeof result.inputTokens === 'number') run.totalInputTokens = result.inputTokens
       if (typeof result.outputTokens === 'number') run.totalOutputTokens = result.outputTokens
       if (typeof result.estimatedCost === 'number') run.estimatedCost = result.estimatedCost
@@ -275,6 +279,8 @@ export function enqueueTaskAttemptExecution(
       emitStatus(run, run.status, {
         hasText: !!result.text,
         error: run.error || null,
+        citations: result.citations,
+        retrievalTrace: result.retrievalTrace,
       })
       return result
     } catch (err: unknown) {

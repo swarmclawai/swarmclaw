@@ -16,6 +16,7 @@ import {
 import { useTasksQuery } from '@/features/tasks/queries'
 import { MainContent } from '@/components/layout/main-content'
 import { StructuredSessionLauncher } from '@/components/protocols/structured-session-launcher'
+import { GroundingPanel } from '@/components/knowledge/grounding-panel'
 import { timeAgo } from '@/lib/time-format'
 import type {
   BoardTask,
@@ -164,8 +165,8 @@ export default function ProtocolsPage() {
   const runActionMutation = useProtocolRunActionMutation()
   const upsertTemplateMutation = useUpsertProtocolTemplateMutation()
   const deleteTemplateMutation = useDeleteProtocolTemplateMutation()
-  const templates = templatesQuery.data ?? []
-  const runs = runsQuery.data ?? []
+  const templates = useMemo(() => templatesQuery.data ?? [], [templatesQuery.data])
+  const runs = useMemo(() => runsQuery.data ?? [], [runsQuery.data])
   const detail = detailQuery.data ?? null
   const agents = agentsQuery.data ?? {}
   const chatrooms = chatroomsQuery.data ?? {}
@@ -203,6 +204,14 @@ export default function ProtocolsPage() {
   const selectedTemplate = useMemo(() => templates.find((template) => template.id === form.templateId) || null, [form.templateId, templates])
   const customTemplates = useMemo(() => templates.filter((template) => !template.builtIn), [templates])
   const builtInTemplates = useMemo(() => templates.filter((template) => template.builtIn), [templates])
+  const artifactCitationMap = useMemo(() => {
+    const map = new Map<string, ProtocolRunEvent['citations']>()
+    for (const event of detail?.events || []) {
+      if (!event.artifactId || !event.citations?.length) continue
+      map.set(event.artifactId, event.citations)
+    }
+    return map
+  }, [detail?.events])
   const filteredRuns = useMemo(() => {
     const search = runSearch.trim().toLowerCase()
     return runs.filter((run) => {
@@ -1167,6 +1176,11 @@ export default function ProtocolsPage() {
                                 <span className="text-[11px] text-text-3/60">{artifact.kind.replace(/_/g, ' ')}</span>
                               </div>
                               <div className="mt-2 whitespace-pre-wrap text-[13px] leading-relaxed text-text-2">{artifact.content}</div>
+                              {artifactCitationMap.get(artifact.id)?.length ? (
+                                <div className="mt-3">
+                                  <GroundingPanel citations={artifactCitationMap.get(artifact.id)} compact />
+                                </div>
+                              ) : null}
                             </div>
                           ))}
                         </div>
@@ -1220,6 +1234,11 @@ export default function ProtocolsPage() {
                                 <div className="text-[11px] text-text-3/55">{timeAgo(event.createdAt)}</div>
                               </div>
                               <div className="mt-2 text-[13px] leading-relaxed text-text-2">{event.summary}</div>
+                              {event.citations?.length ? (
+                                <div className="mt-3">
+                                  <GroundingPanel citations={event.citations} compact />
+                                </div>
+                              ) : null}
                             </div>
                           ))}
                         </div>

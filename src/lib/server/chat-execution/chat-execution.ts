@@ -112,6 +112,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
     responseCacheHit: streamResult.responseCacheHit,
     directUsage: streamResult.directUsage,
     durationMs: streamResult.durationMs,
+    knowledgeRetrievalTrace: streamResult.knowledgeRetrievalTrace || null,
     emit: partialPersistence.emit,
   })
 

@@ -1,7 +1,7 @@
 ---
 name: swarmclaw
 description: Manage your SwarmClaw agent fleet — agents, tasks, chats, chatrooms, goals, schedules, memory, wallets, connectors, autonomy, and 40+ more command groups. Use when asked to dispatch work, check agent status, coordinate multi-agent work, run diagnostics, manage schedules, set goals, or orchestrate across a SwarmClaw dashboard instance.
-version: 2.1.0
+version: 2.2.0
 metadata:
   openclaw:
     requires:
@@ -237,6 +237,50 @@ swarmclaw goals update <goalId> --data '{"status":"in_progress"}' --json
 swarmclaw goals delete <goalId> --json
 ```
 
+### Knowledge
+
+Manage knowledge sources — manual text, files, and URLs that ground agent responses with citations.
+
+```bash
+# List all knowledge entries
+swarmclaw knowledge list --json
+
+# Search knowledge
+swarmclaw knowledge list --json --query q=pricing
+
+# Create a manual knowledge entry
+swarmclaw knowledge create --data '{"title":"Pricing Policy","content":"Standard pricing is...","kind":"manual","tags":["pricing"]}' --json
+
+# Upload a file as knowledge
+swarmclaw knowledge upload ./docs/handbook.pdf --json
+
+# Get full source detail (metadata + indexed chunks)
+swarmclaw knowledge source-get <sourceId> --json
+
+# List knowledge sources with summaries
+swarmclaw knowledge sources --json
+
+# Re-sync a file/URL source
+swarmclaw knowledge source-sync <sourceId> --json
+
+# Archive a source
+swarmclaw knowledge source-archive <sourceId> --data '{"reason":"outdated"}' --json
+
+# Restore an archived source
+swarmclaw knowledge source-restore <sourceId> --json
+
+# Mark a source as superseded by another
+swarmclaw knowledge source-supersede <sourceId> --data '{"supersededBySourceId":"<newSourceId>"}' --json
+
+# Get knowledge hygiene summary (stale, duplicate, broken sources)
+swarmclaw knowledge hygiene --json
+
+# Run hygiene maintenance (auto-sync stale, archive duplicates)
+swarmclaw knowledge hygiene-run --json
+```
+
+Other: `get`, `update`, `delete`, `source-create`, `source-update`, `source-delete`
+
 ### Search
 
 Global cross-resource search across agents, tasks, chats, schedules, webhooks, and skills.
@@ -277,6 +321,7 @@ These groups are available but used less frequently by agents. Use `swarmclaw <g
 | **secrets** | Encrypted secret vault | `list`, `get`, `create`, `update`, `delete` |
 | **notifications** | In-app notification center | `list`, `create`, `clear`, `mark-read`, `delete` |
 | **extensions** | Extension marketplace and config | `list`, `set`, `install`, `marketplace`, `settings-get`, `settings-set`, `builtins` |
+| **knowledge** | Knowledge source management and hygiene | `list`, `get`, `create`, `update`, `delete`, `upload`, `sources`, `source-get`, `source-create`, `source-update`, `source-delete`, `source-archive`, `source-restore`, `source-supersede`, `source-sync`, `hygiene`, `hygiene-run` |
 | **skills** | Reusable skill management | `list`, `get`, `create`, `update`, `delete`, `import` |
 | **learned-skills** | Agent-scoped learned skill review | `list`, `promote`, `dismiss`, `delete`, `review-counts` |
 | **skill-suggestions** | AI-generated skill recommendations | `list`, `draft`, `approve`, `reject` |

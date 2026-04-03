@@ -48,6 +48,7 @@ import { AGENT_TURN_TIMEOUT_MS, cleanText, now } from '@/lib/server/protocols/pr
 import type { ProtocolAgentTurnResult, ProtocolRunDeps } from '@/lib/server/protocols/protocol-types'
 import { normalizeProtocolRun } from '@/lib/server/protocols/protocol-normalization'
 import { persistChatroomInteractionMemory } from '@/lib/server/chatrooms/chatroom-memory-bridge'
+import { selectKnowledgeCitations } from '@/lib/server/knowledge-sources'
 
 // ---- Zod schema ----
 
@@ -262,6 +263,10 @@ export async function defaultExecuteAgentTurn(params: {
       ])
       const rawText = result.finalResponse || result.fullText || ''
       const text = stripHiddenControlTokens(rawText)
+      const grounding = selectKnowledgeCitations({
+        responseText: text,
+        retrievalTrace: result.knowledgeRetrievalTrace || null,
+      })
       if (text.trim() && !shouldSuppressHiddenControlText(rawText)) {
         appendSyntheticSessionMessage(syntheticSession.id, 'assistant', text)
         // Persist interaction to agent memory (fire-and-forget)
@@ -278,6 +283,8 @@ export async function defaultExecuteAgentTurn(params: {
       return {
         text: cleanText(text, 6_000),
         toolEvents: result.toolEvents || [],
+        citations: grounding.citations,
+        retrievalTrace: grounding.retrievalTrace,
       }
     } catch (err: unknown) {
       lastError = err

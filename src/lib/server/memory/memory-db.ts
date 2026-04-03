@@ -146,6 +146,20 @@ function metadataNumber(entry: MemoryEntry, key: string): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null
 }
 
+function knowledgeChunkHashScope(category: string, metadata: unknown): string {
+  if (category !== 'knowledge' || !metadata || typeof metadata !== 'object') return category
+  const sourceIdValue = (metadata as Record<string, unknown>).sourceId
+  const sourceId = typeof sourceIdValue === 'string'
+    ? sourceIdValue.trim()
+    : ''
+  if (!sourceId) return category
+  const chunkIndexValue = (metadata as Record<string, unknown>).chunkIndex
+  const chunkIndex = typeof chunkIndexValue === 'number'
+    ? chunkIndexValue
+    : null
+  return `${category}:${sourceId}:${chunkIndex ?? 'legacy'}`
+}
+
 function followUpSalienceMultiplier(entry: MemoryEntry, nowTs: number): number {
   if (entry.category !== 'reflection/open_loop') return 1
   const resolvedAt = metadataNumber(entry, 'resolvedAt')
@@ -664,7 +678,7 @@ function initDb() {
     update: db.prepare(`
       UPDATE memories
       SET agentId=?, sessionId=?, category=?, title=?, content=?, metadata=?, embedding=?,
-          "references"=?, filePaths=?, image=?, imagePath=?, linkedMemoryIds=?, pinned=?, sharedWith=?, updatedAt=?
+          "references"=?, filePaths=?, image=?, imagePath=?, linkedMemoryIds=?, pinned=?, sharedWith=?, contentHash=?, updatedAt=?
       WHERE id=?
     `),
     delete: db.prepare(`DELETE FROM memories WHERE id=?`),
@@ -677,6 +691,13 @@ function initDb() {
     listAll: db.prepare(`SELECT * FROM memories ORDER BY updatedAt DESC LIMIT ?`),
     listByAgent: db.prepare(`SELECT * FROM memories WHERE agentId=? ORDER BY updatedAt DESC LIMIT ?`),
     listByAgentOrShared: db.prepare(`SELECT * FROM memories WHERE agentId=? OR sharedWith LIKE ? ORDER BY updatedAt DESC LIMIT ?`),
+    listByCategoryAll: db.prepare(`SELECT * FROM memories WHERE category=? ORDER BY updatedAt DESC LIMIT ?`),
+    listByCategoryAgentOrShared: db.prepare(`SELECT * FROM memories WHERE category=? AND (agentId=? OR sharedWith LIKE ?) ORDER BY updatedAt DESC LIMIT ?`),
+    listKnowledgeSourceChunks: db.prepare(`
+      SELECT * FROM memories
+      WHERE category='knowledge' AND json_extract(metadata, '$.sourceId') = ?
+      ORDER BY COALESCE(json_extract(metadata, '$.chunkIndex'), 0) ASC, createdAt ASC
+    `),
     listPinnedByAgent: db.prepare(`SELECT * FROM memories WHERE pinned = 1 AND agentId = ? ORDER BY updatedAt DESC LIMIT ?`),
     listPinnedAll: db.prepare(`SELECT * FROM memories WHERE pinned = 1 ORDER BY updatedAt DESC LIMIT ?`),
     search: db.prepare(`
@@ -803,7 +824,7 @@ function initDb() {
       const category = data.category || 'note'
       const title = data.title || 'Untitled'
       const content = data.content || ''
-      const contentHash = computeContentHash(category, content)
+      const contentHash = computeContentHash(knowledgeChunkHashScope(category, data.metadata), content)
 
       // Content-hash dedup: if same content already exists for this agent, reinforce instead of duplicating
       const agentId = data.agentId || null
@@ -896,6 +917,7 @@ function initDb() {
       const now = Date.now()
       const pinnedVal = merged.pinned ? 1 : 0
       const sharedWithVal = Array.isArray(merged.sharedWith) && merged.sharedWith.length ? JSON.stringify(merged.sharedWith) : null
+      const nextContentHash = computeContentHash(knowledgeChunkHashScope(merged.category, merged.metadata), merged.content)
       stmts.update.run(
         merged.agentId || null, merged.sessionId || null,
         merged.category, merged.title, merged.content,
@@ -908,6 +930,7 @@ function initDb() {
         nextLinked.length ? JSON.stringify(nextLinked) : null,
         pinnedVal,
         sharedWithVal,
+        nextContentHash,
         now, id,
       )
 
@@ -1213,6 +1236,18 @@ function initDb() {
         ? stmts.listByAgentOrShared.all(agentId, `%"${agentId}"%`, safeLimit) as any[]
         : stmts.listAll.all(safeLimit) as any[]
       return rows.map(rowToEntry)
+    },
+
+    listByCategory(category: string, agentId?: string, limit = 500): MemoryEntry[] {
+      const safeLimit = Math.max(1, Math.min(10_000, Math.trunc(limit)))
+      const rows = agentId
+        ? stmts.listByCategoryAgentOrShared.all(category, agentId, `%"${agentId}"%`, safeLimit) as Record<string, unknown>[]
+        : stmts.listByCategoryAll.all(category, safeLimit) as Record<string, unknown>[]
+      return rows.map(rowToEntry)
+    },
+
+    listKnowledgeSourceChunks(sourceId: string): MemoryEntry[] {
+      return (stmts.listKnowledgeSourceChunks.all(sourceId) as Record<string, unknown>[]).map(rowToEntry)
     },
 
     listPinned(agentId?: string, limit = 20): MemoryEntry[] {

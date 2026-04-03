@@ -97,7 +97,12 @@ export async function collectResponses(
   for (const agentId of current.participantAgentIds) {
     if (responded.has(agentId)) continue
     renewProtocolLease(current.id)
-    let response: { text: string; toolEvents: import('@/types').MessageToolEvent[] }
+    let response: {
+      text: string
+      toolEvents: import('@/types').MessageToolEvent[]
+      citations?: import('@/types').KnowledgeCitation[]
+      retrievalTrace?: import('@/types').KnowledgeRetrievalTrace | null
+    }
     try {
       response = await executeAgentTurn({
         run: current,
@@ -116,7 +121,13 @@ export async function collectResponses(
       response = { text: `[Agent error: ${errMsg}]`, toolEvents: [] }
     }
     responded.add(agentId)
-    cachedResponses.push({ agentId, text: response.text, toolEvents: response.toolEvents })
+    cachedResponses.push({
+      agentId,
+      text: response.text,
+      toolEvents: response.toolEvents,
+      citations: response.citations,
+      retrievalTrace: response.retrievalTrace,
+    })
     current = persistRun({
       ...current,
       phaseState: {
@@ -143,6 +154,7 @@ export async function collectResponses(
         phaseId: phase.id,
         agentId,
         summary: `Captured a response from ${participantAgents[agentId]?.name || agentId}.`,
+        citations: response.citations,
       }, deps)
     }
   }
@@ -163,6 +175,7 @@ export async function collectResponses(
         phaseId: phase.id,
         agentId: response.agentId,
         summary: `Captured an independent response from ${participantAgents[response.agentId]?.name || response.agentId}.`,
+        citations: response.citations,
       }, deps)
     }
     current = persistRun({
@@ -210,7 +223,7 @@ export async function processFacilitatorArtifactPhase(
       ...(result.toolEvents.length > 0 ? { toolEvents: result.toolEvents } : {}),
     }, deps)
   }
-  const updated = appendArtifact(run, artifact, deps)
+  const updated = appendArtifact(run, artifact, deps, { citations: result.citations })
   return finishPhase(updated, phase, deps)
 }
 

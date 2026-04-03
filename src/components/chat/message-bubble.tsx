@@ -25,6 +25,7 @@ import { ConnectorPlatformIcon, getConnectorPlatformLabel } from '@/components/s
 import { copyTextToClipboard } from '@/lib/clipboard'
 import { formatMessageTimestamp } from '@/lib/chat/chat-display'
 import { stripAllInternalMetadata } from '@/lib/strip-internal-metadata'
+import { GroundingPanel } from '@/components/knowledge/grounding-panel'
 
 /** Parse delegation-source metadata prefix from system messages */
 const DELEGATION_SOURCE_RE = /^\[delegation-source:([^:]*):([^:]*):([^\]]*)\]/
@@ -971,6 +972,15 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
               {trailingToolMedia.map((media, i) => renderToolMediaEntry(media, `tm-${i}-${media.url}`, handleOpenToolMediaImage))}
             </div>
           )}
+        </div>
+      ) : null}
+
+      {!isUser && (message.citations?.length || message.retrievalTrace?.hits?.length) ? (
+        <div className="mt-2 max-w-[85%] md:max-w-[72%]">
+          <GroundingPanel
+            citations={message.citations}
+            retrievalTrace={message.retrievalTrace}
+          />
         </div>
       ) : null}
 

@@ -175,6 +175,19 @@ export function MemoryDetail() {
   const inputClass = "w-full px-4 py-3 rounded-[12px] border border-white/[0.06] bg-white/[0.02] text-text outline-none transition-all duration-200 placeholder:text-text-3/70 focus:border-accent-bright/20 focus:bg-white/[0.03]"
   const refs = entry.references || []
   const showRefsCollapse = refs.length > 3
+  const entryMeta = entry.metadata && typeof entry.metadata === 'object'
+    ? entry.metadata as Record<string, unknown>
+    : {}
+  const knowledgeSourceId = typeof entryMeta.sourceId === 'string' ? entryMeta.sourceId : null
+  const knowledgeSourceTitle = typeof entryMeta.sourceTitle === 'string' ? entryMeta.sourceTitle : null
+  const knowledgeSourceKind = typeof entryMeta.sourceKind === 'string' ? entryMeta.sourceKind : null
+  const knowledgeSourceLabel = typeof entryMeta.sourceLabel === 'string' ? entryMeta.sourceLabel : null
+  const knowledgeSourceUrl = typeof entryMeta.sourceUrl === 'string' ? entryMeta.sourceUrl : null
+  const knowledgeChunkIndex = typeof entryMeta.chunkIndex === 'number' ? entryMeta.chunkIndex : null
+  const knowledgeChunkCount = typeof entryMeta.chunkCount === 'number' ? entryMeta.chunkCount : null
+  const knowledgeSectionLabel = typeof entryMeta.sectionLabel === 'string' ? entryMeta.sectionLabel : null
+  const knowledgeCharStart = typeof entryMeta.charStart === 'number' ? entryMeta.charStart : null
+  const knowledgeCharEnd = typeof entryMeta.charEnd === 'number' ? entryMeta.charEnd : null
 
   return (
     <div className="flex-1 flex flex-col h-full min-h-0">
@@ -438,6 +451,33 @@ export function MemoryDetail() {
                 {entry.content || '(empty)'}
               </div>
 
+              {knowledgeSourceId && (
+                <div className="rounded-[14px] border border-white/[0.06] bg-white/[0.02] px-4 py-3">
+                  <label className="block text-[11px] font-600 text-text-3/60 uppercase tracking-[0.06em] mb-2">Source</label>
+                  <div className="space-y-1.5">
+                    <p className="text-[13px] text-text-2">
+                      {knowledgeSourceTitle || entry.title}
+                      {knowledgeSourceKind ? ` • ${knowledgeSourceKind}` : ''}
+                    </p>
+                    {knowledgeSourceLabel && (
+                      <p className="text-[12px] text-text-3/65">{knowledgeSourceLabel}</p>
+                    )}
+                    {knowledgeSourceUrl && (
+                      <a href={knowledgeSourceUrl} target="_blank" rel="noreferrer" className="text-[12px] text-accent-bright hover:underline break-all">
+                        {knowledgeSourceUrl}
+                      </a>
+                    )}
+                    <p className="text-[11px] text-text-3/55">
+                      {knowledgeChunkIndex != null && knowledgeChunkCount != null
+                        ? `Chunk ${knowledgeChunkIndex + 1} of ${knowledgeChunkCount}`
+                        : 'Source-backed knowledge'}
+                      {knowledgeSectionLabel ? ` • ${knowledgeSectionLabel}` : ''}
+                      {knowledgeCharStart != null && knowledgeCharEnd != null ? ` • chars ${knowledgeCharStart}-${knowledgeCharEnd}` : ''}
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {/* Shared with (read mode) */}
               {entry.sharedWith && entry.sharedWith.length > 0 && (
                 <div>
@@ -575,6 +615,12 @@ export function MemoryDetail() {
                     <span className="text-text-3/70 block mb-1">Tier</span>
                     <span className="text-text-3/60 font-mono">{tier}</span>
                   </div>
+                  {knowledgeSourceId && (
+                    <div>
+                      <span className="text-text-3/70 block mb-1">Knowledge Source</span>
+                      <span className="text-text-3/60 font-mono">{knowledgeSourceId}</span>
+                    </div>
+                  )}
                   {entry.sessionId && (
                     <div>
                       <span className="text-text-3/70 block mb-1">Chat</span>

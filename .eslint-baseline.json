@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "generatedAt": "2026-03-29T22:58:24.281Z",
-  "totalIssues": 367,
-  "uniqueIssues": 131,
+  "generatedAt": "2026-04-03T14:40:10.843Z",
+  "totalIssues": 361,
+  "uniqueIssues": 125,
   "issues": [
     {
       "filePath": "bin/worker-cmd.js",
@@ -23,13 +23,6 @@
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
-      "count": 1
-    },
-    {
-      "filePath": "src/app/api/knowledge/upload/route.ts",
-      "ruleId": "@typescript-eslint/ban-ts-comment",
-      "severity": 2,
-      "message": "Use \"@ts-expect-error\" instead of \"@ts-ignore\", as \"@ts-ignore\" will do nothing if the following line is error-free.",
       "count": 1
     },
     {
@@ -128,41 +121,6 @@
       "ruleId": "@typescript-eslint/no-unused-vars",
       "severity": 1,
       "message": "'ProtocolRunDetail' is defined but never used.",
-      "count": 1
-    },
-    {
-      "filePath": "src/app/protocols/page.tsx",
-      "ruleId": "react-hooks/exhaustive-deps",
-      "severity": 1,
-      "message": "The 'runs' logical expression could make the dependencies of useEffect Hook (at line 201) change on every render. To fix this, wrap the initialization of 'runs' in its own useMemo() Hook.",
-      "count": 1
-    },
-    {
-      "filePath": "src/app/protocols/page.tsx",
-      "ruleId": "react-hooks/exhaustive-deps",
-      "severity": 1,
-      "message": "The 'runs' logical expression could make the dependencies of useMemo Hook (at line 214) change on every render. To fix this, wrap the initialization of 'runs' in its own useMemo() Hook.",
-      "count": 1
-    },
-    {
-      "filePath": "src/app/protocols/page.tsx",
-      "ruleId": "react-hooks/exhaustive-deps",
-      "severity": 1,
-      "message": "The 'templates' logical expression could make the dependencies of useMemo Hook (at line 203) change on every render. To fix this, wrap the initialization of 'templates' in its own useMemo() Hook.",
-      "count": 1
-    },
-    {
-      "filePath": "src/app/protocols/page.tsx",
-      "ruleId": "react-hooks/exhaustive-deps",
-      "severity": 1,
-      "message": "The 'templates' logical expression could make the dependencies of useMemo Hook (at line 204) change on every render. To fix this, wrap the initialization of 'templates' in its own useMemo() Hook.",
-      "count": 1
-    },
-    {
-      "filePath": "src/app/protocols/page.tsx",
-      "ruleId": "react-hooks/exhaustive-deps",
-      "severity": 1,
-      "message": "The 'templates' logical expression could make the dependencies of useMemo Hook (at line 205) change on every render. To fix this, wrap the initialization of 'templates' in its own useMemo() Hook.",
       "count": 1
     },
     {

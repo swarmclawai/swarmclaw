@@ -71,6 +71,8 @@ export interface UiSlice {
   setKnowledgeSheetOpen: (open: boolean) => void
   editingKnowledgeId: string | null
   setEditingKnowledgeId: (id: string | null) => void
+  selectedKnowledgeSourceId: string | null
+  setSelectedKnowledgeSourceId: (id: string | null) => void
   knowledgeRefreshKey: number
   triggerKnowledgeRefresh: () => void
   extensionSheetOpen: boolean
@@ -169,6 +171,8 @@ export const createUiSlice: StateCreator<AppState, [], [], UiSlice> = (set, get)
   setKnowledgeSheetOpen: (open) => set({ knowledgeSheetOpen: open }),
   editingKnowledgeId: null,
   setEditingKnowledgeId: (id) => set({ editingKnowledgeId: id }),
+  selectedKnowledgeSourceId: null,
+  setSelectedKnowledgeSourceId: (id) => set({ selectedKnowledgeSourceId: id }),
   knowledgeRefreshKey: 0,
   triggerKnowledgeRefresh: () => set((s) => ({ knowledgeRefreshKey: s.knowledgeRefreshKey + 1 })),
   extensionSheetOpen: false,

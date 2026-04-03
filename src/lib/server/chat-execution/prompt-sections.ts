@@ -8,7 +8,7 @@
 
 import fs from 'node:fs'
 import path from 'node:path'
-import type { Session, Agent } from '@/types'
+import type { KnowledgeRetrievalTrace, Session, Agent } from '@/types'
 import type { PromptMode } from '@/lib/server/chat-execution/prompt-mode'
 import type { MessageClassification } from '@/lib/server/chat-execution/message-classifier'
 import type { ActiveProjectContext } from '@/lib/server/project-context'
@@ -428,6 +428,7 @@ export function buildSuggestionsSection(
 export interface ProactiveMemoryResult {
   section: string | null
   injectedIds: Record<string, number>
+  knowledgeTrace?: KnowledgeRetrievalTrace | null
 }
 
 export async function buildProactiveMemorySection(
@@ -438,15 +439,20 @@ export async function buildProactiveMemorySection(
   isMinimalPrompt: boolean,
   currentThreadRecallRequest: boolean,
 ): Promise<ProactiveMemoryResult> {
-  const noResult: ProactiveMemoryResult = { section: null, injectedIds: {} }
+  const noResult: ProactiveMemoryResult = { section: null, injectedIds: {}, knowledgeTrace: null }
   if (isMinimalPrompt || !session.agentId || currentThreadRecallRequest || message.length <= 12) return noResult
   if (!agent?.proactiveMemory) return noResult
   try {
     const { getMemoryDb } = await import('@/lib/server/memory/memory-db')
     const { buildSessionMemoryScopeFilter } = await import('@/lib/server/memory/session-memory-scope')
+    const { buildKnowledgeRetrievalTrace } = await import('@/lib/server/knowledge-sources')
     const memDb = getMemoryDb()
     const recalled = memDb.search(message, session.agentId, {
       scope: buildSessionMemoryScopeFilter(session, agent.memoryScopeMode || null, activeProjectRoot),
+    })
+    const knowledgeTrace = await buildKnowledgeRetrievalTrace({
+      query: message,
+      viewerAgentId: session.agentId,
     })
 
     // Dedup: skip memories already injected 2+ times in this session
@@ -454,6 +460,7 @@ export async function buildProactiveMemorySection(
     const filtered = recalled.filter((entry) => (priorCounts[entry.id] || 0) < 2)
 
     const topRecalled = filtered.slice(0, 3)
+    const sections: string[] = []
     if (topRecalled.length > 0) {
       // Track injection counts
       const updatedCounts: Record<string, number> = { ...priorCounts }
@@ -464,9 +471,28 @@ export async function buildProactiveMemorySection(
       const recalledLines = topRecalled.map((entry) =>
         `- ${entry.abstract || entry.content.slice(0, 300)}`,
       )
+      sections.push(`## Recalled Context\nRelevant memories from previous interactions:\n${recalledLines.join('\n')}`)
+      if (knowledgeTrace?.hits.length) {
+        const groundingLines = knowledgeTrace.hits.map((hit) =>
+          `- [${hit.chunkIndex + 1}/${hit.chunkCount}] ${hit.sourceTitle}: ${hit.snippet}`,
+        )
+        sections.push(`## Source Grounding\nSource-backed knowledge retrieved for this turn:\n${groundingLines.join('\n')}`)
+      }
       return {
-        section: `## Recalled Context\nRelevant memories from previous interactions:\n${recalledLines.join('\n')}`,
+        section: sections.join('\n\n'),
         injectedIds: updatedCounts,
+        knowledgeTrace,
+      }
+    }
+
+    if (knowledgeTrace?.hits.length) {
+      const groundingLines = knowledgeTrace.hits.map((hit) =>
+        `- [${hit.chunkIndex + 1}/${hit.chunkCount}] ${hit.sourceTitle}: ${hit.snippet}`,
+      )
+      return {
+        section: `## Source Grounding\nSource-backed knowledge retrieved for this turn:\n${groundingLines.join('\n')}`,
+        injectedIds: priorCounts,
+        knowledgeTrace,
       }
     }
   } catch { /* non-critical */ }

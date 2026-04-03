@@ -502,7 +502,12 @@ export function currentArtifact(run: ProtocolRun): ProtocolRunArtifact | null {
   return run.artifacts[run.artifacts.length - 1] || null
 }
 
-export function appendArtifact(run: ProtocolRun, artifact: ProtocolRunArtifact, deps?: ProtocolRunDeps): ProtocolRun {
+export function appendArtifact(
+  run: ProtocolRun,
+  artifact: ProtocolRunArtifact,
+  deps?: ProtocolRunDeps,
+  options?: { citations?: import('@/types').KnowledgeCitation[] },
+): ProtocolRun {
   const next = persistRun({
     ...run,
     artifacts: [...(run.artifacts || []), artifact],
@@ -518,6 +523,7 @@ export function appendArtifact(run: ProtocolRun, artifact: ProtocolRunArtifact, 
     phaseId: artifact.phaseId || null,
     artifactId: artifact.id,
     summary: `Emitted ${artifact.kind.replace(/_/g, ' ')}: ${artifact.title}`,
+    citations: options?.citations,
   }, deps)
   return next
 }

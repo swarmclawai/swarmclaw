@@ -22,6 +22,7 @@ import type {
   ExternalAgentRuntime,
   GatewayProfile,
   GuardianCheckpoint,
+  KnowledgeSource,
   LearnedSkill,
   Message,
   ProtocolTemplate,
@@ -126,6 +127,7 @@ const COLLECTIONS = [
   'connectors',
   'documents',
   'document_revisions',
+  'knowledge_sources',
   'webhooks',
   'model_overrides',
   'mcp_servers',
@@ -1428,6 +1430,19 @@ export const saveDocuments = documentsStore.save
 const documentRevisionsStore = createCollectionStore('document_revisions')
 export const loadDocumentRevisions = documentRevisionsStore.load
 export const upsertDocumentRevision = documentRevisionsStore.upsert
+
+// --- Knowledge Sources ---
+const knowledgeSourcesStore = createCollectionStore('knowledge_sources')
+export const loadKnowledgeSources = knowledgeSourcesStore.load as () => Record<string, KnowledgeSource>
+export const saveKnowledgeSources = knowledgeSourcesStore.save as (data: Record<string, KnowledgeSource>) => void
+export const loadKnowledgeSource = knowledgeSourcesStore.loadItem as (id: string) => KnowledgeSource | null
+export const upsertKnowledgeSource = knowledgeSourcesStore.upsert as (id: string, value: KnowledgeSource) => void
+export const upsertKnowledgeSources = knowledgeSourcesStore.upsertMany
+export const patchKnowledgeSource = knowledgeSourcesStore.patch as (
+  id: string,
+  updater: (current: KnowledgeSource | null) => KnowledgeSource | null,
+) => KnowledgeSource | null
+export const deleteKnowledgeSource = knowledgeSourcesStore.deleteItem
 
 // --- Webhooks ---
 const webhooksStore = createCollectionStore('webhooks')

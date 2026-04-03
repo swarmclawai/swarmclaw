@@ -4,6 +4,7 @@ import { isInternalHeartbeatRun } from '@/lib/server/runtime/heartbeat-source'
 import { notify } from '@/lib/server/ws-hub'
 import { errorMessage } from '@/lib/shared-utils'
 import { handleMainLoopRunResult } from '@/lib/server/agents/main-agent-loop'
+import { buildRetrievalSummary } from '@/lib/server/runtime/run-ledger'
 
 import {
   clearDeferredDrain,
@@ -119,6 +120,7 @@ export async function drainExecution(
       next.run.endedAt = next.run.endedAt || now()
       next.run.error = aborted ? (next.run.error || 'Cancelled') : result.error
       next.run.resultPreview = result.text?.slice(0, 280)
+      next.run.retrievalSummary = buildRetrievalSummary(result.citations)
       if (typeof result.inputTokens === 'number') next.run.totalInputTokens = result.inputTokens
       if (typeof result.outputTokens === 'number') next.run.totalOutputTokens = result.outputTokens
       if (typeof result.estimatedCost === 'number') next.run.estimatedCost = result.estimatedCost
@@ -127,6 +129,9 @@ export async function drainExecution(
         persisted: result.persisted,
         hasText: !!result.text,
         error: next.run.error || null,
+      }, {
+        citations: result.citations,
+        retrievalTrace: result.retrievalTrace,
       })
       log.info('session-run', `Run finished ${next.run.id}`, {
         sessionId: next.run.sessionId,

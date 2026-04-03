@@ -469,6 +469,137 @@ export interface MemoryEntry {
   updatedAt: number
 }
 
+export type KnowledgeSourceKind = 'manual' | 'file' | 'url'
+export type KnowledgeSyncStatus = 'ready' | 'syncing' | 'error'
+export type KnowledgeHygieneActionKind = 'sync' | 'reindex' | 'archive' | 'restore' | 'supersede'
+export type KnowledgeHygieneFindingKind = 'stale' | 'duplicate' | 'overlap' | 'broken' | 'archived' | 'superseded'
+
+export interface KnowledgeCitation {
+  sourceId: string
+  sourceTitle: string
+  sourceKind: KnowledgeSourceKind
+  sourceUrl?: string | null
+  sourceLabel?: string | null
+  chunkId: string
+  chunkIndex: number
+  chunkCount: number
+  charStart: number
+  charEnd: number
+  sectionLabel?: string | null
+  snippet: string
+  whyMatched?: string | null
+  score: number
+}
+
+export interface KnowledgeRetrievalTrace {
+  query: string
+  scope: 'source_knowledge'
+  hits: KnowledgeCitation[]
+  retrievedAt: number
+  selectorStatus?: 'not_run' | 'selected' | 'no_match'
+}
+
+export interface KnowledgeSource {
+  id: string
+  kind: KnowledgeSourceKind
+  title: string
+  content?: string | null
+  sourceLabel?: string | null
+  sourceUrl?: string | null
+  sourcePath?: string | null
+  sourceHash?: string | null
+  scope: 'global' | 'agent'
+  agentIds: string[]
+  tags: string[]
+  syncStatus: KnowledgeSyncStatus
+  lastIndexedAt?: number | null
+  lastSyncedAt?: number | null
+  lastError?: string | null
+  archivedAt?: number | null
+  archivedReason?: string | null
+  duplicateOfSourceId?: string | null
+  supersededBySourceId?: string | null
+  maintenanceUpdatedAt?: number | null
+  maintenanceNotes?: string | null
+  nextSyncAt?: number | null
+  lastAutoSyncAt?: number | null
+  chunkCount: number
+  contentLength: number
+  createdAt: number
+  updatedAt: number
+  metadata?: Record<string, unknown>
+}
+
+export interface KnowledgeSearchHit {
+  id: string
+  sourceId: string
+  sourceTitle: string
+  sourceKind: KnowledgeSourceKind
+  sourceUrl?: string | null
+  sourceLabel?: string | null
+  scope: 'global' | 'agent'
+  agentIds: string[]
+  tags: string[]
+  syncStatus: KnowledgeSyncStatus
+  stale: boolean
+  title: string
+  snippet: string
+  content: string
+  chunkIndex: number
+  chunkCount: number
+  charStart: number
+  charEnd: number
+  sectionLabel?: string | null
+  score: number
+  whyMatched?: string | null
+  createdAt: number
+  updatedAt: number
+}
+
+export interface KnowledgeSourceSummary extends KnowledgeSource {
+  stale: boolean
+  topSnippet?: string | null
+  matchCount?: number
+  topScore?: number
+}
+
+export interface KnowledgeSourceDetail {
+  source: KnowledgeSourceSummary
+  chunks: MemoryEntry[]
+}
+
+export interface KnowledgeHygieneFinding {
+  kind: KnowledgeHygieneFindingKind
+  sourceId: string
+  sourceTitle: string
+  relatedSourceId?: string | null
+  relatedSourceTitle?: string | null
+  detail: string
+  createdAt: number
+}
+
+export interface KnowledgeHygieneAction {
+  kind: KnowledgeHygieneActionKind
+  sourceId: string
+  relatedSourceId?: string | null
+  summary: string
+  createdAt: number
+}
+
+export interface KnowledgeHygieneSummary {
+  scannedAt: number
+  counts: {
+    stale: number
+    duplicate: number
+    overlap: number
+    broken: number
+    archived: number
+    superseded: number
+  }
+  findings: KnowledgeHygieneFinding[]
+  recentActions: KnowledgeHygieneAction[]
+}
+
 // --- MCP Servers ---
 
 export type McpTransport = 'stdio' | 'sse' | 'streamable-http'

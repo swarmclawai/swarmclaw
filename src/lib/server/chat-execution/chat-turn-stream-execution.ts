@@ -1,5 +1,5 @@
 import { CONTEXT_OVERFLOW_RE } from '@/lib/providers/error-classification'
-import type { ProviderType } from '@/types'
+import type { KnowledgeRetrievalTrace, ProviderType } from '@/types'
 import { getEnabledCapabilityIds } from '@/lib/capability-selection'
 import { isLocalOpenClawEndpoint } from '@/lib/openclaw/openclaw-endpoint'
 import { streamAgentChat } from '@/lib/server/chat-execution/stream-agent-chat'
@@ -42,6 +42,7 @@ export interface ExecutedPreparedChatTurn {
     outputTokens: number
     received: boolean
   }
+  knowledgeRetrievalTrace?: KnowledgeRetrievalTrace | null
 }
 
 export async function executePreparedChatTurn(params: {
@@ -90,6 +91,7 @@ export async function executePreparedChatTurn(params: {
   let responseCacheHit = false
   let responseCacheInput: LlmResponseCacheKeyInput | null = null
   let durationMs = 0
+  let knowledgeRetrievalTrace: KnowledgeRetrievalTrace | null = null
   const startTs = Date.now()
   const endLlmPerf = perf.start('chat-execution', 'llm-round-trip', {
     sessionId,
@@ -111,6 +113,7 @@ export async function executePreparedChatTurn(params: {
       responseCacheHit,
       durationMs,
       directUsage,
+      knowledgeRetrievalTrace: null,
     }
   }
 
@@ -157,6 +160,7 @@ export async function executePreparedChatTurn(params: {
         promptMode,
       })
       fullResponse = result.finalResponse || result.fullText
+      knowledgeRetrievalTrace = result.knowledgeRetrievalTrace || null
     } else {
       let directHistorySnapshot = isAutoRunNoHistory
         ? (heartbeatLightContext ? [] : getSessionMessages(sessionId).slice(-6))
@@ -298,5 +302,6 @@ export async function executePreparedChatTurn(params: {
     responseCacheHit,
     durationMs,
     directUsage,
+    knowledgeRetrievalTrace,
   }
 }

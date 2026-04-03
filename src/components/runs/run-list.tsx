@@ -8,6 +8,7 @@ import { BottomSheet } from '@/components/shared/bottom-sheet'
 import type { RunEventRecord, SessionRunRecord, SessionRunStatus } from '@/types'
 import { PageLoader } from '@/components/ui/page-loader'
 import { formatElapsed } from '@/lib/format-display'
+import { GroundingPanel } from '@/components/knowledge/grounding-panel'
 
 const STATUS_COLORS: Record<SessionRunStatus, { bg: string; text: string }> = {
   queued: { bg: 'bg-yellow-500/10', text: 'text-yellow-400' },
@@ -84,6 +85,10 @@ export function RunList() {
   }, [])
 
   const filtered = statusFilter ? runs.filter((r) => r.status === statusFilter) : runs
+  const selectedResultGrounding = selectedEvents
+    .slice()
+    .reverse()
+    .find((event) => event.phase === 'status' && ((event.citations?.length || 0) > 0 || event.retrievalTrace?.hits?.length))
 
   if (loading) {
     return <PageLoader label="Loading runs..." />
@@ -240,6 +245,15 @@ export function RunList() {
                 <pre className="text-[11px] text-text-3/80 font-mono whitespace-pre-wrap break-all bg-white/[0.02] rounded-[12px] p-4 max-h-[200px] overflow-auto border border-white/[0.04]">
                   {selected.resultPreview}
                 </pre>
+                {selectedResultGrounding && (
+                  <div className="mt-3">
+                    <GroundingPanel
+                      citations={selectedResultGrounding.citations}
+                      retrievalTrace={selectedResultGrounding.retrievalTrace}
+                      compact
+                    />
+                  </div>
+                )}
               </div>
             )}
 
@@ -262,6 +276,15 @@ export function RunList() {
                         <div className="text-[11px] text-text-2 whitespace-pre-wrap break-words">
                           {event.summary || event.event.text || event.event.toolOutput || event.event.toolName || event.event.t}
                         </div>
+                        {(event.citations?.length || event.retrievalTrace?.hits?.length) ? (
+                          <div className="mt-2">
+                            <GroundingPanel
+                              citations={event.citations}
+                              retrievalTrace={event.retrievalTrace}
+                              compact
+                            />
+                          </div>
+                        ) : null}
                       </div>
                     ))}
                   </div>

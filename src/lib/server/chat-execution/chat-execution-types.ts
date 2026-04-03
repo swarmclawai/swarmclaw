@@ -1,4 +1,9 @@
-import type { MessageToolEvent, SSEEvent } from '@/types'
+import type {
+  KnowledgeCitation,
+  KnowledgeRetrievalTrace,
+  MessageToolEvent,
+  SSEEvent,
+} from '@/types'
 
 export interface ExecuteChatTurnInput {
   sessionId: string
@@ -33,4 +38,6 @@ export interface ExecuteChatTurnResult {
   inputTokens?: number
   outputTokens?: number
   estimatedCost?: number
+  citations?: KnowledgeCitation[]
+  retrievalTrace?: KnowledgeRetrievalTrace | null
 }

@@ -5,6 +5,8 @@
 import type {
   BoardTask,
   Chatroom,
+  KnowledgeCitation,
+  KnowledgeRetrievalTrace,
   MessageToolEvent,
   ProtocolBranchCase,
   ProtocolPhaseDefinition,
@@ -72,6 +74,8 @@ export interface UpsertProtocolTemplateInput {
 export interface ProtocolAgentTurnResult {
   text: string
   toolEvents: MessageToolEvent[]
+  citations?: KnowledgeCitation[]
+  retrievalTrace?: KnowledgeRetrievalTrace | null
 }
 
 export interface ProtocolRunDeps {

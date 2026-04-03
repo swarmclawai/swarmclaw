@@ -1,4 +1,5 @@
 import type { MessageToolEvent } from './message'
+import type { KnowledgeCitation, KnowledgeRetrievalTrace } from './misc'
 
 // --- Structured Session Runs / Protocols ---
 
@@ -140,6 +141,8 @@ export interface ProtocolRunPhaseStateResponse {
   agentId: string
   text: string
   toolEvents?: MessageToolEvent[]
+  citations?: KnowledgeCitation[]
+  retrievalTrace?: KnowledgeRetrievalTrace | null
 }
 
 export interface ProtocolRunPhaseState {
@@ -417,4 +420,5 @@ export interface ProtocolRunEvent {
   taskId?: string | null
   createdAt: number
   data?: Record<string, unknown> | null
+  citations?: KnowledgeCitation[]
 }

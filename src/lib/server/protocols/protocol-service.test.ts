@@ -96,6 +96,105 @@ test('protocol-service creates a hidden transcript run and completes a structure
   assert.equal(output.eventTypes.filter((type) => type === 'phase_completed').length, 5)
 })
 
+test('protocol-service persists citations on participant and artifact events when grounded responses are provided', () => {
+  const output = runWithTempDataDir<{
+    participantCitationCounts: number[]
+    artifactCitationCounts: number[]
+    selectorStatuses: string[]
+  }>(`
+    const storageMod = await import('./src/lib/server/storage')
+    const protocolsMod = await import('./src/lib/server/protocols/protocol-service')
+    const storage = storageMod.default || storageMod
+    const protocols = protocolsMod.default || protocolsMod
+
+    storage.upsertStoredItem('agents', 'agentA', {
+      id: 'agentA',
+      name: 'Agent A',
+      provider: 'ollama',
+      model: 'test-model',
+      systemPrompt: 'test',
+      createdAt: 1,
+      updatedAt: 1,
+    })
+
+    const groundedCitation = {
+      sourceId: 'source-1',
+      sourceTitle: 'Gateway Runbook',
+      sourceKind: 'manual',
+      sourceUrl: null,
+      sourceLabel: null,
+      chunkId: 'chunk-1',
+      chunkIndex: 0,
+      chunkCount: 1,
+      charStart: 0,
+      charEnd: 48,
+      sectionLabel: null,
+      snippet: 'Use blue green deployment for gateway changes.',
+      whyMatched: 'Matched query terms: gateway, deployment',
+      score: 0.92,
+    }
+
+    const run = protocols.createProtocolRun({
+      title: 'Grounded structured run',
+      templateId: 'single_agent_structured_run',
+      participantAgentIds: ['agentA'],
+      facilitatorAgentId: 'agentA',
+      autoStart: false,
+    }, { now: () => 1000 })
+
+    await protocols.runProtocolRun(run.id, {
+      now: () => 2000,
+      executeAgentTurn: async ({ phase }) => {
+        if (phase.kind === 'summarize') {
+          return {
+            text: 'Blue green deployment keeps the rollback path simple.',
+            toolEvents: [],
+            citations: [groundedCitation],
+            retrievalTrace: {
+              query: 'gateway deployment',
+              scope: 'source_knowledge',
+              hits: [groundedCitation],
+              retrievedAt: 2000,
+              selectorStatus: 'selected',
+            },
+          }
+        }
+        if (phase.kind === 'round_robin') {
+          return {
+            text: 'Use blue green deployment for the gateway rollout.',
+            toolEvents: [],
+            citations: [groundedCitation],
+            retrievalTrace: {
+              query: 'gateway rollout',
+              scope: 'source_knowledge',
+              hits: [groundedCitation],
+              retrievedAt: 2000,
+              selectorStatus: 'selected',
+            },
+          }
+        }
+        return { text: 'Opened the session.', toolEvents: [] }
+      },
+    })
+
+    const detail = protocols.getProtocolRunDetail(run.id)
+    const participantEvents = (detail?.events || []).filter((event) => event.type === 'participant_response')
+    const artifactEvents = (detail?.events || []).filter((event) => event.type === 'artifact_emitted')
+
+    console.log(JSON.stringify({
+      participantCitationCounts: participantEvents.map((event) => event.citations?.length || 0),
+      artifactCitationCounts: artifactEvents.map((event) => event.citations?.length || 0),
+      selectorStatuses: participantEvents
+        .map((event) => event.retrievalTrace?.selectorStatus)
+        .filter((value) => typeof value === 'string'),
+    }))
+  `, { prefix: 'swarmclaw-protocol-grounding-' })
+
+  assert.deepEqual(output.participantCitationCounts, [1])
+  assert.deepEqual(output.artifactCitationCounts, [1])
+  assert.deepEqual(output.selectorStatuses, [])
+})
+
 test('protocol-service supports custom template CRUD and operator actions', () => {
   const output = runWithTempDataDir<{
     createdTemplateId: string | null

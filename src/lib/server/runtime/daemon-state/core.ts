@@ -1223,9 +1223,14 @@ function stopConnectorHealthMonitor() {
 
 function runConsolidationTick() {
   import('@/lib/server/memory/memory-consolidation').then(({ runDailyConsolidation, registerConsolidationIdleCallback, registerCompactionIdleCallback }) => {
-    // Wire idle-window callbacks so consolidation and compaction run during quiet periods
+    // Wire idle-window callbacks so consolidation, compaction, and dreaming run during quiet periods
     registerConsolidationIdleCallback()
     registerCompactionIdleCallback()
+    import('@/lib/server/memory/dream-idle-callback').then(({ registerDreamIdleCallback }) => {
+      registerDreamIdleCallback()
+    }).catch((err: unknown) => {
+      log.error(TAG, '[daemon] Dream idle callback registration failed:', errorMessage(err))
+    })
 
     return runDailyConsolidation().then((stats) => {
       if (stats.digests > 0 || stats.pruned > 0 || stats.deduped > 0) {

@@ -73,6 +73,23 @@ Agents have persistent memory across sessions:
 - Memories are automatically surfaced in context when relevant
 - Store important learnings proactively -- don't wait to be asked
 
+### Dreaming
+
+Agents with dreaming enabled automatically consolidate memories during idle periods. You can also trigger a dream manually:
+
+#### Check dream status
+```json
+{ "tool": "memory", "action": "list", "category": "dream_reflection" }
+```
+
+#### Manual dream trigger
+Use the platform API to trigger a dream cycle:
+```json
+{ "tool": "execute", "command": "curl -s -X POST http://localhost:3456/api/memory/dream -H 'Content-Type: application/json' -d '{\"agentId\":\"YOUR_AGENT_ID\"}'" }
+```
+
+Dream cycles produce `dream_reflection` and `consolidated_insight` memories that help maintain a clean, coherent memory store over time.
+
 ### Delegation
 
 Agents can delegate work to other agents:

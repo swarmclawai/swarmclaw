@@ -1,6 +1,7 @@
 import type { ProviderId, ProviderType, OllamaMode } from './provider'
 import type { SessionResetMode, IdentityContinuityState } from './session'
 import type { SkillAllowlistMode } from './skill'
+import type { DreamConfig } from './dream'
 
 // --- Agent / Delegation ---
 
@@ -163,6 +164,12 @@ export interface Agent {
   /** Timestamp of last spend rollup; used to detect window resets. */
   lastSpendRollupAt?: number
   maxFollowupChain?: number
+
+  // Dreaming (idle-time memory consolidation)
+  dreamEnabled?: boolean
+  dreamConfig?: Partial<DreamConfig> | null
+  lastDreamAt?: number | null
+  dreamCycleCount?: number
 
   // Orchestrator Mode
   orchestratorEnabled?: boolean

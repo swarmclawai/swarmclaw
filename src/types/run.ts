@@ -1,4 +1,4 @@
-import type { SSEEvent } from './misc'
+import type { KnowledgeCitation, KnowledgeRetrievalTrace, SSEEvent } from './misc'
 
 // --- Session Runs ---
 
@@ -71,6 +71,7 @@ export interface SessionRunRecord {
   totalInputTokens?: number
   totalOutputTokens?: number
   estimatedCost?: number
+  retrievalSummary?: { citationCount: number; sourceIds: string[] } | null
 }
 
 export interface SessionQueuedTurn {
@@ -107,6 +108,8 @@ export interface RunEventRecord {
   status?: SessionRunStatus
   summary?: string
   event: SSEEvent
+  citations?: KnowledgeCitation[]
+  retrievalTrace?: KnowledgeRetrievalTrace | null
 }
 
 export type RuntimeFailureFamily =

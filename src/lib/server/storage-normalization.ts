@@ -507,6 +507,11 @@ function normalizeStoredRecordInner(
       agent.delegationEnabled = false
       agent.heartbeatEnabled = false
     }
+    // Dreaming defaults
+    if (agent.dreamEnabled === undefined) agent.dreamEnabled = false
+    if (agent.dreamConfig === undefined) agent.dreamConfig = null
+    if (agent.lastDreamAt === undefined) agent.lastDreamAt = null
+    if (typeof agent.dreamCycleCount !== 'number') agent.dreamCycleCount = 0
     // Persisted spend rollup defaults
     if (typeof agent.spentMonthlyCents !== 'number') agent.spentMonthlyCents = 0
     if (typeof agent.spentDailyCents !== 'number') agent.spentDailyCents = 0

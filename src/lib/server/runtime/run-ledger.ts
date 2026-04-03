@@ -1,5 +1,12 @@
 import { genId } from '@/lib/id'
-import type { RunEventRecord, SessionRunRecord, SessionRunStatus, SSEEvent } from '@/types'
+import type {
+  KnowledgeCitation,
+  KnowledgeRetrievalTrace,
+  RunEventRecord,
+  SessionRunRecord,
+  SessionRunStatus,
+  SSEEvent,
+} from '@/types'
 import {
   deleteRuntimeRun,
   deleteRuntimeRunEvent,
@@ -24,6 +31,21 @@ const RESTART_RECOVERABLE_SOURCES = new Set([
 
 function now(): number {
   return Date.now()
+}
+
+export function buildRetrievalSummary(
+  citations?: KnowledgeCitation[] | null,
+): SessionRunRecord['retrievalSummary'] {
+  if (!Array.isArray(citations) || citations.length === 0) return null
+  const sourceIds = Array.from(new Set(
+    citations
+      .map((citation) => (typeof citation.sourceId === 'string' ? citation.sourceId.trim() : ''))
+      .filter(Boolean),
+  ))
+  return {
+    citationCount: citations.length,
+    sourceIds,
+  }
 }
 
 function summarizeEvent(event: SSEEvent): string | undefined {
@@ -82,6 +104,8 @@ export function appendPersistedRunEvent(input: {
   event: SSEEvent
   timestamp?: number
   summary?: string
+  citations?: KnowledgeCitation[]
+  retrievalTrace?: KnowledgeRetrievalTrace | null
 }): RunEventRecord {
   const timestamp = typeof input.timestamp === 'number' && Number.isFinite(input.timestamp)
     ? Math.trunc(input.timestamp)
@@ -99,6 +123,8 @@ export function appendPersistedRunEvent(input: {
     status: input.status,
     summary: input.summary || summarizeEvent(input.event),
     event: input.event,
+    citations: input.citations,
+    retrievalTrace: input.retrievalTrace || undefined,
   }
   upsertRuntimeRunEvent(record.id, record)
   return record
