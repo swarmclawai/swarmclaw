@@ -555,7 +555,7 @@ export function SkillsWorkspace() {
                   Search the marketplace, use Details to learn what a tool does, or Open listing to visit the source page.
                 </p>
 
-                <div className="mt-4 grid gap-2 sm:grid-cols-[minmax(240px,1fr)_auto_auto_auto]">
+                <div className="mt-4 grid gap-2 sm:grid-cols-[minmax(240px,1fr)_auto_auto]">
                   <SearchField
                     value={hubQuery}
                     onChange={setHubQuery}
@@ -577,14 +577,6 @@ export function SkillsWorkspace() {
                   >
                     Search now
                   </button>
-                  <a
-                    href="https://clawhub.ai/skills"
-                    target="_blank"
-                    rel="noreferrer"
-                    className={ghostButtonClassName}
-                  >
-                    Open ClawHub
-                  </a>
                 </div>
 
                 <FilterRow

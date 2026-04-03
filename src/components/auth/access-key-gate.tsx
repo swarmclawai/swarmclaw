@@ -9,6 +9,11 @@ interface AccessKeyGateProps {
 }
 
 const AUTH_CHECK_TIMEOUT_MS = 8_000
+const NETWORK_LINKS = [
+  { href: 'https://www.swarmdock.ai', label: 'SwarmDock' },
+  { href: 'https://swarmrecall.ai', label: 'SwarmRecall' },
+  { href: 'https://swarmrelay.ai', label: 'SwarmRelay' },
+]
 
 function isExpectedAuthCheckError(err: unknown): boolean {
   return isAbortError(err) || isTimeoutError(err)
@@ -421,6 +426,26 @@ export function AccessKeyGate({ onAuthenticated }: AccessKeyGateProps) {
             </form>
           </>
         )}
+
+        <div className="mt-10 border-t border-white/[0.06] pt-5" style={{ animation: 'fade-up 0.6s var(--ease-spring) 0.35s both' }}>
+          <p className="text-[10px] font-700 uppercase tracking-[0.18em] text-text-3/55">
+            Network
+          </p>
+          <div className="mt-3 flex flex-wrap items-center justify-center gap-2.5">
+            {NETWORK_LINKS.map((link) => (
+              <a
+                key={link.href}
+                href={link.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-[12px] text-text-3
+                  no-underline transition-all duration-200 hover:border-white/[0.14] hover:bg-white/[0.06] hover:text-text"
+              >
+                {link.label}
+              </a>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   )

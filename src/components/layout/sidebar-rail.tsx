@@ -16,6 +16,11 @@ import type { AppView } from '@/types'
 
 const RAIL_EXPANDED_KEY = 'sc_rail_expanded'
 const GITHUB_REPO_URL = 'https://github.com/swarmclawai/swarmclaw'
+const NETWORK_LINKS = [
+  { href: 'https://www.swarmdock.ai', label: 'SwarmDock', abbr: 'DO' },
+  { href: 'https://swarmrecall.ai', label: 'SwarmRecall', abbr: 'RE' },
+  { href: 'https://swarmrelay.ai', label: 'SwarmRelay', abbr: 'RL' },
+]
 
 export function SidebarRail({
   onSwitchUser,
@@ -378,6 +383,48 @@ export function SidebarRail({
 
         {/* Bottom: Docs + Daemon + Settings + User */}
         <div className={`flex flex-col gap-1 ${railExpanded ? 'px-3' : 'items-center'}`}>
+          {railExpanded ? (
+            <div className="mb-1">
+              <div className="px-3 pb-1 text-[10px] font-700 uppercase tracking-[0.12em] text-text-3/45">Network</div>
+              <div className="flex flex-col gap-1">
+                {NETWORK_LINKS.map((link) => (
+                  <a
+                    key={link.href}
+                    href={link.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-[10px] text-[13px] font-500 cursor-pointer transition-all
+                      bg-transparent text-text-3 hover:text-text hover:bg-white/[0.04] no-underline"
+                    style={{ fontFamily: 'inherit' }}
+                  >
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-[6px] border border-white/[0.08] bg-white/[0.03] text-[10px] font-700 uppercase tracking-[0.08em] text-text-3/80">
+                      {link.abbr}
+                    </span>
+                    {link.label}
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="ml-auto opacity-40">
+                      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" />
+                    </svg>
+                  </a>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="my-1 h-px w-6 bg-white/[0.06]" />
+              {NETWORK_LINKS.map((link) => (
+                <RailTooltip key={link.href} label={link.label} description="Open product site in a new tab">
+                  <a
+                    href={link.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="rail-btn text-[10px] font-700 uppercase tracking-[0.08em] no-underline"
+                  >
+                    {link.abbr}
+                  </a>
+                </RailTooltip>
+              ))}
+            </>
+          )}
           {railExpanded ? (
             <a
               href="https://swarmclaw.ai/docs"
