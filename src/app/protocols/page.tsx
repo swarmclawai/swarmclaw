@@ -657,13 +657,22 @@ export default function ProtocolsPage() {
                           : editingTemplateId ? 'Save template' : 'Create template'}
                       </button>
                       {editingTemplateId && (
-                        <button
-                          type="button"
-                          onClick={() => void handleDeleteTemplate(editingTemplateId)}
-                          className="rounded-[10px] border border-red-500/20 bg-red-500/10 px-3 py-2 text-[12px] font-700 text-red-200 transition-all hover:bg-red-500/14 cursor-pointer"
-                        >
-                          {templatePending === `delete:${editingTemplateId}` ? 'Deleting…' : 'Delete template'}
-                        </button>
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => router.push(`/protocols/builder/${editingTemplateId}`)}
+                            className="rounded-[10px] border border-blue-500/20 bg-blue-500/10 px-3 py-2 text-[12px] font-700 text-blue-200 transition-all hover:bg-blue-500/14 cursor-pointer"
+                          >
+                            Visual Builder
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleDeleteTemplate(editingTemplateId)}
+                            className="rounded-[10px] border border-red-500/20 bg-red-500/10 px-3 py-2 text-[12px] font-700 text-red-200 transition-all hover:bg-red-500/14 cursor-pointer"
+                          >
+                            {templatePending === `delete:${editingTemplateId}` ? 'Deleting…' : 'Delete template'}
+                          </button>
+                        </>
                       )}
                     </div>
                   </div>
