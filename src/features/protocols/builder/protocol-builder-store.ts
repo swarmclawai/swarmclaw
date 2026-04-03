@@ -3,7 +3,7 @@ import { devtools } from 'zustand/middleware'
 import type { Node, Edge } from '@xyflow/react'
 import type { ProtocolTemplate, ProtocolStepKind, ProtocolBranchCase, ProtocolRepeatConfig, ProtocolParallelConfig, ProtocolJoinConfig, ProtocolForEachConfig, ProtocolSubflowConfig, ProtocolSwarmConfig, ProtocolRunStepStatus } from '@/types'
 
-export interface BuilderNodeData {
+export interface BuilderNodeData extends Record<string, unknown> {
   label: string
   kind: ProtocolStepKind
   instructions?: string | null
@@ -24,7 +24,7 @@ export interface BuilderNodeData {
   runtimeStatus?: ProtocolRunStepStatus | null
 }
 
-export interface BuilderEdgeData {
+export interface BuilderEdgeData extends Record<string, unknown> {
   edgeType: 'default' | 'branch' | 'loop'
   branchCaseId?: string | null
   label?: string | null
