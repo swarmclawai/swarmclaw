@@ -874,6 +874,17 @@ class ExtensionManager {
     try {
       const parsed = JSON.parse(fs.readFileSync(EXTENSION_FAILURES, 'utf8')) as Record<string, ExtensionFailureRecord>
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+      // Prune records older than 7 days
+      const maxAgeMs = 7 * 24 * 60 * 60 * 1000
+      const now = Date.now()
+      let pruned = false
+      for (const key of Object.keys(parsed)) {
+        if (now - (parsed[key].lastFailedAt || 0) > maxAgeMs) {
+          delete parsed[key]
+          pruned = true
+        }
+      }
+      if (pruned) this.writeFailureState(parsed)
       return parsed
     } catch {
       return {}

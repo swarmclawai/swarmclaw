@@ -381,7 +381,7 @@ export function syncExtensionsFromOpenClaw(): { imported: number } {
   const openclawExtensionDir = path.join(config.workspacePath, 'plugins')
   if (!fs.existsSync(openclawExtensionDir)) return { imported: 0 }
 
-  const localExtensionDir = path.join(DATA_DIR, 'plugins')
+  const localExtensionDir = path.join(DATA_DIR, 'extensions')
   ensureDir(localExtensionDir)
 
   const files = fs.readdirSync(openclawExtensionDir).filter((f) => f.endsWith('.js'))
@@ -432,7 +432,7 @@ export function setSharedDeviceToken(token: string): void {
 
 // --- Unified Sync Entry Point ---
 
-export type SyncType = 'memory' | 'workspace' | 'schedules' | 'credentials' | 'plugins'
+export type SyncType = 'memory' | 'workspace' | 'schedules' | 'credentials' | 'extensions'
 
 export interface SyncResult {
   type: SyncType
@@ -467,7 +467,7 @@ export async function runSync(params: {
         case 'credentials':
           results.push({ type, action: 'push', result: pushCredentialsToOpenClaw() })
           break
-        case 'plugins':
+        case 'extensions':
           // Extensions only pull from OpenClaw
           break
       }
@@ -492,7 +492,7 @@ export async function runSync(params: {
         case 'credentials':
           results.push({ type, action: 'pull', result: await pullCredentialsFromOpenClaw() })
           break
-        case 'plugins':
+        case 'extensions':
           results.push({ type, action: 'pull', result: syncExtensionsFromOpenClaw() })
           break
       }

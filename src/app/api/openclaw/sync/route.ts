@@ -4,7 +4,7 @@ import { safeParseBody } from '@/lib/server/safe-parse-body'
 export const dynamic = 'force-dynamic'
 
 const VALID_ACTIONS = new Set(['push', 'pull', 'both'])
-const VALID_TYPES: SyncType[] = ['memory', 'workspace', 'schedules', 'credentials', 'plugins']
+const VALID_TYPES: SyncType[] = ['memory', 'workspace', 'schedules', 'credentials', 'extensions']
 
 export async function POST(req: Request) {
   try {

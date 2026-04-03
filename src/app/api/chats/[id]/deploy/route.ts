@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { execSync } from 'child_process'
+import { execSync, execFileSync } from 'child_process'
 import { notFound } from '@/lib/server/collection-helpers'
 import { safeParseBody } from '@/lib/server/safe-parse-body'
 import { log } from '@/lib/server/logger'
@@ -21,7 +21,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     execSync('git add -A', opts)
     let committed = false
     try {
-      execSync(`git commit -m "${msg.replace(/"/g, '\\"')}"`, opts)
+      execFileSync('git', ['commit', '-m', msg], opts)
       committed = true
     } catch (ce: unknown) {
       const ex = ce as { stdout?: string; stderr?: string }

@@ -21,11 +21,19 @@ if (!IS_BUILD_BOOTSTRAP) {
   loadEnv()
 }
 
+/** Append a key=value to .env.local only if the key doesn't already exist in the file. */
+function appendEnvKeyIfMissing(envPath: string, key: string, value: string): void {
+  const existing = fs.existsSync(envPath) ? fs.readFileSync(envPath, 'utf8') : ''
+  const keyPattern = new RegExp(`^${key}=`, 'm')
+  if (keyPattern.test(existing)) return
+  fs.appendFileSync(envPath, `\n${key}=${value}\n`)
+}
+
 // Auto-generate CREDENTIAL_SECRET if missing
 if (!IS_BUILD_BOOTSTRAP && !process.env.CREDENTIAL_SECRET) {
   const secret = crypto.randomBytes(32).toString('hex')
   const envPath = path.join(process.cwd(), '.env.local')
-  fs.appendFileSync(envPath, `\nCREDENTIAL_SECRET=${secret}\n`)
+  appendEnvKeyIfMissing(envPath, 'CREDENTIAL_SECRET', secret)
   process.env.CREDENTIAL_SECRET = secret
   log.info(TAG, 'Generated CREDENTIAL_SECRET in .env.local')
 }
@@ -35,7 +43,7 @@ const SETUP_FLAG = path.join(DATA_DIR, '.setup_pending')
 if (!IS_BUILD_BOOTSTRAP && !process.env.ACCESS_KEY) {
   const key = crypto.randomBytes(16).toString('hex')
   const envPath = path.join(process.cwd(), '.env.local')
-  fs.appendFileSync(envPath, `\nACCESS_KEY=${key}\n`)
+  appendEnvKeyIfMissing(envPath, 'ACCESS_KEY', key)
   process.env.ACCESS_KEY = key
   fs.writeFileSync(SETUP_FLAG, key)
   log.info(TAG, `ACCESS KEY: ${key} — Use this key to connect from the browser.`)
