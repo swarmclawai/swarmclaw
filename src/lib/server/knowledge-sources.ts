@@ -1056,6 +1056,38 @@ function sameSourceOrigin(left: KnowledgeSource, right: KnowledgeSource): boolea
   return false
 }
 
+function duplicateOriginFingerprint(source: KnowledgeSource): string {
+  if (source.sourceUrl) return `url:${source.sourceUrl}`
+  if (source.sourcePath) return `path:${source.sourcePath}`
+  return `kind:${source.kind}`
+}
+
+function duplicateGroupKey(source: KnowledgeSource): string | null {
+  if (!source.sourceHash) return null
+  const sortedAgentIds = [...source.agentIds].sort()
+  const sortedTags = [...source.tags].map((tag) => tag.toLowerCase()).sort()
+  return [
+    source.sourceHash,
+    source.kind,
+    source.scope,
+    sortedAgentIds.join(','),
+    sortedTags.join(','),
+    duplicateOriginFingerprint(source),
+  ].join('|')
+}
+
+function collectDuplicateGroups(sources: KnowledgeSource[]): Map<string, KnowledgeSource[]> {
+  const duplicateGroups = new Map<string, KnowledgeSource[]>()
+  for (const source of sources) {
+    const groupKey = duplicateGroupKey(source)
+    if (!groupKey) continue
+    const group = duplicateGroups.get(groupKey) || []
+    group.push(source)
+    duplicateGroups.set(groupKey, group)
+  }
+  return duplicateGroups
+}
+
 function canonicalSourceForGroup(group: KnowledgeSource[]): KnowledgeSource {
   return [...group].sort((left, right) => {
     const archiveDelta = Number(sourceIsExcludedByDefault(left)) - Number(sourceIsExcludedByDefault(right))
@@ -1072,14 +1104,7 @@ function buildHygieneSummary(sources: KnowledgeSource[]): KnowledgeHygieneSummar
   const pushFinding = (finding: KnowledgeHygieneFinding) => {
     if (findings.length < MAX_HYGIENE_FINDINGS) findings.push(finding)
   }
-
-  const duplicateGroups = new Map<string, KnowledgeSource[]>()
-  for (const source of sources) {
-    if (!source.sourceHash) continue
-    const group = duplicateGroups.get(source.sourceHash) || []
-    group.push(source)
-    duplicateGroups.set(source.sourceHash, group)
-  }
+  const duplicateGroups = collectDuplicateGroups(sources)
 
   for (const source of sources) {
     if (sourceIsArchived(source)) {
@@ -1185,14 +1210,7 @@ export async function getKnowledgeHygieneSummary(): Promise<KnowledgeHygieneSumm
 export async function runKnowledgeHygieneMaintenance(): Promise<KnowledgeHygieneSummary> {
   await ensureLegacyKnowledgeBackfill()
   const sources = listStoredSources()
-
-  const duplicateGroups = new Map<string, KnowledgeSource[]>()
-  for (const source of sources) {
-    if (!source.sourceHash) continue
-    const group = duplicateGroups.get(source.sourceHash) || []
-    group.push(source)
-    duplicateGroups.set(source.sourceHash, group)
-  }
+  const duplicateGroups = collectDuplicateGroups(sources)
 
   for (const source of sources) {
     if (sourceIsExcludedByDefault(source)) continue

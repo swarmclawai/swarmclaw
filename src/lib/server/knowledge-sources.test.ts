@@ -213,3 +213,49 @@ test('runKnowledgeHygieneMaintenance reindexes stale file sources and archives e
   assert.ok(output.recentActionKinds.includes('archive'))
   assert.ok(output.recentActionKinds.includes('reindex') || output.recentActionKinds.includes('sync'))
 })
+
+test('runKnowledgeHygieneMaintenance keeps same-content sources separate when visibility differs', () => {
+  const output = runWithTempDataDir<{
+    globalArchived: boolean
+    agentArchived: boolean
+    agent1Hits: number
+    agent2Hits: number
+  }>(`
+    const knowledgeMod = await import('./src/lib/server/knowledge-sources.ts')
+    const knowledge = knowledgeMod.default || knowledgeMod
+
+    const globalSource = await knowledge.createKnowledgeSource({
+      kind: 'manual',
+      title: 'Global Policy',
+      content: 'identical content',
+      scope: 'global',
+    })
+
+    const agentSource = await knowledge.createKnowledgeSource({
+      kind: 'manual',
+      title: 'Scoped Policy',
+      content: 'identical content',
+      scope: 'agent',
+      agentIds: ['agent-1'],
+    })
+
+    await knowledge.runKnowledgeHygieneMaintenance()
+
+    const globalDetail = await knowledge.getKnowledgeSourceDetail(globalSource.source.id)
+    const agentDetail = await knowledge.getKnowledgeSourceDetail(agentSource.source.id)
+    const agent1Hits = await knowledge.searchKnowledgeHits({ query: 'identical', viewerAgentId: 'agent-1' })
+    const agent2Hits = await knowledge.searchKnowledgeHits({ query: 'identical', viewerAgentId: 'agent-2' })
+
+    console.log(JSON.stringify({
+      globalArchived: !!globalDetail?.source?.archivedAt,
+      agentArchived: !!agentDetail?.source?.archivedAt,
+      agent1Hits: agent1Hits.length,
+      agent2Hits: agent2Hits.length,
+    }))
+  `, { prefix: 'swarmclaw-knowledge-visibility-' })
+
+  assert.equal(output.globalArchived, false)
+  assert.equal(output.agentArchived, false)
+  assert.equal(output.agent1Hits, 2)
+  assert.equal(output.agent2Hits, 1)
+})
