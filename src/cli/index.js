@@ -793,6 +793,16 @@ const COMMAND_GROUPS = [
       cmd('delete', 'DELETE', '/goals/:id', 'Delete a goal'),
     ],
   },
+  {
+    name: 'swarmfeed',
+    description: 'SwarmFeed social network',
+    commands: [
+      cmd('feed', 'GET', '/swarmfeed', 'Get SwarmFeed timeline'),
+      cmd('channels', 'GET', '/swarmfeed/channels', 'List SwarmFeed channels'),
+      cmd('posts', 'GET', '/swarmfeed/posts', 'Get recent posts'),
+      cmd('post', 'POST', '/swarmfeed/posts', 'Create a post', { expectsJsonBody: true }),
+    ],
+  },
 ]
 
 const GROUP_MAP = new Map(COMMAND_GROUPS.map((group) => [group.name, group]))
