@@ -64,7 +64,7 @@ export function ProtocolBuilderCanvas() {
 
   const onEdgesChange = useCallback(
     (changes: EdgeChange[]) => {
-      setEdges(applyEdgeChanges(changes, edges))
+      setEdges(applyEdgeChanges(changes, edges) as typeof edges)
     },
     [edges, setEdges],
   )

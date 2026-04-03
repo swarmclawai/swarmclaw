@@ -1,4 +1,4 @@
-import { Handle, Position, type NodeProps } from '@xyflow/react'
+import { Handle, Position, type NodeProps, type Node } from '@xyflow/react'
 import { cn } from '@/lib/utils'
 import type { BuilderNodeData } from '@/features/protocols/builder/protocol-builder-store'
 
@@ -23,7 +23,7 @@ const RUNTIME_RING: Record<string, string> = {
   ready: 'ring-2 ring-amber-400',
 }
 
-export function PhaseNode({ data, selected }: NodeProps<BuilderNodeData>) {
+export function PhaseNode({ data, selected }: NodeProps<Node<BuilderNodeData>>) {
   const style = KIND_STYLES[data.kind] || KIND_STYLES.present
   const runtimeRing = data.runtimeStatus ? RUNTIME_RING[data.runtimeStatus] : ''
 

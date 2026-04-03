@@ -1,8 +1,8 @@
-import { Handle, Position, type NodeProps } from '@xyflow/react'
+import { Handle, Position, type NodeProps, type Node } from '@xyflow/react'
 import { cn } from '@/lib/utils'
 import type { BuilderNodeData } from '@/features/protocols/builder/protocol-builder-store'
 
-export function ParallelNode({ data, selected }: NodeProps<BuilderNodeData>) {
+export function ParallelNode({ data, selected }: NodeProps<Node<BuilderNodeData>>) {
   const branchCount = data.parallel?.branches.length || 1
 
   return (

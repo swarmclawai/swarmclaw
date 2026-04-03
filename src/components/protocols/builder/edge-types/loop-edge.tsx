@@ -1,7 +1,7 @@
-import { BaseEdge, getBezierPath, type EdgeProps } from '@xyflow/react'
+import { BaseEdge, getBezierPath, type EdgeProps, type Edge } from '@xyflow/react'
 import type { BuilderEdgeData } from '@/features/protocols/builder/protocol-builder-store'
 
-export function LoopEdge(props: EdgeProps<BuilderEdgeData>) {
+export function LoopEdge(props: EdgeProps<Edge<BuilderEdgeData>>) {
   const { sourceX, sourceY, targetX, targetY, markerEnd, selected } = props
   const [edgePath] = getBezierPath({ sourceX, sourceY, targetX, targetY })
 

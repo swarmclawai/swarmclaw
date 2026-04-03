@@ -69,7 +69,7 @@ describe('validateDAG', () => {
   it('valid linear graph has no errors', () => {
     const nodes = [makeNode('a'), makeNode('b'), makeNode('c', 'complete')]
     const edges = [makeEdge('a', 'b'), makeEdge('b', 'c')]
-    const { errors, warnings } = validateDAG(nodes, edges)
+    const { errors } = validateDAG(nodes, edges)
     expect(errors).toHaveLength(0)
   })
 
