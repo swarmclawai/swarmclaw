@@ -1,40 +1,17 @@
 import assert from 'node:assert/strict'
-import fs from 'node:fs'
-import os from 'node:os'
-import path from 'node:path'
-import { spawnSync } from 'node:child_process'
 import test from 'node:test'
-
-const repoRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../../..')
-
-function runWithTempDataDir(script: string) {
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'swarmclaw-chat-grounding-'))
-  try {
-    const result = spawnSync(process.execPath, ['--import', 'tsx', '--input-type=module', '--eval', script], {
-      cwd: repoRoot,
-      env: {
-        ...process.env,
-        DATA_DIR: path.join(tempDir, 'data'),
-        WORKSPACE_DIR: path.join(tempDir, 'workspace'),
-        BROWSER_PROFILES_DIR: path.join(tempDir, 'browser-profiles'),
-      },
-      encoding: 'utf-8',
-    })
-    assert.equal(result.status, 0, result.stderr || result.stdout || 'subprocess failed')
-    const lines = (result.stdout || '')
-      .trim()
-      .split('\n')
-      .map((line) => line.trim())
-      .filter(Boolean)
-    const jsonLine = [...lines].reverse().find((line) => line.startsWith('{'))
-    return JSON.parse(jsonLine || '{}')
-  } finally {
-    fs.rmSync(tempDir, { recursive: true, force: true })
-  }
-}
+import { runWithTempDataDir } from '@/lib/server/test-utils/run-with-temp-data-dir'
 
 test('executeSessionChatTurn persists citations and retrieval traces on grounded assistant messages', () => {
-  const output = runWithTempDataDir(`
+  const output = runWithTempDataDir<{
+    persisted: boolean
+    resultCitationCount: number
+    resultSelectorStatus: string | null
+    messageCitationCount: number
+    messageTraceHitCount: number
+    messageSelectorStatus: string | null
+    messageSourceTitle: string | null
+  }>(`
     const storageMod = await import('@/lib/server/storage')
     const providersMod = await import('@/lib/providers/index')
     const threadMod = await import('@/lib/server/agents/agent-thread-session')
@@ -115,7 +92,11 @@ test('executeSessionChatTurn persists citations and retrieval traces on grounded
       messageSelectorStatus: lastMessage?.retrievalTrace?.selectorStatus || null,
       messageSourceTitle: lastMessage?.citations?.[0]?.sourceTitle || null,
     }))
-  `)
+  `, {
+    prefix: 'swarmclaw-chat-grounding-',
+    dataDir: 'data',
+    browserProfilesDir: 'browser-profiles',
+  })
 
   assert.equal(output.persisted, true)
   assert.equal(output.resultCitationCount >= 1, true)

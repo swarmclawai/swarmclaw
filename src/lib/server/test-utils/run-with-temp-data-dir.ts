@@ -10,19 +10,32 @@ export function runWithTempDataDir<T = unknown>(
   script: string,
   options: {
     prefix?: string
+    dataDir?: string
+    workspaceDir?: string
+    browserProfilesDir?: string
   } = {},
 ): T {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), options.prefix || 'swarmclaw-test-'))
-  const workspaceDir = path.join(tempDir, 'workspace')
+  const resolveTempPath = (value: string | undefined, fallback: string): string =>
+    path.isAbsolute(value || '') ? String(value) : path.join(tempDir, value || fallback)
+  const dataDir = resolveTempPath(options.dataDir, '')
+  const workspaceDir = resolveTempPath(options.workspaceDir, 'workspace')
+  const browserProfilesDir = options.browserProfilesDir
+    ? resolveTempPath(options.browserProfilesDir, 'browser-profiles')
+    : null
+
+  fs.mkdirSync(dataDir, { recursive: true })
   fs.mkdirSync(workspaceDir, { recursive: true })
+  if (browserProfilesDir) fs.mkdirSync(browserProfilesDir, { recursive: true })
 
   try {
     const result = spawnSync(process.execPath, ['--import', 'tsx', '--input-type=module', '--eval', script], {
       cwd: repoRoot,
       env: {
         ...process.env,
-        DATA_DIR: tempDir,
+        DATA_DIR: dataDir,
         WORKSPACE_DIR: workspaceDir,
+        ...(browserProfilesDir ? { BROWSER_PROFILES_DIR: browserProfilesDir } : {}),
       },
       encoding: 'utf-8',
     })

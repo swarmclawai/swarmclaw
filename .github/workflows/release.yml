@@ -123,7 +123,7 @@ jobs:
 
       - name: Prepare release body
         id: release_body
-        if: always()
+        if: success() && steps.package_version.outputs.version != '' && steps.image.outputs.name != ''
         run: |
           BODY_PATH="$(mktemp)"
           if [ "${{ steps.npm_version.outputs.exists }}" = "true" ] || [ "${{ steps.npm_publish.outcome }}" = "success" ]; then
@@ -139,7 +139,7 @@ jobs:
           echo "path=$BODY_PATH" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
-        if: always()
+        if: success() && steps.release_body.outputs.path != ''
         uses: softprops/action-gh-release@v2
         with:
           prerelease: ${{ contains(github.ref_name, '-') }}

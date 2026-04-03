@@ -1,40 +1,23 @@
 import assert from 'node:assert/strict'
-import fs from 'node:fs'
-import os from 'node:os'
-import path from 'node:path'
-import { spawnSync } from 'node:child_process'
 import test from 'node:test'
+import { runWithTempDataDir as runWithSharedTempDataDir } from '@/lib/server/test-utils/run-with-temp-data-dir'
 
-const repoRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../../..')
-
-function runWithTempDataDir(script: string) {
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'swarmclaw-chat-disabled-'))
-  try {
-    const result = spawnSync(process.execPath, ['--import', 'tsx', '--input-type=module', '--eval', script], {
-      cwd: repoRoot,
-      env: {
-        ...process.env,
-        DATA_DIR: path.join(tempDir, 'data'),
-        WORKSPACE_DIR: path.join(tempDir, 'workspace'),
-        BROWSER_PROFILES_DIR: path.join(tempDir, 'browser-profiles'),
-      },
-      encoding: 'utf-8',
-    })
-    assert.equal(result.status, 0, result.stderr || result.stdout || 'subprocess failed')
-    const lines = (result.stdout || '')
-      .trim()
-      .split('\n')
-      .map((line) => line.trim())
-      .filter(Boolean)
-    const jsonLine = [...lines].reverse().find((line) => line.startsWith('{'))
-    return JSON.parse(jsonLine || '{}')
-  } finally {
-    fs.rmSync(tempDir, { recursive: true, force: true })
-  }
+function runWithTempDataDir<T = unknown>(script: string): T {
+  return runWithSharedTempDataDir<T>(script, {
+    prefix: 'swarmclaw-chat-disabled-',
+    dataDir: 'data',
+    browserProfilesDir: 'browser-profiles',
+  })
 }
 
 test('executeSessionChatTurn persists a visible error for disabled agents', () => {
-  const output = runWithTempDataDir(`
+  const output = runWithTempDataDir<{
+    error: string | null
+    text: string | null
+    persisted: boolean
+    lastRole: string | null
+    lastText: string | null
+  }>(`
     const storageMod = await import('@/lib/server/storage')
     const storage = storageMod.default || storageMod['module.exports'] || storageMod
     const threadMod = await import('@/lib/server/agents/agent-thread-session')
