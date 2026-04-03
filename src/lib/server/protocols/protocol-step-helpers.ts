@@ -58,6 +58,7 @@ export function phaseFromStep(step: ProtocolStepDefinition): ProtocolPhaseDefini
     completionCriteria: step.completionCriteria || null,
     taskConfig: step.taskConfig || null,
     delegationConfig: step.delegationConfig || null,
+    a2aDelegateConfig: step.a2aDelegateConfig || null,
   }
 }
 

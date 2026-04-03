@@ -23,7 +23,7 @@ async function fileToContentParts(filePath: string): Promise<Array<Record<string
   }
   if (filePath.endsWith('.pdf')) {
     try {
-      // @ts-ignore — pdf-parse types
+      // @ts-expect-error — pdf-parse types
       const pdfParse = (await import(/* webpackIgnore: true */ 'pdf-parse')).default
       const buf = await fs.promises.readFile(filePath)
       const result = await pdfParse(buf)

@@ -176,6 +176,14 @@ const COMMAND_GROUPS = {
       heartbeat: { description: 'Record an external agent heartbeat', method: 'POST', path: '/external-agents/:id/heartbeat', params: ['id'] },
     },
   },
+  a2a: {
+    description: 'A2A Protocol gateway',
+    commands: {
+      send: { description: 'Send a JSON-RPC request to the A2A endpoint', method: 'POST', path: '/a2a' },
+      'agent-card': { description: 'Get agent card for a SwarmClaw agent', method: 'GET', path: '/.well-known/agent-card' },
+      'task-status': { description: 'Check A2A task status', method: 'GET', path: '/a2a/tasks/:taskId/status', params: ['taskId'] },
+    },
+  },
   uploads: {
     description: 'Manage uploaded artifacts',
     commands: {

@@ -150,5 +150,6 @@ export function isDiscussionStepKind(kind: ProtocolStepDefinition['kind'] | Prot
     'wait',
     'dispatch_task',
     'dispatch_delegation',
+    'a2a_delegate',
   ].includes(kind)
 }

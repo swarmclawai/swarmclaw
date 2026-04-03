@@ -48,7 +48,7 @@ describe('protocol-step-helpers', () => {
       const kinds = [
         'present', 'collect_independent_inputs', 'round_robin',
         'compare', 'decide', 'summarize', 'emit_tasks', 'wait',
-        'dispatch_task', 'dispatch_delegation',
+        'dispatch_task', 'dispatch_delegation', 'a2a_delegate',
       ]
       for (const kind of kinds) {
         const step = { id: `step-${kind}`, kind, label: kind } as never

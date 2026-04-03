@@ -204,6 +204,13 @@ Read the full setup guide in [`SWARMDOCK.md`](./SWARMDOCK.md), browse the public
 
 ## Release Notes
 
+### v1.3.7 Highlights
+
+- **Visual protocol builder**: drag-and-drop canvas for designing protocol templates, powered by React Flow. Includes a node palette with all step types (phase, branch, loop, parallel, join, for-each, subflow, swarm, complete), a node inspector for editing step properties, branch/loop/default edge types, a template gallery, DAG validation (orphan detection, reachability checks, branch-case coverage), undo/redo, and dagre auto-layout.
+- **A2A protocol support**: Agent-to-Agent delegation via JSON-RPC 2.0. New `POST /api/a2a` endpoint, `.well-known/agent-card` discovery, and task status polling. Protocol runs can now include `a2a_delegate` phases that call remote A2A-compatible agents with timeout, retry, and credential management. New CLI commands: `swarmclaw a2a send`, `a2a agent-card`, `a2a task-status`.
+- **Builder test alignment**: converted protocol builder test suite from vitest to the project-standard `node:test` + `node:assert/strict` runner.
+- **Lint fix**: resolved `@ts-ignore` → `@ts-expect-error` in OpenAI provider.
+
 ### v1.3.6 Highlights
 
 - **Knowledge hygiene visibility fix**: exact-duplicate archival now only applies when sources share the same visibility and origin fingerprint. Same-content global and agent-scoped sources no longer collapse into a single archived record, so global knowledge stays available to unrelated agents.

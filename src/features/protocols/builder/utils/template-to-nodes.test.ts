@@ -1,4 +1,5 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it } from 'node:test'
+import assert from 'node:assert/strict'
 import { getNodeTypeForKind, templateToNodes } from './template-to-nodes'
 import type { ProtocolTemplate, ProtocolStepDefinition, ProtocolPhaseDefinition } from '@/types'
 
@@ -20,40 +21,40 @@ describe('getNodeTypeForKind', () => {
     ] as const
 
     for (const kind of phaseKinds) {
-      expect(getNodeTypeForKind(kind)).toBe('phase')
+      assert.strictEqual(getNodeTypeForKind(kind), 'phase')
     }
   })
 
   it('maps branch to "branch"', () => {
-    expect(getNodeTypeForKind('branch')).toBe('branch')
+    assert.strictEqual(getNodeTypeForKind('branch'), 'branch')
   })
 
   it('maps repeat to "loop"', () => {
-    expect(getNodeTypeForKind('repeat')).toBe('loop')
+    assert.strictEqual(getNodeTypeForKind('repeat'), 'loop')
   })
 
   it('maps parallel to "parallel"', () => {
-    expect(getNodeTypeForKind('parallel')).toBe('parallel')
+    assert.strictEqual(getNodeTypeForKind('parallel'), 'parallel')
   })
 
   it('maps join to "join"', () => {
-    expect(getNodeTypeForKind('join')).toBe('join')
+    assert.strictEqual(getNodeTypeForKind('join'), 'join')
   })
 
   it('maps complete to "complete"', () => {
-    expect(getNodeTypeForKind('complete')).toBe('complete')
+    assert.strictEqual(getNodeTypeForKind('complete'), 'complete')
   })
 
   it('maps for_each to "forEach"', () => {
-    expect(getNodeTypeForKind('for_each')).toBe('forEach')
+    assert.strictEqual(getNodeTypeForKind('for_each'), 'forEach')
   })
 
   it('maps subflow to "subflow"', () => {
-    expect(getNodeTypeForKind('subflow')).toBe('subflow')
+    assert.strictEqual(getNodeTypeForKind('subflow'), 'subflow')
   })
 
   it('maps swarm_claim to "swarm"', () => {
-    expect(getNodeTypeForKind('swarm_claim')).toBe('swarm')
+    assert.strictEqual(getNodeTypeForKind('swarm_claim'), 'swarm')
   })
 })
 
@@ -86,8 +87,8 @@ describe('templateToNodes — node creation', () => {
       makeStep({ id: 'step-2', label: 'Step Two', kind: 'decide' }),
     ]
     const { nodes } = templateToNodes(makeTemplate({ steps }))
-    expect(nodes).toHaveLength(2)
-    expect(nodes.map((n) => n.id)).toEqual(['step-1', 'step-2'])
+    assert.strictEqual(nodes.length, 2)
+    assert.deepStrictEqual(nodes.map((n) => n.id), ['step-1', 'step-2'])
   })
 
   it('sets correct node type from kind', () => {
@@ -104,15 +105,15 @@ describe('templateToNodes — node creation', () => {
     ]
     const { nodes } = templateToNodes(makeTemplate({ steps }))
     const typeMap = Object.fromEntries(nodes.map((n) => [n.id, n.type]))
-    expect(typeMap['phase-step']).toBe('phase')
-    expect(typeMap['branch-step']).toBe('branch')
-    expect(typeMap['loop-step']).toBe('loop')
-    expect(typeMap['parallel-step']).toBe('parallel')
-    expect(typeMap['join-step']).toBe('join')
-    expect(typeMap['complete-step']).toBe('complete')
-    expect(typeMap['foreach-step']).toBe('forEach')
-    expect(typeMap['subflow-step']).toBe('subflow')
-    expect(typeMap['swarm-step']).toBe('swarm')
+    assert.strictEqual(typeMap['phase-step'], 'phase')
+    assert.strictEqual(typeMap['branch-step'], 'branch')
+    assert.strictEqual(typeMap['loop-step'], 'loop')
+    assert.strictEqual(typeMap['parallel-step'], 'parallel')
+    assert.strictEqual(typeMap['join-step'], 'join')
+    assert.strictEqual(typeMap['complete-step'], 'complete')
+    assert.strictEqual(typeMap['foreach-step'], 'forEach')
+    assert.strictEqual(typeMap['subflow-step'], 'subflow')
+    assert.strictEqual(typeMap['swarm-step'], 'swarm')
   })
 
   it('copies step data fields into node data', () => {
@@ -128,13 +129,13 @@ describe('templateToNodes — node creation', () => {
     })
     const { nodes } = templateToNodes(makeTemplate({ steps: [step] }))
     const data = nodes[0].data
-    expect(data.label).toBe('My Step')
-    expect(data.kind).toBe('decide')
-    expect(data.instructions).toBe('Do the thing')
-    expect(data.turnLimit).toBe(3)
-    expect(data.completionCriteria).toBe('Done when X')
-    expect(data.outputKey).toBe('result')
-    expect(data.dependsOnStepIds).toEqual(['step-0'])
+    assert.strictEqual(data.label, 'My Step')
+    assert.strictEqual(data.kind, 'decide')
+    assert.strictEqual(data.instructions, 'Do the thing')
+    assert.strictEqual(data.turnLimit, 3)
+    assert.strictEqual(data.completionCriteria, 'Done when X')
+    assert.strictEqual(data.outputKey, 'result')
+    assert.deepStrictEqual(data.dependsOnStepIds, ['step-0'])
   })
 })
 
@@ -145,13 +146,13 @@ describe('templateToNodes — edge creation', () => {
       makeStep({ id: 'step-2' }),
     ]
     const { edges } = templateToNodes(makeTemplate({ steps }))
-    expect(edges).toHaveLength(1)
+    assert.strictEqual(edges.length, 1)
     const edge = edges[0]
-    expect(edge.id).toBe('step-1--step-2')
-    expect(edge.source).toBe('step-1')
-    expect(edge.target).toBe('step-2')
-    expect(edge.type).toBe('default')
-    expect(edge.data?.edgeType).toBe('default')
+    assert.strictEqual(edge.id, 'step-1--step-2')
+    assert.strictEqual(edge.source, 'step-1')
+    assert.strictEqual(edge.target, 'step-2')
+    assert.strictEqual(edge.type, 'default')
+    assert.strictEqual(edge.data?.edgeType, 'default')
   })
 
   it('creates branch edges from branchCases', () => {
@@ -169,19 +170,19 @@ describe('templateToNodes — edge creation', () => {
     ]
     const { edges } = templateToNodes(makeTemplate({ steps }))
     const branchEdges = edges.filter((e) => e.data?.edgeType === 'branch')
-    expect(branchEdges).toHaveLength(2)
+    assert.strictEqual(branchEdges.length, 2)
 
     const yesEdge = branchEdges.find((e) => e.id === 'branch-step--case-yes')
-    expect(yesEdge).toBeDefined()
-    expect(yesEdge?.source).toBe('branch-step')
-    expect(yesEdge?.target).toBe('step-yes')
-    expect(yesEdge?.sourceHandle).toBe('case-yes')
-    expect(yesEdge?.data?.branchCaseId).toBe('case-yes')
-    expect(yesEdge?.data?.label).toBe('Yes')
+    assert.notStrictEqual(yesEdge, undefined)
+    assert.strictEqual(yesEdge?.source, 'branch-step')
+    assert.strictEqual(yesEdge?.target, 'step-yes')
+    assert.strictEqual(yesEdge?.sourceHandle, 'case-yes')
+    assert.strictEqual(yesEdge?.data?.branchCaseId, 'case-yes')
+    assert.strictEqual(yesEdge?.data?.label, 'Yes')
 
     const noEdge = branchEdges.find((e) => e.id === 'branch-step--case-no')
-    expect(noEdge).toBeDefined()
-    expect(noEdge?.target).toBe('step-no')
+    assert.notStrictEqual(noEdge, undefined)
+    assert.strictEqual(noEdge?.target, 'step-no')
   })
 
   it('creates a branch edge for defaultNextStepId with label "Default"', () => {
@@ -199,14 +200,14 @@ describe('templateToNodes — edge creation', () => {
     ]
     const { edges } = templateToNodes(makeTemplate({ steps }))
     const defaultEdge = edges.find((e) => e.id === 'branch-step--default')
-    expect(defaultEdge).toBeDefined()
-    expect(defaultEdge?.source).toBe('branch-step')
-    expect(defaultEdge?.target).toBe('step-default')
-    expect(defaultEdge?.sourceHandle).toBe('default')
-    expect(defaultEdge?.type).toBe('branch')
-    expect(defaultEdge?.label).toBe('Default')
-    expect(defaultEdge?.data?.edgeType).toBe('branch')
-    expect(defaultEdge?.data?.label).toBe('Default')
+    assert.notStrictEqual(defaultEdge, undefined)
+    assert.strictEqual(defaultEdge?.source, 'branch-step')
+    assert.strictEqual(defaultEdge?.target, 'step-default')
+    assert.strictEqual(defaultEdge?.sourceHandle, 'default')
+    assert.strictEqual(defaultEdge?.type, 'branch')
+    assert.strictEqual(defaultEdge?.label, 'Default')
+    assert.strictEqual(defaultEdge?.data?.edgeType, 'branch')
+    assert.strictEqual(defaultEdge?.data?.label, 'Default')
   })
 
   it('creates a loop edge from repeat.bodyStepId', () => {
@@ -223,13 +224,13 @@ describe('templateToNodes — edge creation', () => {
     ]
     const { edges } = templateToNodes(makeTemplate({ steps }))
     const loopEdge = edges.find((e) => e.id === 'loop-step--loop')
-    expect(loopEdge).toBeDefined()
-    expect(loopEdge?.source).toBe('loop-step')
-    expect(loopEdge?.target).toBe('body-step')
-    expect(loopEdge?.sourceHandle).toBe('loop-back')
-    expect(loopEdge?.type).toBe('loop')
-    expect(loopEdge?.data?.edgeType).toBe('loop')
-    expect(loopEdge?.data?.isLoopback).toBe(true)
+    assert.notStrictEqual(loopEdge, undefined)
+    assert.strictEqual(loopEdge?.source, 'loop-step')
+    assert.strictEqual(loopEdge?.target, 'body-step')
+    assert.strictEqual(loopEdge?.sourceHandle, 'loop-back')
+    assert.strictEqual(loopEdge?.type, 'loop')
+    assert.strictEqual(loopEdge?.data?.edgeType, 'loop')
+    assert.strictEqual(loopEdge?.data?.isLoopback, true)
   })
 
   it('creates no edges when steps have no connections', () => {
@@ -238,7 +239,7 @@ describe('templateToNodes — edge creation', () => {
       makeStep({ id: 'step-2' }),
     ]
     const { edges } = templateToNodes(makeTemplate({ steps }))
-    expect(edges).toHaveLength(0)
+    assert.strictEqual(edges.length, 0)
   })
 })
 
@@ -249,9 +250,9 @@ describe('templateToNodes — fallback to defaultPhases', () => {
       { id: 'phase-2', kind: 'decide', label: 'Decide' },
     ]
     const { nodes } = templateToNodes(makeTemplate({ defaultPhases: phases }))
-    expect(nodes).toHaveLength(2)
-    expect(nodes[0].id).toBe('phase-1')
-    expect(nodes[1].id).toBe('phase-2')
+    assert.strictEqual(nodes.length, 2)
+    assert.strictEqual(nodes[0].id, 'phase-1')
+    assert.strictEqual(nodes[1].id, 'phase-2')
   })
 
   it('uses defaultPhases when steps is an empty array', () => {
@@ -259,8 +260,8 @@ describe('templateToNodes — fallback to defaultPhases', () => {
       { id: 'phase-1', kind: 'summarize', label: 'Summarize' },
     ]
     const { nodes } = templateToNodes(makeTemplate({ defaultPhases: phases, steps: [] }))
-    expect(nodes).toHaveLength(1)
-    expect(nodes[0].id).toBe('phase-1')
+    assert.strictEqual(nodes.length, 1)
+    assert.strictEqual(nodes[0].id, 'phase-1')
   })
 
   it('creates sequential edges between defaultPhases', () => {
@@ -270,13 +271,13 @@ describe('templateToNodes — fallback to defaultPhases', () => {
       { id: 'phase-3', kind: 'summarize', label: 'Summarize' },
     ]
     const { edges } = templateToNodes(makeTemplate({ defaultPhases: phases }))
-    expect(edges).toHaveLength(2)
-    expect(edges[0].id).toBe('phase-1--phase-2')
-    expect(edges[0].source).toBe('phase-1')
-    expect(edges[0].target).toBe('phase-2')
-    expect(edges[1].id).toBe('phase-2--phase-3')
-    expect(edges[1].source).toBe('phase-2')
-    expect(edges[1].target).toBe('phase-3')
+    assert.strictEqual(edges.length, 2)
+    assert.strictEqual(edges[0].id, 'phase-1--phase-2')
+    assert.strictEqual(edges[0].source, 'phase-1')
+    assert.strictEqual(edges[0].target, 'phase-2')
+    assert.strictEqual(edges[1].id, 'phase-2--phase-3')
+    assert.strictEqual(edges[1].source, 'phase-2')
+    assert.strictEqual(edges[1].target, 'phase-3')
   })
 
   it('copies phase data fields into node data', () => {
@@ -292,11 +293,11 @@ describe('templateToNodes — fallback to defaultPhases', () => {
     ]
     const { nodes } = templateToNodes(makeTemplate({ defaultPhases: phases }))
     const data = nodes[0].data
-    expect(data.label).toBe('Present Phase')
-    expect(data.kind).toBe('present')
-    expect(data.instructions).toBe('Do the presentation')
-    expect(data.turnLimit).toBe(2)
-    expect(data.completionCriteria).toBe('All presented')
+    assert.strictEqual(data.label, 'Present Phase')
+    assert.strictEqual(data.kind, 'present')
+    assert.strictEqual(data.instructions, 'Do the presentation')
+    assert.strictEqual(data.turnLimit, 2)
+    assert.strictEqual(data.completionCriteria, 'All presented')
   })
 
   it('uses steps when both steps and defaultPhases are present and steps is non-empty', () => {
@@ -307,7 +308,7 @@ describe('templateToNodes — fallback to defaultPhases', () => {
       { id: 'phase-1', kind: 'present', label: 'The Phase' },
     ]
     const { nodes } = templateToNodes(makeTemplate({ steps, defaultPhases: phases }))
-    expect(nodes).toHaveLength(1)
-    expect(nodes[0].id).toBe('step-1')
+    assert.strictEqual(nodes.length, 1)
+    assert.strictEqual(nodes[0].id, 'step-1')
   })
 })
