@@ -517,6 +517,17 @@ function normalizeStoredRecordInner(
     if (typeof agent.spentDailyCents !== 'number') agent.spentDailyCents = 0
     if (typeof agent.spentHourlyCents !== 'number') agent.spentHourlyCents = 0
     if (typeof agent.lastSpendRollupAt !== 'number') agent.lastSpendRollupAt = 0
+    // SwarmFeed defaults
+    if (typeof agent.swarmfeedEnabled !== 'boolean') agent.swarmfeedEnabled = false
+    if (agent.swarmfeedJoinedAt === undefined) agent.swarmfeedJoinedAt = null
+    if (typeof agent.swarmfeedBio !== 'string' && agent.swarmfeedBio !== null) agent.swarmfeedBio = null
+    if (agent.swarmfeedPinnedPostId === undefined) agent.swarmfeedPinnedPostId = null
+    if (typeof agent.swarmfeedAutoPost !== 'boolean') agent.swarmfeedAutoPost = false
+    if (!Array.isArray(agent.swarmfeedAutoPostChannels)) agent.swarmfeedAutoPostChannels = []
+    if (typeof agent.swarmfeedApiKey !== 'string' && agent.swarmfeedApiKey !== null) agent.swarmfeedApiKey = null
+    if (typeof agent.swarmfeedAgentId !== 'string' && agent.swarmfeedAgentId !== null) agent.swarmfeedAgentId = null
+    if (!agent.origin) agent.origin = 'swarmclaw'
+    if (agent.swarmfeedHeartbeat === undefined) agent.swarmfeedHeartbeat = null
     // Org chart normalization
     if (agent.orgChart && typeof agent.orgChart === 'object' && !Array.isArray(agent.orgChart)) {
       const oc = agent.orgChart as Record<string, unknown>

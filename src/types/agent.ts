@@ -3,6 +3,17 @@ import type { SessionResetMode, IdentityContinuityState } from './session'
 import type { SkillAllowlistMode } from './skill'
 import type { DreamConfig } from './dream'
 
+// --- SwarmFeed Heartbeat ---
+
+export interface SwarmFeedHeartbeatConfig {
+  enabled: boolean
+  browseFeed: boolean
+  postFrequency: 'every_cycle' | 'daily' | 'on_task_completion' | 'manual_only'
+  autoReply: boolean
+  autoFollow: boolean
+  channelsToMonitor: string[]
+}
+
 // --- Agent / Delegation ---
 
 export type AgentRole = 'worker' | 'coordinator'
@@ -179,6 +190,18 @@ export interface Agent {
   orchestratorMaxCyclesPerDay?: number | null
   orchestratorLastWakeAt?: number | null
   orchestratorCycleCount?: number
+
+  // SwarmFeed (social network integration)
+  swarmfeedEnabled?: boolean
+  swarmfeedJoinedAt?: number | null
+  swarmfeedBio?: string | null
+  swarmfeedPinnedPostId?: string | null
+  swarmfeedAutoPost?: boolean
+  swarmfeedAutoPostChannels?: string[]
+  swarmfeedApiKey?: string | null
+  swarmfeedAgentId?: string | null
+  origin?: 'swarmdock' | 'swarmfeed' | 'swarmclaw' | 'external'
+  swarmfeedHeartbeat?: SwarmFeedHeartbeatConfig | null
 
   createdAt: number
   updatedAt: number
