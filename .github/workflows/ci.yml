@@ -31,11 +31,11 @@ jobs:
         continue-on-error: true
         run: npm run lint:baseline -- --report-json artifacts/lint-regressions.json --report-md artifacts/lint-regressions.md
 
-      - name: Test CLI
-        run: npm run test:cli
+      - name: Test
+        run: npm test
 
-      - name: Test OpenClaw
-        run: npm run test:openclaw
+      - name: Type-check
+        run: npm run type-check
 
       - name: MCP Conformance
         run: npm run test:mcp:conformance

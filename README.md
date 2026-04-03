@@ -204,6 +204,11 @@ Read the full setup guide in [`SWARMDOCK.md`](./SWARMDOCK.md), browse the public
 
 ## Release Notes
 
+### v1.3.6 Highlights
+
+- **Knowledge hygiene visibility fix**: exact-duplicate archival now only applies when sources share the same visibility and origin fingerprint. Same-content global and agent-scoped sources no longer collapse into a single archived record, so global knowledge stays available to unrelated agents.
+- **Release gate hardening**: the default test matrix now includes the 1.3.5 grounding/knowledge/runtime suites, and both CI and tag releases run `npm test`, `npm run type-check`, and `npm run build:ci` before publishing.
+
 ### v1.3.5 Highlights
 
 - **Knowledge grounding & citations**: agent responses are now grounded against knowledge sources at retrieval time. Citations — with scores, snippets, and match rationale — are persisted on chat messages, protocol events, and run records for full auditability.
