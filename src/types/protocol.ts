@@ -16,6 +16,7 @@ export type ProtocolPhaseKind =
   | 'wait'
   | 'dispatch_task'
   | 'dispatch_delegation'
+  | 'a2a_delegate'
 
 export interface ProtocolPhaseDefinition {
   id: string
@@ -26,6 +27,15 @@ export interface ProtocolPhaseDefinition {
   completionCriteria?: string | null
   taskConfig?: { agentId?: string; title: string; description: string } | null
   delegationConfig?: { agentId: string; message: string } | null
+  a2aDelegateConfig?: {
+    targetUrl?: string | null
+    targetExternalAgentId?: string | null
+    taskName: string
+    taskMessage: string
+    timeoutMs?: number | null
+    credentialId?: string | null
+    onFailure?: 'fail' | 'advance_with_warning'
+  } | null
 }
 
 export type ProtocolConditionDefinition =
@@ -90,6 +100,15 @@ export interface ProtocolStepDefinition {
   completionCriteria?: string | null
   taskConfig?: { agentId?: string; title: string; description: string } | null
   delegationConfig?: { agentId: string; message: string } | null
+  a2aDelegateConfig?: {
+    targetUrl?: string | null
+    targetExternalAgentId?: string | null
+    taskName: string
+    taskMessage: string
+    timeoutMs?: number | null
+    credentialId?: string | null
+    onFailure?: 'fail' | 'advance_with_warning'
+  } | null
   nextStepId?: string | null
   branchCases?: ProtocolBranchCase[]
   defaultNextStepId?: string | null

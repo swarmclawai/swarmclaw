@@ -246,7 +246,7 @@ export interface AgentPackManifest {
 
 // --- External Agents ---
 
-export type ExternalAgentSourceType = 'codex' | 'claude' | 'opencode' | 'openclaw' | 'custom'
+export type ExternalAgentSourceType = 'codex' | 'claude' | 'opencode' | 'openclaw' | 'custom' | 'a2a'
 export type ExternalAgentStatus = 'online' | 'idle' | 'offline' | 'stale'
 
 export interface ExternalAgentRuntime {
@@ -273,6 +273,13 @@ export interface ExternalAgentRuntime {
     inputTokens?: number
     outputTokens?: number
     totalTokens?: number
+  } | null
+  a2aCard?: {
+    protocolVersion?: string | null
+    apiEndpoint?: string | null
+    capabilities?: Array<{ name: string; methods?: string[]; description?: string | null }>
+    supportsStreaming?: boolean
+    supportsAsync?: boolean
   } | null
   lastHeartbeatAt?: number | null
   lastSeenAt?: number | null

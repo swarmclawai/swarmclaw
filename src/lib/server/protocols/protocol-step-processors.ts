@@ -23,6 +23,7 @@ import type * as ProtocolRunLifecycle from '@/lib/server/protocols/protocol-run-
 import { processForEachStep } from '@/lib/server/protocols/protocol-foreach'
 import { processSubflowStep } from '@/lib/server/protocols/protocol-subflow'
 import { processSwarmStep } from '@/lib/server/protocols/protocol-swarm'
+import { processA2ADelegatePhase } from '@/lib/server/protocols/protocol-a2a-delegate'
 import { findRunStep } from '@/lib/server/protocols/protocol-normalization'
 import {
   appendProtocolEvent,
@@ -708,6 +709,7 @@ export async function stepProtocolRun(run: ProtocolRun, deps?: ProtocolRunDeps):
     if (phase.kind === 'emit_tasks') return processEmitTasksPhase(started, phase, deps)
     if (phase.kind === 'dispatch_task') return processDispatchTaskPhase(started, phase, deps)
     if (phase.kind === 'dispatch_delegation') return processDispatchDelegationPhase(started, phase, deps)
+    if (phase.kind === 'a2a_delegate') return processA2ADelegatePhase(started, phase, deps)
     return processWaitPhase(started, phase, deps)
   }
   if (step.kind === 'branch') return processBranchStep(run, step, deps)

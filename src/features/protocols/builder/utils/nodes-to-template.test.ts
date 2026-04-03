@@ -1,4 +1,5 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it } from 'node:test'
+import assert from 'node:assert/strict'
 import type { ProtocolTemplate, ProtocolStepDefinition } from '@/types'
 import { templateToNodes } from './template-to-nodes'
 import { nodesToTemplate } from './nodes-to-template'
@@ -36,9 +37,9 @@ describe('nodesToTemplate — round-trip', () => {
     const { nodes, edges } = templateToNodes(template)
     const result = nodesToTemplate(nodes, edges, template)
 
-    expect(result.steps).toHaveLength(3)
-    expect(result.steps!.map((s) => s.id)).toEqual(['step-1', 'step-2', 'step-3'])
-    expect(result.entryStepId).toBe('step-1')
+    assert.strictEqual(result.steps!.length, 3)
+    assert.deepStrictEqual(result.steps!.map((s) => s.id), ['step-1', 'step-2', 'step-3'])
+    assert.strictEqual(result.entryStepId, 'step-1')
   })
 
   it('preserves nextStepId from default edges', () => {
@@ -55,9 +56,9 @@ describe('nodesToTemplate — round-trip', () => {
     const stepB = result.steps!.find((s) => s.id === 'step-b')
     const stepC = result.steps!.find((s) => s.id === 'step-c')
 
-    expect(stepA?.nextStepId).toBe('step-b')
-    expect(stepB?.nextStepId).toBe('step-c')
-    expect(stepC?.nextStepId).toBeUndefined()
+    assert.strictEqual(stepA?.nextStepId, 'step-b')
+    assert.strictEqual(stepB?.nextStepId, 'step-c')
+    assert.strictEqual(stepC?.nextStepId, undefined)
   })
 
   it('preserves step data fields: instructions, turnLimit, completionCriteria, outputKey', () => {
@@ -78,14 +79,14 @@ describe('nodesToTemplate — round-trip', () => {
     const result = nodesToTemplate(nodes, edges, template)
 
     const step = result.steps![0]
-    expect(step.id).toBe('step-rich')
-    expect(step.kind).toBe('decide')
-    expect(step.label).toBe('Rich Step')
-    expect(step.instructions).toBe('Evaluate carefully')
-    expect(step.turnLimit).toBe(5)
-    expect(step.completionCriteria).toBe('Decision made')
-    expect(step.outputKey).toBe('decision_result')
-    expect(step.dependsOnStepIds).toEqual(['step-prev'])
+    assert.strictEqual(step.id, 'step-rich')
+    assert.strictEqual(step.kind, 'decide')
+    assert.strictEqual(step.label, 'Rich Step')
+    assert.strictEqual(step.instructions, 'Evaluate carefully')
+    assert.strictEqual(step.turnLimit, 5)
+    assert.strictEqual(step.completionCriteria, 'Decision made')
+    assert.strictEqual(step.outputKey, 'decision_result')
+    assert.deepStrictEqual(step.dependsOnStepIds, ['step-prev'])
   })
 
   it('preserves branchCases and defaultNextStepId', () => {
@@ -109,12 +110,12 @@ describe('nodesToTemplate — round-trip', () => {
     const result = nodesToTemplate(nodes, edges, template)
 
     const branch = result.steps!.find((s) => s.id === 'branch-step')
-    expect(branch?.branchCases).toHaveLength(2)
-    expect(branch?.branchCases![0].id).toBe('case-yes')
-    expect(branch?.branchCases![0].nextStepId).toBe('step-yes')
-    expect(branch?.branchCases![1].id).toBe('case-no')
-    expect(branch?.branchCases![1].nextStepId).toBe('step-no')
-    expect(branch?.defaultNextStepId).toBe('step-default')
+    assert.strictEqual(branch?.branchCases!.length, 2)
+    assert.strictEqual(branch?.branchCases![0].id, 'case-yes')
+    assert.strictEqual(branch?.branchCases![0].nextStepId, 'step-yes')
+    assert.strictEqual(branch?.branchCases![1].id, 'case-no')
+    assert.strictEqual(branch?.branchCases![1].nextStepId, 'step-no')
+    assert.strictEqual(branch?.defaultNextStepId, 'step-default')
   })
 
   it('sets entryStepId from the first node', () => {
@@ -126,8 +127,8 @@ describe('nodesToTemplate — round-trip', () => {
     const { nodes, edges } = templateToNodes(template)
     const result = nodesToTemplate(nodes, edges, template)
 
-    expect(result.entryStepId).toBe(nodes[0].id)
-    expect(result.entryStepId).toBe('first-step')
+    assert.strictEqual(result.entryStepId, nodes[0].id)
+    assert.strictEqual(result.entryStepId, 'first-step')
   })
 })
 
@@ -147,21 +148,21 @@ describe('nodesToTemplate — direct construction', () => {
     const { nodes, edges } = templateToNodes(template)
     const result = nodesToTemplate(nodes, edges, template)
 
-    expect(result.id).toBe('custom-id')
-    expect(result.name).toBe('Custom Name')
-    expect(result.description).toBe('Custom description')
-    expect(result.builtIn).toBe(true)
-    expect(result.tags).toEqual(['tag-a', 'tag-b'])
-    expect(result.singleAgentAllowed).toBe(true)
+    assert.strictEqual(result.id, 'custom-id')
+    assert.strictEqual(result.name, 'Custom Name')
+    assert.strictEqual(result.description, 'Custom description')
+    assert.strictEqual(result.builtIn, true)
+    assert.deepStrictEqual(result.tags, ['tag-a', 'tag-b'])
+    assert.strictEqual(result.singleAgentAllowed, true)
   })
 
   it('handles an empty nodes array without throwing', () => {
     const template = makeTemplate({ steps: [makeStep({ id: 'step-1' })], entryStepId: 'step-1' })
     const result = nodesToTemplate([], [], template)
 
-    expect(result.steps).toHaveLength(0)
+    assert.strictEqual(result.steps!.length, 0)
     // entryStepId falls back to originalTemplate.entryStepId when nodes is empty
-    expect(result.entryStepId).toBe('step-1')
+    assert.strictEqual(result.entryStepId, 'step-1')
   })
 
   it('does not include nextStepId on steps with no outgoing default edge', () => {
@@ -173,6 +174,6 @@ describe('nodesToTemplate — direct construction', () => {
     const result = nodesToTemplate(nodes, edges, template)
 
     const step = result.steps![0]
-    expect(step.nextStepId).toBeUndefined()
+    assert.strictEqual(step.nextStepId, undefined)
   })
 })

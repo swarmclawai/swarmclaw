@@ -171,6 +171,7 @@ function isDiscussionStepKindLocal(kind: string): boolean {
     'wait',
     'dispatch_task',
     'dispatch_delegation',
+    'a2a_delegate',
   ].includes(kind)
 }
 

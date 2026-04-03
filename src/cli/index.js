@@ -221,6 +221,15 @@ const COMMAND_GROUPS = [
     ],
   },
   {
+    name: 'a2a',
+    description: 'A2A Protocol gateway',
+    commands: [
+      cmd('send', 'POST', '/a2a', 'Send a JSON-RPC request to the A2A endpoint', { expectsJsonBody: true }),
+      cmd('agent-card', 'GET', '/.well-known/agent-card', 'Get agent card for a SwarmClaw agent'),
+      cmd('task-status', 'GET', '/a2a/tasks/:taskId/status', 'Check A2A task status'),
+    ],
+  },
+  {
     name: 'external-agents',
     description: 'Manage external agent runtimes',
     commands: [

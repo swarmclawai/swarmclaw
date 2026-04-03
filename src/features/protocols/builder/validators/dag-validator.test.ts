@@ -1,4 +1,5 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it } from 'node:test'
+import assert from 'node:assert/strict'
 import type { BuilderNode, BuilderEdge } from '../protocol-builder-store'
 import type { ProtocolStepKind } from '../../../../types'
 import { getReachableNodes, validateDAG } from './dag-validator'
@@ -42,7 +43,7 @@ describe('getReachableNodes', () => {
       makeEdge('c', 'd'),
     ]
     const result = getReachableNodes('a', edges, ['a', 'b', 'c', 'd'])
-    expect(result).toEqual(new Set(['a', 'b', 'c', 'd']))
+    assert.deepStrictEqual(result, new Set(['a', 'b', 'c', 'd']))
   })
 
   it('excludes disconnected nodes', () => {
@@ -50,8 +51,8 @@ describe('getReachableNodes', () => {
       makeEdge('a', 'b'),
     ]
     const result = getReachableNodes('a', edges, ['a', 'b', 'c'])
-    expect(result.has('c')).toBe(false)
-    expect(result).toEqual(new Set(['a', 'b']))
+    assert.strictEqual(result.has('c'), false)
+    assert.deepStrictEqual(result, new Set(['a', 'b']))
   })
 })
 
@@ -62,15 +63,15 @@ describe('getReachableNodes', () => {
 describe('validateDAG', () => {
   it('returns empty errors and warnings for an empty graph', () => {
     const { errors, warnings } = validateDAG([], [])
-    expect(errors).toHaveLength(0)
-    expect(warnings).toHaveLength(0)
+    assert.strictEqual(errors.length, 0)
+    assert.strictEqual(warnings.length, 0)
   })
 
   it('valid linear graph has no errors', () => {
     const nodes = [makeNode('a'), makeNode('b'), makeNode('c', 'complete')]
     const edges = [makeEdge('a', 'b'), makeEdge('b', 'c')]
     const { errors } = validateDAG(nodes, edges)
-    expect(errors).toHaveLength(0)
+    assert.strictEqual(errors.length, 0)
   })
 
   it('detects orphan nodes (not connected to any edge)', () => {
@@ -78,8 +79,8 @@ describe('validateDAG', () => {
     const edges = [makeEdge('entry', 'end')]
     const { errors } = validateDAG(nodes, edges)
     const orphanError = errors.find((e) => e.nodeId === 'orphan')
-    expect(orphanError).toBeDefined()
-    expect(orphanError?.message).toContain('not connected to any edge')
+    assert.notStrictEqual(orphanError, undefined)
+    assert.ok(orphanError?.message.includes('not connected to any edge'))
   })
 
   it('detects unreachable nodes (connected but not reachable from entry)', () => {
@@ -92,8 +93,8 @@ describe('validateDAG', () => {
     ]
     const { errors } = validateDAG(nodes, edges)
     const unreachableError = errors.find((e) => e.nodeId === 'island')
-    expect(unreachableError).toBeDefined()
-    expect(unreachableError?.message).toContain('not reachable from the entry node')
+    assert.notStrictEqual(unreachableError, undefined)
+    assert.ok(unreachableError?.message.includes('not reachable from the entry node'))
   })
 
   it('warns about nodes with no outgoing edge', () => {
@@ -101,8 +102,8 @@ describe('validateDAG', () => {
     const edges = [makeEdge('entry', 'dead-end')]
     const { warnings } = validateDAG(nodes, edges)
     const deadEndWarning = warnings.find((w) => w.nodeId === 'dead-end')
-    expect(deadEndWarning).toBeDefined()
-    expect(deadEndWarning?.message).toContain('no outgoing edge')
+    assert.notStrictEqual(deadEndWarning, undefined)
+    assert.ok(deadEndWarning?.message.includes('no outgoing edge'))
   })
 
   it('does not warn about complete nodes with no outgoing edge', () => {
@@ -110,7 +111,7 @@ describe('validateDAG', () => {
     const edges = [makeEdge('entry', 'done')]
     const { warnings } = validateDAG(nodes, edges)
     const completeWarning = warnings.find((w) => w.nodeId === 'done')
-    expect(completeWarning).toBeUndefined()
+    assert.strictEqual(completeWarning, undefined)
   })
 
   it('detects branch cases without target edges', () => {
@@ -141,9 +142,9 @@ describe('validateDAG', () => {
 
     const { errors } = validateDAG(nodes, edges)
     const branchError = errors.find((e) => e.nodeId === 'branch1' && e.message.includes('No'))
-    expect(branchError).toBeDefined()
+    assert.notStrictEqual(branchError, undefined)
     // Should not flag case-yes since it has an edge
     const yesError = errors.find((e) => e.nodeId === 'branch1' && e.message.includes('Yes'))
-    expect(yesError).toBeUndefined()
+    assert.strictEqual(yesError, undefined)
   })
 })

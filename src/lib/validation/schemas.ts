@@ -147,7 +147,7 @@ export const ConnectorCreateSchema = z.object({
 export const ExternalAgentRegisterSchema = z.object({
   id: z.string().optional(),
   name: z.string().min(1, 'External agent name is required'),
-  sourceType: z.enum(['codex', 'claude', 'opencode', 'openclaw', 'custom']).default('custom'),
+  sourceType: z.enum(['codex', 'claude', 'opencode', 'openclaw', 'custom', 'a2a']).default('custom'),
   status: z.enum(['online', 'idle', 'offline', 'stale']).optional().default('online'),
   provider: z.string().nullable().optional().default(null),
   model: z.string().nullable().optional().default(null),

@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "generatedAt": "2026-04-03T14:40:10.843Z",
-  "totalIssues": 361,
-  "uniqueIssues": 125,
+  "generatedAt": "2026-04-03T19:48:04.212Z",
+  "totalIssues": 360,
+  "uniqueIssues": 124,
   "issues": [
     {
       "filePath": "bin/worker-cmd.js",
@@ -331,13 +331,6 @@
       "ruleId": "@typescript-eslint/no-unused-vars",
       "severity": 1,
       "message": "'ProviderType' is defined but never used.",
-      "count": 1
-    },
-    {
-      "filePath": "src/lib/providers/openai.ts",
-      "ruleId": "@typescript-eslint/ban-ts-comment",
-      "severity": 2,
-      "message": "Use \"@ts-expect-error\" instead of \"@ts-ignore\", as \"@ts-ignore\" will do nothing if the following line is error-free.",
       "count": 1
     },
     {
