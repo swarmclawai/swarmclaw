@@ -57,6 +57,40 @@ jobs:
 
           echo "version=$TAG_VERSION" >> "$GITHUB_OUTPUT"
 
+      # npm publish runs BEFORE the disk-cleanup step which removes
+      # /opt/hostedtoolcache (and the Node 22 setup-node installation).
+      # The prepack script rebuilds the project via better-sqlite3's native
+      # addon, so Node 22 must still be on PATH.
+      - name: Check npm version availability
+        id: npm_version
+        run: |
+          VERSION="${{ steps.package_version.outputs.version }}"
+          if npm view "@swarmclawai/swarmclaw@${VERSION}" version >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Version ${VERSION} already exists on npm; publish step will be skipped."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish to npm
+        id: npm_publish
+        if: steps.npm_version.outputs.exists != 'true'
+        continue-on-error: true
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Summarize npm publish status
+        if: always()
+        run: |
+          if [ "${{ steps.npm_version.outputs.exists }}" = "true" ]; then
+            echo "npm publish skipped because @swarmclawai/swarmclaw@${{ steps.package_version.outputs.version }} already exists." >> "$GITHUB_STEP_SUMMARY"
+          elif [ "${{ steps.npm_publish.outcome }}" = "success" ]; then
+            echo "npm publish succeeded for @swarmclawai/swarmclaw@${{ steps.package_version.outputs.version }}." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "npm publish failed for @swarmclawai/swarmclaw@${{ steps.package_version.outputs.version }}. GitHub release creation will continue; rerun after restoring npm credentials or publish the version manually." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Set image name
         id: image
         run: |
@@ -96,36 +130,6 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-
-      - name: Check npm version availability
-        id: npm_version
-        run: |
-          VERSION="${{ steps.package_version.outputs.version }}"
-          if npm view "@swarmclawai/swarmclaw@${VERSION}" version >/dev/null 2>&1; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-            echo "Version ${VERSION} already exists on npm; publish step will be skipped."
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Publish to npm
-        id: npm_publish
-        if: steps.npm_version.outputs.exists != 'true'
-        continue-on-error: true
-        run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-      - name: Summarize npm publish status
-        if: always()
-        run: |
-          if [ "${{ steps.npm_version.outputs.exists }}" = "true" ]; then
-            echo "npm publish skipped because @swarmclawai/swarmclaw@${{ steps.package_version.outputs.version }} already exists." >> "$GITHUB_STEP_SUMMARY"
-          elif [ "${{ steps.npm_publish.outcome }}" = "success" ]; then
-            echo "npm publish succeeded for @swarmclawai/swarmclaw@${{ steps.package_version.outputs.version }}." >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "npm publish failed for @swarmclawai/swarmclaw@${{ steps.package_version.outputs.version }}. GitHub release creation will continue; rerun after restoring npm credentials or publish the version manually." >> "$GITHUB_STEP_SUMMARY"
-          fi
 
       - name: Prepare release body
         id: release_body
