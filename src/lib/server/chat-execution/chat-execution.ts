@@ -89,14 +89,19 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
     return preflight.terminalResult
   }
 
-  const streamResult = await executePreparedChatTurn({
-    input,
-    prepared: preparedTurn,
-    partialPersistence,
-    preflightToolRoutingResult: preflight?.directMemoryResult || null,
-  })
+  let streamResult: Awaited<ReturnType<typeof executePreparedChatTurn>>
+  try {
+    streamResult = await executePreparedChatTurn({
+      input,
+      prepared: preparedTurn,
+      partialPersistence,
+      preflightToolRoutingResult: preflight?.directMemoryResult || null,
+    })
 
-  await partialPersistence.awaitIdle()
+    await partialPersistence.awaitIdle()
+  } finally {
+    partialPersistence.stop()
+  }
 
   if (!streamResult.errorMessage) {
     markProviderSuccess(preparedTurn.providerType, preparedTurn.sessionForRun.credentialId)

@@ -159,6 +159,7 @@ export const createDataSlice: StateCreator<AppState, [], [], DataSlice> = (set, 
     const notifications = get().notifications.map((n) =>
       n.id === id ? { ...n, read: true } : n,
     )
+    invalidateFingerprint('notifications')
     set({
       notifications,
       unreadNotificationCount: notifications.filter((n) => !n.read).length,
@@ -174,6 +175,7 @@ export const createDataSlice: StateCreator<AppState, [], [], DataSlice> = (set, 
     if (!unreadIds.length) return
     const originalNotifications = get().notifications
     const notifications = originalNotifications.map((n) => ({ ...n, read: true }))
+    invalidateFingerprint('notifications')
     set({ notifications, unreadNotificationCount: 0 })
     try {
       await Promise.all(unreadIds.map((id) => api('PUT', `/notifications/${id}`, { read: true })))
@@ -185,6 +187,7 @@ export const createDataSlice: StateCreator<AppState, [], [], DataSlice> = (set, 
   clearReadNotifications: async () => {
     const original = get().notifications
     const kept = original.filter((n) => !n.read)
+    invalidateFingerprint('notifications')
     set({ notifications: kept, unreadNotificationCount: kept.length })
     try {
       await api('DELETE', '/notifications')

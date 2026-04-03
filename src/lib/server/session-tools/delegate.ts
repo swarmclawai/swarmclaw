@@ -55,6 +55,29 @@ interface DelegateRuntimeState {
   cancel?: () => void
 }
 
+type DelegateFailureKind = 'auth' | 'unavailable' | 'spawn' | 'permission' | 'runtime' | 'timeout'
+
+interface DelegateBackendResult {
+  backend: DelegateBackend
+  status: 'completed' | 'failed'
+  response: string | null
+  error: string | null
+  failureKind?: DelegateFailureKind
+}
+
+interface DelegateBackendAdapter {
+  backend: DelegateBackend
+  binaryName: string
+  run: (
+    binary: string,
+    task: string,
+    resume: boolean,
+    resumeId: string,
+    bctx: DelegateContext,
+    runtime?: DelegateRuntimeState,
+  ) => Promise<DelegateBackendResult>
+}
+
 function buildDelegateContextFromSessionish(session: unknown): DelegateContext {
   const record = session && typeof session === 'object' ? session as Record<string, unknown> : {}
   const sessionId = typeof record.id === 'string'
@@ -337,25 +360,73 @@ export function resolveDelegateResumeConfig(
   }
 }
 
-async function runDelegateBackend(args: Record<string, unknown>, bctx: DelegateContext, runtime?: DelegateRuntimeState): Promise<string> {
+function buildDelegateFailure(
+  backend: DelegateBackend,
+  error: string,
+  failureKind: DelegateFailureKind = 'runtime',
+): DelegateBackendResult {
+  return {
+    backend,
+    status: 'failed',
+    response: null,
+    error: error.trim() || `Delegate backend "${backend}" failed.`,
+    failureKind,
+  }
+}
+
+function buildDelegateSuccess(
+  backend: DelegateBackend,
+  response: string,
+): DelegateBackendResult {
+  return {
+    backend,
+    status: 'completed',
+    response: truncate(response, MAX_OUTPUT),
+    error: null,
+  }
+}
+
+function formatDelegateResultText(result: DelegateBackendResult): string {
+  if (result.status === 'completed') {
+    return truncate(result.response?.trim() || 'Task completed.', MAX_OUTPUT)
+  }
+  const error = result.error?.trim() || `Delegate backend "${result.backend}" failed.`
+  return truncate(`Error: ${error}`, MAX_OUTPUT)
+}
+
+const DELEGATE_BACKEND_ADAPTERS: Record<DelegateBackend, DelegateBackendAdapter> = {
+  claude: {
+    backend: 'claude',
+    binaryName: 'claude',
+    run: runClaudeDelegate,
+  },
+  codex: {
+    backend: 'codex',
+    binaryName: 'codex',
+    run: runCodexDelegate,
+  },
+  opencode: {
+    backend: 'opencode',
+    binaryName: 'opencode',
+    run: runOpenCodeDelegate,
+  },
+  gemini: {
+    backend: 'gemini',
+    binaryName: 'gemini',
+    run: runGeminiDelegate,
+  },
+}
+
+async function runDelegateBackend(args: Record<string, unknown>, bctx: DelegateContext, runtime?: DelegateRuntimeState): Promise<DelegateBackendResult> {
   const normalized = normalizeDelegateArgs(args)
   const task = normalized.task as string
   const backend = ((normalized.backend as string) || 'claude') as DelegateBackend
   const { resume, resumeId } = resolveDelegateResumeConfig(normalized, backend, bctx)
-  const backends = {
-    claude: findBinaryOnPath('claude'),
-    codex: findBinaryOnPath('codex'),
-    opencode: findBinaryOnPath('opencode'),
-    gemini: findBinaryOnPath('gemini'),
-  }
-  const binary = backends[backend as keyof typeof backends]
-  if (!binary) return `Error: Backend "${backend}" unavailable.`
-
-  if (backend === 'claude') return runClaudeDelegate(binary, task, resume, resumeId, bctx, runtime)
-  if (backend === 'codex') return runCodexDelegate(binary, task, resume, resumeId, bctx, runtime)
-  if (backend === 'opencode') return runOpenCodeDelegate(binary, task, resume, resumeId, bctx, runtime)
-  if (backend === 'gemini') return runGeminiDelegate(binary, task, resume, resumeId, bctx, runtime)
-  return `Error: Unsupported backend "${backend}".`
+  const adapter = DELEGATE_BACKEND_ADAPTERS[backend]
+  if (!adapter) return buildDelegateFailure(backend, `Unsupported backend "${backend}".`, 'unavailable')
+  const binary = findBinaryOnPath(adapter.binaryName)
+  if (!binary) return buildDelegateFailure(backend, `Backend "${backend}" unavailable.`, 'unavailable')
+  return adapter.run(binary, task, resume, resumeId, bctx, runtime)
 }
 
 function providerIdForBackend(backend: DelegateBackend): string {
@@ -369,13 +440,13 @@ function fallbackOrderForBackend(requested: DelegateBackend): DelegateBackend[] 
   return [requested, ...DELEGATE_BACKEND_ORDER.filter((backend) => backend !== requested)]
 }
 
-function isRecoverableDelegateFailure(result: string): boolean {
-  const normalized = String(result || '').trim().toLowerCase()
-  if (!normalized.startsWith('error:')) return false
+function isRecoverableDelegateFailure(result: DelegateBackendResult): boolean {
+  if (result.status !== 'failed') return false
+  if (result.failureKind === 'auth' || result.failureKind === 'unavailable' || result.failureKind === 'spawn' || result.failureKind === 'permission') {
+    return true
+  }
+  const normalized = String(result.error || '').trim().toLowerCase()
   return [
-    'not authenticated',
-    'backend "',
-    'unavailable',
     'enoent',
     'not found',
     'command not found',
@@ -387,12 +458,16 @@ function isRecoverableDelegateFailure(result: string): boolean {
 
 function summarizeDelegateAttempts(
   requested: DelegateBackend,
-  attempts: Array<{ backend: DelegateBackend; result: string }>,
-): string {
+  attempts: Array<{ backend: DelegateBackend; result: DelegateBackendResult }>,
+): DelegateBackendResult {
   const summary = attempts
-    .map(({ backend, result }) => `${backend}: ${result.replace(/^Error:\s*/i, '').trim() || result.trim()}`)
+    .map(({ backend, result }) => `${backend}: ${result.error?.trim() || formatDelegateResultText(result).replace(/^Error:\s*/i, '').trim()}`)
     .join(' | ')
-  return `Error: Delegate backend "${requested}" could not complete the task. ${summary}. Continue with another available tool instead of stopping.`
+  return buildDelegateFailure(
+    requested,
+    `Delegate backend "${requested}" could not complete the task. ${summary}. Continue with another available tool instead of stopping.`,
+    'runtime',
+  )
 }
 
 async function runDelegateBackendWithFallback(
@@ -400,26 +475,25 @@ async function runDelegateBackendWithFallback(
   bctx: DelegateContext,
   runtime?: DelegateRuntimeState,
   opts?: { onAttempt?: (backend: DelegateBackend, attemptIndex: number) => void; onFallback?: (from: DelegateBackend, to: DelegateBackend, reason: string) => void },
-): Promise<{ backend: DelegateBackend; result: string; attempts: Array<{ backend: DelegateBackend; result: string }> }> {
+): Promise<{ backend: DelegateBackend; result: DelegateBackendResult; attempts: Array<{ backend: DelegateBackend; result: DelegateBackendResult }> }> {
   const normalized = normalizeDelegateArgs(args)
   const requested = ((normalized.backend as string) || 'claude') as DelegateBackend
   const orderedBackends = fallbackOrderForBackend(requested)
-  const attempts: Array<{ backend: DelegateBackend; result: string }> = []
+  const attempts: Array<{ backend: DelegateBackend; result: DelegateBackendResult }> = []
 
   for (const [index, backend] of orderedBackends.entries()) {
     opts?.onAttempt?.(backend, index)
     const result = await runDelegateBackend({ ...normalized, backend }, bctx, runtime)
     attempts.push({ backend, result })
-    if (/^Error:/i.test(result.trim())) {
-      markProviderFailure(providerIdForBackend(backend), result)
-    } else {
+    if (result.status === 'completed') {
       markProviderSuccess(providerIdForBackend(backend))
       return { backend, result, attempts }
     }
+    markProviderFailure(providerIdForBackend(backend), formatDelegateResultText(result))
 
     const nextBackend = orderedBackends[index + 1]
     if (nextBackend && isRecoverableDelegateFailure(result)) {
-      opts?.onFallback?.(backend, nextBackend, result)
+      opts?.onFallback?.(backend, nextBackend, result.error || formatDelegateResultText(result))
       continue
     }
     return {
@@ -520,7 +594,7 @@ async function executeDelegateAction(args: Record<string, unknown>, bctx: Delega
     onFallback: (from, to, reason) => {
       appendDelegationCheckpoint(
         job.id,
-        `Delegate ${from} failed: ${reason.replace(/^Error:\s*/i, '').trim()}. Falling back to ${to}.`,
+        `Delegate ${from} failed: ${reason.trim()}. Falling back to ${to}.`,
         'running',
       )
     },
@@ -529,22 +603,22 @@ async function executeDelegateAction(args: Record<string, unknown>, bctx: Delega
       const latest = getDelegationJob(job.id)
       if (latest?.status === 'cancelled') return { backend, result }
       const resumePatch = buildDelegateResumePatch(bctx)
-      if (/^Error:/i.test(result.trim())) {
+      if (result.status === 'failed') {
         appendDelegationCheckpoint(job.id, `Delegate failed on ${backend}`, 'failed')
-        failDelegationJob(job.id, result.replace(/^Error:\s*/i, '').trim() || result, { ...resumePatch, backend })
+        failDelegationJob(job.id, result.error || `Delegate backend "${backend}" failed.`, { ...resumePatch, backend })
       } else {
         appendDelegationCheckpoint(job.id, `Delegate completed on ${backend}`, 'completed')
-        completeDelegationJob(job.id, result, { ...resumePatch, backend })
+        completeDelegationJob(job.id, result.response || 'Task completed.', { ...resumePatch, backend })
       }
       return { backend, result }
     })
     .catch((err: unknown) => {
       const message = errorMessage(err)
       const latest = getDelegationJob(job.id)
-      if (latest?.status === 'cancelled') return { backend: requestedBackend, result: `Error: ${message}` }
+      if (latest?.status === 'cancelled') return { backend: requestedBackend, result: buildDelegateFailure(requestedBackend, message) }
       appendDelegationCheckpoint(job.id, `Delegate crashed on ${requestedBackend}: ${message}`, 'failed')
       failDelegationJob(job.id, message, { ...buildDelegateResumePatch(bctx), backend: requestedBackend })
-      return { backend: requestedBackend, result: `Error: ${message}` }
+      return { backend: requestedBackend, result: buildDelegateFailure(requestedBackend, message, 'runtime') }
     })
 
   if (!waitForCompletion) {
@@ -560,9 +634,9 @@ async function executeDelegateAction(args: Record<string, unknown>, bctx: Delega
   const latest = getDelegationJob(job.id)
   return JSON.stringify({
     jobId: job.id,
-    status: latest?.status || (/^Error:/i.test(result.trim()) ? 'failed' : 'completed'),
+    status: latest?.status || result.status,
     backend: latest?.backend || backend,
-    response: result,
+    response: formatDelegateResultText(result),
   })
 }
 
@@ -591,7 +665,7 @@ function parseCodexOutputText(ev: Record<string, unknown>): string | null {
   return null
 }
 
-async function runCodexDelegate(binary: string, task: string, resume: boolean, resumeId: string, bctx: DelegateContext, runtime?: DelegateRuntimeState): Promise<string> {
+async function runCodexDelegate(binary: string, task: string, resume: boolean, resumeId: string, bctx: DelegateContext, runtime?: DelegateRuntimeState): Promise<DelegateBackendResult> {
   try {
     // Build clean env — preserves user's CODEX_HOME for auth
     const env = buildCliEnv()
@@ -599,13 +673,13 @@ async function runCodexDelegate(binary: string, task: string, resume: boolean, r
     // Auth probe BEFORE any temp CODEX_HOME override
     const auth = probeCliAuth(binary, 'codex', env, bctx.cwd)
     if (!auth.authenticated) {
-      return `Error: ${auth.errorMessage || 'Codex CLI is not authenticated. Run `codex login` and retry.'}`
+      return buildDelegateFailure('codex', auth.errorMessage || 'Codex CLI is not authenticated. Run `codex login` and retry.', 'auth')
     }
 
     const storedResumeId = bctx.readStoredDelegateResumeId?.('codex')
     const resumeIdToUse = resumeId?.trim() || (resume ? storedResumeId : null)
 
-    return await new Promise<string>((resolve) => {
+    return await new Promise<DelegateBackendResult>((resolve) => {
       const args: string[] = ['exec']
       if (resumeIdToUse) args.push('resume', resumeIdToUse)
       args.push('--json', '--full-auto', '--skip-git-repo-check', '-')
@@ -618,10 +692,10 @@ async function runCodexDelegate(binary: string, task: string, resume: boolean, r
       let discoveredId: string | null = null
       let settled = false
 
-      const finish = (text: string) => {
+      const finish = (result: DelegateBackendResult) => {
         if (settled) return
         settled = true
-        resolve(truncate(text, MAX_OUTPUT))
+        resolve(result)
       }
 
       const timeoutHandle = setTimeout(() => {
@@ -655,39 +729,39 @@ async function runCodexDelegate(binary: string, task: string, resume: boolean, r
         clearTimeout(timeoutHandle)
         if (discoveredId) bctx.persistDelegateResumeId?.('codex', discoveredId)
         const output = responseText.trim()
-        if (output) return finish(output)
+        if (output) return finish(buildDelegateSuccess('codex', output))
         const stderr = stderrBuf.trim()
-        if (stderr) return finish(`Error: ${stderr}`)
-        return finish(`Error: Codex exited with code ${code ?? 'unknown'}${signal ? ` (${signal})` : ''}.`)
+        if (stderr) return finish(buildDelegateFailure('codex', stderr))
+        return finish(buildDelegateFailure('codex', `Codex exited with code ${code ?? 'unknown'}${signal ? ` (${signal})` : ''}.`, 'runtime'))
       })
 
       child.on('error', (err) => {
         clearTimeout(timeoutHandle)
-        finish(`Error: ${err.message}`)
+        finish(buildDelegateFailure('codex', err.message, 'spawn'))
       })
 
       child.stdin?.write(task)
       child.stdin?.end()
     })
   } catch (err: unknown) {
-    return `Error: ${errorMessage(err)}`
+    return buildDelegateFailure('codex', errorMessage(err), 'runtime')
   }
 }
 
-async function runOpenCodeDelegate(binary: string, task: string, resume: boolean, resumeId: string, bctx: DelegateContext, runtime?: DelegateRuntimeState): Promise<string> {
+async function runOpenCodeDelegate(binary: string, task: string, resume: boolean, resumeId: string, bctx: DelegateContext, runtime?: DelegateRuntimeState): Promise<DelegateBackendResult> {
   try {
     const env = buildCliEnv()
 
     // Auth probe
     const auth = probeCliAuth(binary, 'opencode', env, bctx.cwd)
     if (!auth.authenticated) {
-      return `Error: ${auth.errorMessage || 'OpenCode CLI is not authenticated.'}`
+      return buildDelegateFailure('opencode', auth.errorMessage || 'OpenCode CLI is not authenticated.', 'auth')
     }
 
     const storedResumeId = bctx.readStoredDelegateResumeId?.('opencode')
     const resumeIdToUse = resumeId?.trim() || (resume ? storedResumeId : null)
 
-    return await new Promise<string>((resolve) => {
+    return await new Promise<DelegateBackendResult>((resolve) => {
       const args = ['run', task, '--format', 'json']
       if (resumeIdToUse) args.push('--session', resumeIdToUse)
 
@@ -699,10 +773,10 @@ async function runOpenCodeDelegate(binary: string, task: string, resume: boolean
       let discoveredId: string | null = null
       let settled = false
 
-      const finish = (text: string) => {
+      const finish = (result: DelegateBackendResult) => {
         if (settled) return
         settled = true
-        resolve(truncate(text, MAX_OUTPUT))
+        resolve(result)
       }
 
       const timeoutHandle = setTimeout(() => {
@@ -742,36 +816,36 @@ async function runOpenCodeDelegate(binary: string, task: string, resume: boolean
         clearTimeout(timeoutHandle)
         if (discoveredId) bctx.persistDelegateResumeId?.('opencode', discoveredId)
         const output = responseText.trim()
-        if (output) return finish(output)
+        if (output) return finish(buildDelegateSuccess('opencode', output))
         const stderr = stderrBuf.trim()
-        if (stderr) return finish(`Error: ${stderr}`)
-        return finish(`Error: OpenCode exited with code ${code ?? 'unknown'}${signal ? ` (${signal})` : ''}.`)
+        if (stderr) return finish(buildDelegateFailure('opencode', stderr))
+        return finish(buildDelegateFailure('opencode', `OpenCode exited with code ${code ?? 'unknown'}${signal ? ` (${signal})` : ''}.`, 'runtime'))
       })
 
       child.on('error', (err) => {
         clearTimeout(timeoutHandle)
-        finish(`Error: ${err.message}`)
+        finish(buildDelegateFailure('opencode', err.message, 'spawn'))
       })
     })
   } catch (err: unknown) {
-    return `Error: ${errorMessage(err)}`
+    return buildDelegateFailure('opencode', errorMessage(err), 'runtime')
   }
 }
 
-async function runGeminiDelegate(binary: string, task: string, resume: boolean, resumeId: string, bctx: DelegateContext, runtime?: DelegateRuntimeState): Promise<string> {
+async function runGeminiDelegate(binary: string, task: string, resume: boolean, resumeId: string, bctx: DelegateContext, runtime?: DelegateRuntimeState): Promise<DelegateBackendResult> {
   try {
     const env = buildCliEnv()
 
     // Auth probe
     const auth = probeCliAuth(binary, 'gemini', env, bctx.cwd)
     if (!auth.authenticated) {
-      return `Error: ${auth.errorMessage || 'Gemini CLI is not authenticated.'}`
+      return buildDelegateFailure('gemini', auth.errorMessage || 'Gemini CLI is not authenticated.', 'auth')
     }
 
     const storedResumeId = bctx.readStoredDelegateResumeId?.('gemini')
     const resumeIdToUse = resumeId?.trim() || (resume ? storedResumeId : null)
 
-    return await new Promise<string>((resolve) => {
+    return await new Promise<DelegateBackendResult>((resolve) => {
       const args = ['--prompt', task, '--output-format', 'stream-json', '--yolo']
       if (resumeIdToUse) args.push('--resume', resumeIdToUse)
 
@@ -783,10 +857,10 @@ async function runGeminiDelegate(binary: string, task: string, resume: boolean, 
       let discoveredId: string | null = null
       let settled = false
 
-      const finish = (text: string) => {
+      const finish = (result: DelegateBackendResult) => {
         if (settled) return
         settled = true
-        resolve(truncate(text, MAX_OUTPUT))
+        resolve(result)
       }
 
       const timeoutHandle = setTimeout(() => {
@@ -830,32 +904,32 @@ async function runGeminiDelegate(binary: string, task: string, resume: boolean, 
         clearTimeout(timeoutHandle)
         if (discoveredId) bctx.persistDelegateResumeId?.('gemini', discoveredId)
         const output = responseText.trim()
-        if (output) return finish(output)
+        if (output) return finish(buildDelegateSuccess('gemini', output))
         const stderr = stderrBuf.trim()
-        if (stderr) return finish(`Error: ${stderr}`)
-        return finish(`Error: Gemini exited with code ${code ?? 'unknown'}${signal ? ` (${signal})` : ''}.`)
+        if (stderr) return finish(buildDelegateFailure('gemini', stderr))
+        return finish(buildDelegateFailure('gemini', `Gemini exited with code ${code ?? 'unknown'}${signal ? ` (${signal})` : ''}.`, 'runtime'))
       })
 
       child.on('error', (err) => {
         clearTimeout(timeoutHandle)
-        finish(`Error: ${err.message}`)
+        finish(buildDelegateFailure('gemini', err.message, 'spawn'))
       })
     })
   } catch (err: unknown) {
-    return `Error: ${errorMessage(err)}`
+    return buildDelegateFailure('gemini', errorMessage(err), 'runtime')
   }
 }
 
-async function runClaudeDelegate(binary: string, task: string, resume: boolean, resumeId: string, bctx: DelegateContext, runtime?: DelegateRuntimeState): Promise<string> {
+async function runClaudeDelegate(binary: string, task: string, resume: boolean, resumeId: string, bctx: DelegateContext, runtime?: DelegateRuntimeState): Promise<DelegateBackendResult> {
   try {
     const env = buildCliEnv()
     const auth = probeCliAuth(binary, 'claude', env, bctx.cwd)
-    if (!auth.authenticated) return `Error: ${auth.errorMessage || 'Claude Code not authenticated.'}`
+    if (!auth.authenticated) return buildDelegateFailure('claude', auth.errorMessage || 'Claude Code not authenticated.', 'auth')
 
     const storedResumeId = bctx.readStoredDelegateResumeId?.('claudeCode')
     const resumeIdToUse = resumeId?.trim() || (resume ? storedResumeId : null)
 
-    return new Promise<string>((resolve) => {
+    return new Promise<DelegateBackendResult>((resolve) => {
       const args = ['--print', '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions']
       if (resumeIdToUse) args.push('--resume', resumeIdToUse)
       const child = spawn(binary, args, { cwd: bctx.cwd, env, stdio: ['pipe', 'pipe', 'pipe'] })
@@ -865,7 +939,7 @@ async function runClaudeDelegate(binary: string, task: string, resume: boolean, 
       let discoveredId: string | null = null
       let settled = false
       
-      const finish = (res: string) => { if (!settled) { settled = true; resolve(truncate(res, MAX_OUTPUT)) } }
+      const finish = (result: DelegateBackendResult) => { if (!settled) { settled = true; resolve(result) } }
       const timeoutHandle = setTimeout(() => { try { child.kill('SIGTERM') } catch {} }, bctx.claudeTimeoutMs || 300000)
 
       child.stdout?.on('data', (c) => {
@@ -890,17 +964,17 @@ async function runClaudeDelegate(binary: string, task: string, resume: boolean, 
         clearTimeout(timeoutHandle)
         if (discoveredId) bctx.persistDelegateResumeId?.('claudeCode', discoveredId)
         const output = assistantText.trim()
-        if (code === 0) finish(output || 'Task completed.')
-        else finish(output ? output : `Error: Code ${code}. ${stderr.trim()}`)
+        if (code === 0) finish(buildDelegateSuccess('claude', output || 'Task completed.'))
+        else finish(buildDelegateFailure('claude', output || `Code ${code}. ${stderr.trim()}`))
       })
       child.on('error', (err) => {
         clearTimeout(timeoutHandle)
-        finish(`Error: ${err.message}`)
+        finish(buildDelegateFailure('claude', err.message, 'spawn'))
       })
       child.stdin?.write(task)
       child.stdin?.end()
     })
-  } catch (err: unknown) { return `Error: ${errorMessage(err)}` }
+  } catch (err: unknown) { return buildDelegateFailure('claude', errorMessage(err), 'runtime') }
 }
 
 /**

@@ -16,8 +16,10 @@ import { deleteSessionWorkingState, loadSessionWorkingState, syncWorkingStateFro
 import { syncMainLoopToRunContext } from '@/lib/server/run-context'
 import { buildExecutionBrief, buildExecutionBriefContextBlock } from '@/lib/server/execution-brief'
 import { cleanText, cleanMultiline } from '@/lib/server/text-normalization'
+import { getGoalById, resolveEffectiveGoal } from '@/lib/server/goals/goal-service'
 
-const LEGACY_META_LINE_RE = /\[(?:MAIN_LOOP_META|MAIN_LOOP_PLAN|MAIN_LOOP_REVIEW|AGENT_HEARTBEAT_META)\]\s*(\{[^\n]*\})?/i
+const LEGACY_META_LINE_RE = /\[(?:MAIN_LOOP_META|MAIN_LOOP_PLAN|MAIN_LOOP_REVIEW|AGENT_HEARTBEAT_META|AUTONOMY_TICK)\]\s*(\{[^\n]*\})?/i
+const AUTONOMY_TICK_RE = /\[AUTONOMY_TICK\]\s*(\{[^\n]*\})/i
 const HEARTBEAT_META_RE = /\[AGENT_HEARTBEAT_META\]\s*(\{[^\n]*\})/i
 const MAX_PENDING_EVENTS = 16
 const MAX_TIMELINE_ITEMS = 40
@@ -26,9 +28,12 @@ const DEFAULT_FOLLOWUP_DELAY_MS = 1500
 const DEFAULT_MAX_FOLLOWUP_CHAIN = 3
 const MAX_LIFETIME_ITERATIONS = 200
 
+type MainLoopObjectiveSource = 'goal' | 'working_state' | 'run_context' | 'legacy_tag'
+
 export interface MainLoopState {
   goal: string | null
   goalContract: GoalContract | null
+  objectiveSource: MainLoopObjectiveSource | null
   summary: string | null
   nextAction: string | null
   planSteps: string[]
@@ -70,6 +75,8 @@ export interface MainLoopState {
   lastPlannedAt: number | null
   lastReviewedAt: number | null
   lastTickAt: number | null
+  missionTokens: number
+  missionCostUsd: number
   updatedAt: number
 }
 
@@ -99,6 +106,28 @@ export interface HandleMainLoopRunResultInput {
   estimatedCost?: number
 }
 
+interface DurableObjectiveSnapshot {
+  goal: string | null
+  goalContract: GoalContract | null
+  objectiveSource: Exclude<MainLoopObjectiveSource, 'legacy_tag'> | null
+  summary: string | null
+  nextAction: string | null
+  status: MainLoopState['status'] | null
+}
+
+interface ParsedAutonomyTick {
+  goal?: string
+  status?: MainLoopState['status']
+  summary?: string
+  nextAction?: string
+  planSteps?: string[]
+  currentStep?: string
+  completedSteps?: string[]
+  reviewNote?: string
+  reviewConfidence?: number
+  needsReplan?: boolean
+}
+
 type MainSessionLike = Partial<Session> & Record<string, unknown>
 
 const stateMap = hmrSingleton('__swarmclaw_main_loop_state__', () => new Map<string, MainLoopState>())
@@ -126,6 +155,7 @@ function defaultState(): MainLoopState {
   return {
     goal: null,
     goalContract: null,
+    objectiveSource: null,
     summary: null,
     nextAction: null,
     planSteps: [],
@@ -148,6 +178,8 @@ function defaultState(): MainLoopState {
     lastPlannedAt: null,
     lastReviewedAt: null,
     lastTickAt: null,
+    missionTokens: 0,
+    missionCostUsd: 0,
     updatedAt: now(),
   }
 }
@@ -160,6 +192,11 @@ function normalizeStatus(value: unknown, fallback: MainLoopState['status'] = 'id
 
 function normalizeAutonomyMode(value: unknown, fallback: MainLoopState['autonomyMode'] = 'assist'): MainLoopState['autonomyMode'] {
   return value === 'autonomous' || value === 'assist' ? value : fallback
+}
+
+function cleanNullableText(value: unknown, max: number): string | null {
+  const cleaned = cleanText(value, max)
+  return cleaned || null
 }
 
 function uniqueStrings(values: string[], maxItems: number): string[] {
@@ -282,21 +319,78 @@ function parseHeartbeatMeta(text: string): { goal?: string; status?: MainLoopSta
   }
 }
 
+function parseAutonomyTick(text: string): ParsedAutonomyTick | null {
+  const match = (text || '').match(AUTONOMY_TICK_RE)
+  if (!match) return null
+  try {
+    const parsed = JSON.parse(match[1]) as Record<string, unknown>
+    const review = parsed.review && typeof parsed.review === 'object' && !Array.isArray(parsed.review)
+      ? parsed.review as Record<string, unknown>
+      : null
+    const payload: ParsedAutonomyTick = {}
+    const goal = cleanText(parsed.goal, 400)
+    const summary = cleanText(parsed.summary, 500)
+    const nextAction = cleanText(parsed.next_action ?? parsed.nextAction, 240)
+    const currentStep = cleanText(parsed.current_step ?? parsed.currentStep, 240)
+    const planSteps = Array.isArray(parsed.plan_steps ?? parsed.planSteps)
+      ? uniqueStrings(((parsed.plan_steps ?? parsed.planSteps) as unknown[]).filter((value): value is string => typeof value === 'string'), 8)
+      : []
+    const completedSteps = Array.isArray(parsed.completed_steps ?? parsed.completedSteps)
+      ? uniqueStrings(((parsed.completed_steps ?? parsed.completedSteps) as unknown[]).filter((value): value is string => typeof value === 'string'), 16)
+      : []
+    const reviewNote = cleanText(review?.note ?? parsed.review_note ?? parsed.reviewNote, 320)
+    const reviewConfidence = normalizeConfidence(review?.confidence ?? parsed.review_confidence ?? parsed.reviewConfidence)
+    const needsReplan = review?.needs_replan === true
+      || parsed.needs_replan === true
+      || parsed.needsReplan === true
+      ? true
+      : review?.needs_replan === false
+        || parsed.needs_replan === false
+        || parsed.needsReplan === false
+        ? false
+        : undefined
+
+    if (goal) payload.goal = goal
+    if (summary) payload.summary = summary
+    if (nextAction) payload.nextAction = nextAction
+    if (currentStep) payload.currentStep = currentStep
+    if (planSteps.length > 0) payload.planSteps = planSteps
+    if (completedSteps.length > 0) payload.completedSteps = completedSteps
+    if (reviewNote) payload.reviewNote = reviewNote
+    if (typeof reviewConfidence === 'number') payload.reviewConfidence = reviewConfidence
+    if (typeof needsReplan === 'boolean') payload.needsReplan = needsReplan
+    if (parsed.status === 'idle' || parsed.status === 'progress' || parsed.status === 'blocked' || parsed.status === 'ok') {
+      payload.status = normalizeStatus(parsed.status, 'idle')
+    }
+    return Object.keys(payload).length > 0 ? payload : null
+  } catch {
+    return null
+  }
+}
+
 function clampState(state: MainLoopState): MainLoopState {
   state.planSteps = uniqueStrings(state.planSteps || [], 8)
   state.workingMemoryNotes = uniqueStrings(state.workingMemoryNotes || [], MAX_WORKING_MEMORY_NOTES)
   state.pendingEvents = normalizePendingEvents(state.pendingEvents).slice(-MAX_PENDING_EVENTS)
   state.timeline = normalizeTimeline(state.timeline).slice(-MAX_TIMELINE_ITEMS)
-  state.goal = cleanText(state.goal, 500)
-  state.summary = cleanText(state.summary, 1000)
-  state.nextAction = cleanText(state.nextAction, 240)
-  state.currentPlanStep = cleanText(state.currentPlanStep, 240)
-  state.reviewNote = cleanText(state.reviewNote, 320)
+  state.goal = cleanNullableText(state.goal, 500)
+  state.summary = cleanNullableText(state.summary, 1000)
+  state.nextAction = cleanNullableText(state.nextAction, 240)
+  state.currentPlanStep = cleanNullableText(state.currentPlanStep, 240)
+  state.reviewNote = cleanNullableText(state.reviewNote, 320)
   state.reviewConfidence = normalizeConfidence(state.reviewConfidence)
+  state.objectiveSource = state.objectiveSource === 'goal'
+    || state.objectiveSource === 'working_state'
+    || state.objectiveSource === 'run_context'
+    || state.objectiveSource === 'legacy_tag'
+    ? state.objectiveSource
+    : null
   state.momentumScore = Math.max(-10, Math.min(10, Math.trunc(state.momentumScore || 0)))
   state.followupChainCount = Math.max(0, Math.min(10, Math.trunc(state.followupChainCount || 0)))
   state.lifetimeIterations = Math.max(0, Math.trunc(state.lifetimeIterations || 0))
   state.metaMissCount = Math.max(0, Math.min(100, Math.trunc(state.metaMissCount || 0)))
+  state.missionTokens = Math.max(0, Math.trunc(state.missionTokens || 0))
+  state.missionCostUsd = Number.isFinite(state.missionCostUsd) ? Math.max(0, state.missionCostUsd || 0) : 0
   state.skillBlocker = normalizeSkillBlocker(state.skillBlocker)
   state.updatedAt = typeof state.updatedAt === 'number' && Number.isFinite(state.updatedAt) ? Math.trunc(state.updatedAt) : now()
   return state
@@ -307,6 +401,9 @@ function normalizeState(input?: Partial<MainLoopState> | null): MainLoopState {
   if (input) {
     if (input.goalContract) next.goalContract = input.goalContract
     if (typeof input.goal === 'string' || input.goal === null) next.goal = input.goal
+    if (input.objectiveSource === 'goal' || input.objectiveSource === 'working_state' || input.objectiveSource === 'run_context' || input.objectiveSource === 'legacy_tag' || input.objectiveSource === null) {
+      next.objectiveSource = input.objectiveSource
+    }
     if (typeof input.summary === 'string' || input.summary === null) next.summary = input.summary
     if (typeof input.nextAction === 'string' || input.nextAction === null) next.nextAction = input.nextAction
     if (Array.isArray(input.planSteps)) next.planSteps = [...input.planSteps]
@@ -331,6 +428,8 @@ function normalizeState(input?: Partial<MainLoopState> | null): MainLoopState {
     if (typeof input.lastPlannedAt === 'number' || input.lastPlannedAt === null) next.lastPlannedAt = input.lastPlannedAt ?? null
     if (typeof input.lastReviewedAt === 'number' || input.lastReviewedAt === null) next.lastReviewedAt = input.lastReviewedAt ?? null
     if (typeof input.lastTickAt === 'number' || input.lastTickAt === null) next.lastTickAt = input.lastTickAt ?? null
+    if (typeof input.missionTokens === 'number') next.missionTokens = input.missionTokens
+    if (typeof input.missionCostUsd === 'number') next.missionCostUsd = input.missionCostUsd
     if (typeof input.updatedAt === 'number') next.updatedAt = input.updatedAt
   }
   return clampState(next)
@@ -373,6 +472,155 @@ function extractLatestGoal(messages: Message[]): { goal: string | null; goalCont
   return { goal, goalContract }
 }
 
+function mapWorkingStateStatusToMainLoopStatus(value: unknown): MainLoopState['status'] | null {
+  if (value === 'completed') return 'ok'
+  if (value === 'blocked' || value === 'waiting') return 'blocked'
+  if (value === 'progress') return 'progress'
+  if (value === 'idle') return 'idle'
+  return null
+}
+
+function buildGoalContractFromGoal(goal: Record<string, unknown> | null): GoalContract | null {
+  if (!goal) return null
+  const objective = cleanMultiline(goal.objective, 900)
+  if (!objective) return null
+  const constraints = Array.isArray(goal.constraints)
+    ? goal.constraints.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+    : []
+  const budgetUsd = typeof goal.budgetUsd === 'number' && Number.isFinite(goal.budgetUsd) ? goal.budgetUsd : null
+  const deadlineAt = typeof goal.deadlineAt === 'number' && Number.isFinite(goal.deadlineAt) ? goal.deadlineAt : null
+  const successMetric = cleanText(goal.successMetric, 240)
+  return {
+    objective,
+    constraints: constraints.length ? constraints : undefined,
+    budgetUsd,
+    deadlineAt,
+    successMetric,
+  }
+}
+
+function resolveSessionGoalRecord(session: Session | null | undefined): Record<string, unknown> | null {
+  if (!session) return null
+  const s = session as unknown as Record<string, unknown>
+  const directGoalId = typeof s.goalId === 'string'
+    ? String(s.goalId).trim()
+    : ''
+  if (directGoalId) {
+    const directGoal = getGoalById(directGoalId)
+    if (directGoal) return directGoal as unknown as Record<string, unknown>
+  }
+  const legacyMissionId = typeof s.missionId === 'string'
+    ? String(s.missionId).trim()
+    : ''
+  if (legacyMissionId) {
+    const missionGoal = getGoalById(legacyMissionId)
+    if (missionGoal) return missionGoal as unknown as Record<string, unknown>
+  }
+  const effectiveGoal = resolveEffectiveGoal({
+    agentId: session.agentId || null,
+    projectId: session.projectId || null,
+  })
+  return effectiveGoal ? effectiveGoal as unknown as Record<string, unknown> : null
+}
+
+function resolveRunContextNextAction(session: Session | null | undefined): string | null {
+  const runContext = session?.runContext
+  if (!runContext || !Array.isArray(runContext.currentPlan)) return null
+  const completed = new Set(
+    Array.isArray(runContext.completedSteps)
+      ? runContext.completedSteps
+        .map((entry) => cleanText(entry, 240)?.toLowerCase())
+        .filter((entry): entry is string => Boolean(entry))
+      : [],
+  )
+  for (const step of runContext.currentPlan) {
+    const cleaned = cleanText(step, 240)
+    if (!cleaned) continue
+    if (completed.has(cleaned.toLowerCase())) continue
+    return cleaned
+  }
+  return null
+}
+
+function resolveDurableObjectiveSnapshot(
+  sessionId: string,
+  session: Session | null | undefined,
+  current: MainLoopState,
+): DurableObjectiveSnapshot {
+  const workingState = loadSessionWorkingState(sessionId)
+  if (workingState && (workingState.objective || workingState.summary || workingState.nextAction || (workingState.planSteps?.length || 0) > 0)) {
+    const workingPlan = Array.isArray(workingState.planSteps) ? workingState.planSteps : []
+    const activeStep = workingPlan.find((step) => step.status === 'active')
+    const firstPlanStep = workingPlan.find((step) => step.status !== 'resolved' && step.status !== 'superseded')
+    return {
+      goal: cleanMultiline(workingState.objective, 900) || null,
+      goalContract: mergeGoalContracts(
+        buildGoalContractFromGoal(resolveSessionGoalRecord(session)),
+        workingState.objective ? parseGoalContractFromText(workingState.objective) : null,
+      ),
+      objectiveSource: 'working_state',
+      summary: cleanText(workingState.summary, 1000) || null,
+      nextAction: cleanText(workingState.nextAction || activeStep?.text || firstPlanStep?.text, 240) || null,
+      status: mapWorkingStateStatusToMainLoopStatus(workingState.status),
+    }
+  }
+
+  const goalRecord = resolveSessionGoalRecord(session)
+  const goalObjective = cleanMultiline(goalRecord?.objective, 900)
+  if (goalObjective) {
+    return {
+      goal: goalObjective,
+      goalContract: buildGoalContractFromGoal(goalRecord),
+      objectiveSource: 'goal',
+      summary: current.summary,
+      nextAction: current.nextAction,
+      status: null,
+    }
+  }
+
+  const runContext = session?.runContext
+  const runContextObjective = cleanMultiline(runContext?.objective, 900)
+  if (runContextObjective) {
+    return {
+      goal: runContextObjective,
+      goalContract: parseGoalContractFromText(runContextObjective),
+      objectiveSource: 'run_context',
+      summary: current.summary,
+      nextAction: resolveRunContextNextAction(session),
+      status: null,
+    }
+  }
+
+  return {
+    goal: null,
+    goalContract: null,
+    objectiveSource: null,
+    summary: null,
+    nextAction: null,
+    status: null,
+  }
+}
+
+function applyDurableObjectiveOverlay(
+  sessionId: string,
+  state: MainLoopState,
+  session: Session | null | undefined,
+): MainLoopState {
+  const durable = resolveDurableObjectiveSnapshot(sessionId, session, state)
+  if (!durable.objectiveSource) {
+    if (!state.objectiveSource && state.goal) state.objectiveSource = 'legacy_tag'
+    return clampState(state)
+  }
+
+  if (durable.goal) state.goal = durable.goal
+  state.objectiveSource = durable.objectiveSource
+  state.goalContract = mergeGoalContracts(state.goalContract, durable.goalContract)
+  if (durable.summary) state.summary = durable.summary
+  if (durable.nextAction) state.nextAction = durable.nextAction
+  if (durable.status && state.status !== 'blocked') state.status = durable.status
+  return clampState(state)
+}
+
 function hydrateStateFromSession(sessionId: string): MainLoopState | null {
   const sessions = loadSessions()
   const session = sessions[sessionId]
@@ -386,11 +634,15 @@ function hydrateStateFromSession(sessionId: string): MainLoopState | null {
   const initial = extractLatestGoal(messages)
   hydrated.goal = initial.goal
   hydrated.goalContract = initial.goalContract
+  hydrated.objectiveSource = initial.goal ? 'legacy_tag' : null
 
   for (const message of messages) {
     if (message.role !== 'assistant' || typeof message.text !== 'string') continue
     const heartbeat = parseHeartbeatMeta(message.text)
-    if (heartbeat?.goal) hydrated.goal = heartbeat.goal
+    if (heartbeat?.goal) {
+      hydrated.goal = heartbeat.goal
+      hydrated.objectiveSource = 'legacy_tag'
+    }
     if (heartbeat?.summary) hydrated.summary = heartbeat.summary
     if (heartbeat?.nextAction) hydrated.nextAction = heartbeat.nextAction
     if (heartbeat?.status) hydrated.status = heartbeat.status
@@ -415,7 +667,7 @@ function hydrateStateFromSession(sessionId: string): MainLoopState | null {
     }
   }
 
-  return mergeWorkingStateIntoMainLoopState(sessionId, normalizeState(hydrated))
+  return applyDurableObjectiveOverlay(sessionId, mergeWorkingStateIntoMainLoopState(sessionId, normalizeState(hydrated)), session)
 }
 
 function persistState(sessionId: string, state: MainLoopState): void {
@@ -423,6 +675,10 @@ function persistState(sessionId: string, state: MainLoopState): void {
   upsertPersistedMainLoopState(sessionId, normalized as unknown as Record<string, unknown>)
   const session = getSession(sessionId)
   if (!session) return
+  const shouldSyncDurableWorkingState = normalized.objectiveSource === 'goal'
+    || normalized.objectiveSource === 'working_state'
+    || normalized.objectiveSource === 'run_context'
+  if (!shouldSyncDurableWorkingState) return
   void syncWorkingStateFromMainLoopState({
     sessionId,
     goal: normalized.goal,
@@ -432,10 +688,11 @@ function persistState(sessionId: string, state: MainLoopState): void {
       : normalized.status === 'blocked'
         ? 'blocked'
         : normalized.status === 'progress'
-          ? 'progress'
+        ? 'progress'
           : 'idle',
     nextAction: normalized.nextAction,
     planSteps: normalized.planSteps,
+    completedPlanSteps: normalized.completedPlanSteps,
     blockers: normalized.skillBlocker ? [{
       summary: normalized.skillBlocker.summary,
       kind: normalized.skillBlocker.status === 'approval_requested' ? 'approval' : 'other',
@@ -446,7 +703,12 @@ function persistState(sessionId: string, state: MainLoopState): void {
 function getOrCreateState(sessionId: string): MainLoopState | null {
   const existing = stateMap.get(sessionId)
   if (existing) {
-    const merged = mergeWorkingStateIntoMainLoopState(sessionId, existing)
+    const sessions = loadSessions()
+    const merged = applyDurableObjectiveOverlay(
+      sessionId,
+      mergeWorkingStateIntoMainLoopState(sessionId, existing),
+      sessions[sessionId] as Session | undefined,
+    )
     stateMap.set(sessionId, merged)
     return merged
   }
@@ -454,7 +716,12 @@ function getOrCreateState(sessionId: string): MainLoopState | null {
   // Try disk (survives full restart)
   const persisted = loadPersistedMainLoopState(sessionId) as Partial<MainLoopState> | null
   if (persisted) {
-    const restored = mergeWorkingStateIntoMainLoopState(sessionId, normalizeState(persisted))
+    const sessions = loadSessions()
+    const restored = applyDurableObjectiveOverlay(
+      sessionId,
+      mergeWorkingStateIntoMainLoopState(sessionId, normalizeState(persisted)),
+      sessions[sessionId] as Session | undefined,
+    )
     stateMap.set(sessionId, restored)
     return restored
   }
@@ -789,6 +1056,14 @@ export function buildMainLoopHeartbeatPrompt(session: unknown, fallbackPrompt: s
   const effectiveGoalContract = latestExternalGoal.goalContract
     ? mergeGoalContracts(state.goalContract, latestExternalGoal.goalContract)
     : state.goalContract
+  const durableSnapshot = resolveDurableObjectiveSnapshot(
+    String(candidate.id),
+    (persistedSession || candidate as Session),
+    state,
+  )
+  const usesDurableObjective = durableSnapshot.objectiveSource === 'goal'
+    || durableSnapshot.objectiveSource === 'working_state'
+    || durableSnapshot.objectiveSource === 'run_context'
 
   const heartbeatSession = (persistedSession || candidate as Session)
   const executionBrief = buildExecutionBrief({
@@ -819,12 +1094,22 @@ export function buildMainLoopHeartbeatPrompt(session: unknown, fallbackPrompt: s
     'Use the execution brief and pending external events shown above as the authoritative state for this tick.',
     'Do not infer or repeat old tasks from prior heartbeats.',
     'Prefer taking the single highest-value next step over restating the plan. Do not repeat completed work.',
-    'If you revise the plan, emit exactly one line like:',
-    '[MAIN_LOOP_PLAN]{"steps":["step 1","step 2"],"current_step":"step 1","completed_steps":["step 0"]}',
-    'After acting, emit exactly one review line like:',
-    '[MAIN_LOOP_REVIEW]{"note":"what changed","confidence":0.72,"needs_replan":false}',
-    'If you are actively progressing or you changed the plan, also emit [AGENT_HEARTBEAT_META] with goal/status/next_action.',
-    'Reply HEARTBEAT_OK only when nothing needs action right now.',
+    ...(usesDurableObjective
+      ? [
+          'If anything materially changed, emit exactly one line like:',
+          '[AUTONOMY_TICK]{"status":"progress","summary":"what changed","next_action":"best next step","plan_steps":["step 1","step 2"],"current_step":"step 1","completed_steps":["done"],"review":{"note":"brief review","confidence":0.72,"needs_replan":false}}',
+          'The durable objective, current execution brief, and working state are authoritative for this thread.',
+          'If nothing materially changed, stop cleanly instead of replaying legacy heartbeat metadata.',
+          'Reply HEARTBEAT_OK only when nothing needs action right now.',
+        ]
+      : [
+          'If you revise the plan, emit exactly one line like:',
+          '[MAIN_LOOP_PLAN]{"steps":["step 1","step 2"],"current_step":"step 1","completed_steps":["step 0"]}',
+          'After acting, emit exactly one review line like:',
+          '[MAIN_LOOP_REVIEW]{"note":"what changed","confidence":0.72,"needs_replan":false}',
+          'If you are actively progressing or you changed the plan, also emit [AGENT_HEARTBEAT_META] with goal/status/next_action.',
+          'Reply HEARTBEAT_OK only when nothing needs action right now.',
+        ]),
   ].filter(Boolean).join('\n')
 }
 
@@ -881,6 +1166,7 @@ export function pruneMainLoopState(liveSessionIds: Set<string>): number {
 export function setMainLoopStateForSession(sessionId: string, patch: Partial<MainLoopState>): MainLoopState | null {
   const current = getOrCreateState(sessionId)
   if (!current) return null
+  const sessions = loadSessions()
   const next = normalizeState({
     ...current,
     ...patch,
@@ -890,9 +1176,10 @@ export function setMainLoopStateForSession(sessionId: string, patch: Partial<Mai
     workingMemoryNotes: patch.workingMemoryNotes ?? current.workingMemoryNotes,
     updatedAt: now(),
   })
-  stateMap.set(sessionId, next)
-  persistState(sessionId, next)
-  return normalizeState(next)
+  const overlaid = applyDurableObjectiveOverlay(sessionId, next, sessions[sessionId] as Session | undefined)
+  stateMap.set(sessionId, overlaid)
+  persistState(sessionId, overlaid)
+  return normalizeState(overlaid)
 }
 
 export function pushMainLoopEventToMainSessions(input: PushMainLoopEventInput): number {
@@ -937,36 +1224,69 @@ export function handleMainLoopRunResult(input: HandleMainLoopRunResultInput): Ma
 
   const sessions = loadSessions()
   const session = sessions[input.sessionId] as unknown as Session | undefined
+  const durableBefore = resolveDurableObjectiveSnapshot(input.sessionId, session || null, state)
+  const hasDurableObjective = durableBefore.objectiveSource === 'goal'
+    || durableBefore.objectiveSource === 'working_state'
+    || durableBefore.objectiveSource === 'run_context'
   const isDirectUserChat = !input.internal && input.source === 'chat'
   const resultText = input.resultText || ''
   const persistedText = stripMainLoopMetaForPersistence(resultText)
   const toolEvents = Array.isArray(input.toolEvents) ? input.toolEvents : []
   const toolNames = uniqueStrings(toolEvents.map((event) => event.name || '').filter(Boolean), 8)
+  const autonomyTick = parseAutonomyTick(resultText)
   const heartbeat = parseHeartbeatMeta(resultText)
   const plan = parseMainLoopPlan(resultText)
   const review = parseMainLoopReview(resultText)
+  const shouldAcceptLegacyHeartbeatMeta = !input.internal || !hasDurableObjective
+  const shouldAcceptStructuredAutonomyTick = Boolean(autonomyTick)
   const shouldCaptureMessageGoal = !input.internal
   const messageGoal = shouldCaptureMessageGoal ? parseGoalContractFromText(input.message || '') : null
   const nowTs = now()
   state.lifetimeIterations++
   if (messageGoal) state.goalContract = mergeGoalContracts(state.goalContract, messageGoal)
-  if (!state.goal && shouldCaptureMessageGoal) state.goal = cleanMultiline(input.message, 900)
-  if (heartbeat?.goal) state.goal = heartbeat.goal
-  if (heartbeat?.summary) state.summary = heartbeat.summary
-  if (heartbeat?.nextAction) state.nextAction = heartbeat.nextAction
-  if (heartbeat?.status) state.status = heartbeat.status
+  if (!state.goal && shouldCaptureMessageGoal) {
+    state.goal = cleanMultiline(input.message, 900)
+    if (state.goal) state.objectiveSource = 'legacy_tag'
+  }
+  if (shouldAcceptStructuredAutonomyTick && autonomyTick?.goal) state.goal = autonomyTick.goal
+  if (shouldAcceptLegacyHeartbeatMeta && heartbeat?.goal) {
+    state.goal = heartbeat.goal
+    state.objectiveSource = 'legacy_tag'
+  }
+  if (shouldAcceptStructuredAutonomyTick && autonomyTick?.summary) state.summary = autonomyTick.summary
+  if (shouldAcceptLegacyHeartbeatMeta && heartbeat?.summary) state.summary = heartbeat.summary
+  if (shouldAcceptStructuredAutonomyTick && autonomyTick?.nextAction) state.nextAction = autonomyTick.nextAction
+  if (shouldAcceptLegacyHeartbeatMeta && heartbeat?.nextAction) state.nextAction = heartbeat.nextAction
+  if (shouldAcceptStructuredAutonomyTick && autonomyTick?.status) state.status = autonomyTick.status
+  if (shouldAcceptLegacyHeartbeatMeta && heartbeat?.status) state.status = heartbeat.status
 
-  if (plan?.steps?.length) state.planSteps = plan.steps
-  if (plan?.current_step) state.currentPlanStep = plan.current_step
-  if (plan?.completed_steps?.length) {
+  if (shouldAcceptStructuredAutonomyTick && autonomyTick?.planSteps?.length) state.planSteps = autonomyTick.planSteps
+  if (shouldAcceptLegacyHeartbeatMeta && plan?.steps?.length) state.planSteps = plan.steps
+  if (shouldAcceptStructuredAutonomyTick && autonomyTick?.currentStep) state.currentPlanStep = autonomyTick.currentStep
+  if (shouldAcceptLegacyHeartbeatMeta && plan?.current_step) state.currentPlanStep = plan.current_step
+  if (shouldAcceptStructuredAutonomyTick && autonomyTick?.completedSteps?.length) {
+    const merged = new Set([...state.completedPlanSteps, ...autonomyTick.completedSteps])
+    state.completedPlanSteps = [...merged].slice(0, 16)
+  }
+  if (shouldAcceptLegacyHeartbeatMeta && plan?.completed_steps?.length) {
     const merged = new Set([...state.completedPlanSteps, ...plan.completed_steps])
     state.completedPlanSteps = [...merged].slice(0, 16)
   }
-  if (plan) state.lastPlannedAt = nowTs
+  if (shouldAcceptStructuredAutonomyTick && autonomyTick) state.lastPlannedAt = nowTs
+  if (shouldAcceptLegacyHeartbeatMeta && plan) state.lastPlannedAt = nowTs
 
-  if (review?.note) state.reviewNote = review.note
-  if (typeof review?.confidence === 'number') state.reviewConfidence = review.confidence
-  if (review) state.lastReviewedAt = nowTs
+  if (shouldAcceptStructuredAutonomyTick && autonomyTick?.reviewNote) state.reviewNote = autonomyTick.reviewNote
+  if (shouldAcceptLegacyHeartbeatMeta && review?.note) state.reviewNote = review.note
+  if (shouldAcceptStructuredAutonomyTick && typeof autonomyTick?.reviewConfidence === 'number') state.reviewConfidence = autonomyTick.reviewConfidence
+  if (shouldAcceptLegacyHeartbeatMeta && typeof review?.confidence === 'number') state.reviewConfidence = review.confidence
+  if (shouldAcceptStructuredAutonomyTick && autonomyTick) state.lastReviewedAt = nowTs
+  if (shouldAcceptLegacyHeartbeatMeta && review) state.lastReviewedAt = nowTs
+
+  const turnTokens = (input.inputTokens || 0) + (input.outputTokens || 0)
+  if (turnTokens > 0) state.missionTokens += turnTokens
+  if (typeof input.estimatedCost === 'number' && Number.isFinite(input.estimatedCost) && input.estimatedCost > 0) {
+    state.missionCostUsd += input.estimatedCost
+  }
 
   if (toolNames.length > 0) {
     appendWorkingMemory(state, `Used tools: ${toolNames.join(', ')}`)
@@ -992,10 +1312,16 @@ export function handleMainLoopRunResult(input: HandleMainLoopRunResultInput): Ma
   const cleanedResult = persistedText.trim()
   const waitingForExternal = extractWaitSignal(resultText)
   const gotTerminalAck = /^HEARTBEAT_OK$/i.test(cleanedResult) || /^NO_MESSAGE$/i.test(cleanedResult)
+  const ignoredLegacyCompatibilityPulse = input.internal
+    && hasDurableObjective
+    && !input.error
+    && !toolEvents.length
+    && !autonomyTick
+    && Boolean(heartbeat || plan || review)
   const successfulChatDelivery = isDirectUserChat && !input.error && hasSuccessfulChatDelivery(toolEvents)
   const selectedSkillNote = summarizeUseSkillToolEvent(toolEvents)
   if (selectedSkillNote) appendWorkingMemory(state, selectedSkillNote)
-  state.metaMissCount = heartbeat || plan || review || gotTerminalAck ? 0 : state.metaMissCount + 1
+  state.metaMissCount = autonomyTick || heartbeat || plan || review || gotTerminalAck ? 0 : state.metaMissCount + 1
   const skillQuery = cleanText(state.nextAction || input.message || state.goal, 240)
   let skillBlocker = deriveSkillBlockerFromToolEvents({
     toolEvents,
@@ -1011,6 +1337,9 @@ export function handleMainLoopRunResult(input: HandleMainLoopRunResultInput): Ma
     skillBlocker = null
   }
   state.skillBlocker = skillBlocker
+  if (!autonomyTick) {
+    applyDurableObjectiveOverlay(input.sessionId, state, session || null)
+  }
 
   if (input.internal) {
     state.pendingEvents = []
@@ -1046,7 +1375,9 @@ export function handleMainLoopRunResult(input: HandleMainLoopRunResultInput): Ma
     state.paused = false
   }
 
-  const needsReplan = review?.needs_replan === true || ((review?.confidence ?? 1) < 0.45)
+  const needsReplan = autonomyTick?.needsReplan === true
+    || review?.needs_replan === true
+    || ((autonomyTick?.reviewConfidence ?? review?.confidence ?? 1) < 0.45)
   const limit = followupLimit(input.sessionId)
 
   let followup: MainLoopFollowupRequest | null = null
@@ -1063,7 +1394,7 @@ export function handleMainLoopRunResult(input: HandleMainLoopRunResultInput): Ma
     }
   } else if (!input.internal) {
     state.followupChainCount = 0
-  } else if (input.error || waitingForExternal || gotTerminalAck) {
+  } else if (input.error || waitingForExternal || gotTerminalAck || ignoredLegacyCompatibilityPulse) {
     state.followupChainCount = 0
     if (gotTerminalAck && state.status !== 'blocked') state.status = 'ok'
   } else {
@@ -1101,10 +1432,15 @@ export function handleMainLoopRunResult(input: HandleMainLoopRunResultInput): Ma
   stateMap.set(input.sessionId, finalClamped)
   persistState(input.sessionId, finalClamped)
 
-  // Project orchestrator state into session RunContext (non-critical)
-  try {
-    syncMainLoopToRunContext(input.sessionId, finalClamped)
-  } catch { /* non-critical — main loop continues even if sync fails */ }
+  // Project orchestrator state into RunContext only when the objective source is already durable.
+  const shouldSyncDurableRunContext = finalClamped.objectiveSource === 'goal'
+    || finalClamped.objectiveSource === 'working_state'
+    || finalClamped.objectiveSource === 'run_context'
+  if (shouldSyncDurableRunContext) {
+    try {
+      syncMainLoopToRunContext(input.sessionId, finalClamped)
+    } catch { /* non-critical — main loop continues even if sync fails */ }
+  }
 
   return followup
 }

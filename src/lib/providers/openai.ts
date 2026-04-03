@@ -45,153 +45,157 @@ async function fileToContentParts(filePath: string): Promise<Array<Record<string
 }
 
 export function streamOpenAiChat({ session, message, imagePath, imageUrl, apiKey, systemPrompt, write, active, loadHistory, onUsage, signal }: StreamChatOptions): Promise<string> {
-  return new Promise(async (resolve, reject) => {
-    const messages = await buildMessages(session, message, imagePath, systemPrompt, loadHistory, imageUrl)
-    const model = session.model || 'gpt-4o'
+  return new Promise((resolve, reject) => {
+    ;(async () => {
+      try {
+        const messages = await buildMessages(session, message, imagePath, systemPrompt, loadHistory, imageUrl)
+        const model = session.model || 'gpt-4o'
 
-    let fullResponse = ''
+        let fullResponse = ''
 
-    // Support custom base URLs for custom providers
-    const baseUrl = session.apiEndpoint || PROVIDER_DEFAULTS.openai
-    const url = `${baseUrl.replace(/\/+$/, '')}/chat/completions`
+        // Support custom base URLs for custom providers
+        const baseUrl = session.apiEndpoint || PROVIDER_DEFAULTS.openai
+        const url = `${baseUrl.replace(/\/+$/, '')}/chat/completions`
 
-    // OpenClaw endpoints behind Hostinger's proxy use express.json() middleware
-    // which consumes the request body before http-proxy-middleware can forward it.
-    // Sending as text/plain bypasses the body parser while the gateway still parses JSON.
-    const contentType = session.contentType || 'application/json'
+        // OpenClaw endpoints behind Hostinger's proxy use express.json() middleware
+        // which consumes the request body before http-proxy-middleware can forward it.
+        // Sending as text/plain bypasses the body parser while the gateway still parses JSON.
+        const contentType = session.contentType || 'application/json'
 
-    const abortController = new AbortController()
-    if (signal) {
-      if (signal.aborted) abortController.abort()
-      else signal.addEventListener('abort', () => abortController.abort(), { once: true })
-    }
-    active.set(session.id, { kill: () => abortController.abort() })
-
-    try {
-      // Try with stream_options first; if the provider rejects with 400, retry without it
-      let res: Response | undefined
-      let usageEnabled = true
-      for (const includeStreamOptions of [true, false]) {
-        const payloadObj: Record<string, unknown> = {
-          model,
-          messages,
-          stream: true,
+        const abortController = new AbortController()
+        if (signal) {
+          if (signal.aborted) abortController.abort()
+          else signal.addEventListener('abort', () => abortController.abort(), { once: true })
         }
-        if (includeStreamOptions) {
-          payloadObj.stream_options = { include_usage: true }
-        }
-        const payload = JSON.stringify(payloadObj)
+        active.set(session.id, { kill: () => abortController.abort() })
 
-        res = await fetch(url, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${apiKey}`,
-            'Content-Type': contentType,
-          },
-          body: payload,
-          signal: abortController.signal,
-        })
-
-        if (res.status === 400 && includeStreamOptions) {
-          // Provider likely rejected stream_options — retry without it
-          usageEnabled = false
-          continue
-        }
-        usageEnabled = includeStreamOptions
-        break
-      }
-
-      if (!res) {
-        active.delete(session.id)
-        reject(new Error('No response from provider'))
-        return
-      }
-
-      // Detect HTML responses (e.g. landing page returned instead of API)
-      const resContentType = res.headers.get('content-type') || ''
-      if (resContentType.includes('text/html')) {
-        const msg = 'Received HTML instead of API response. The endpoint may be misconfigured or returning a landing page.'
-        log.error(TAG, `[${session.id}] received HTML instead of API response from ${baseUrl} (provider: ${session.provider})`)
-        writeSSE(write, 'err', msg)
-        active.delete(session.id)
-        reject(new Error(msg))
-        return
-      }
-
-      if (!res.ok) {
-        const errBody = await res.text().catch(() => '')
-        log.error(TAG, `[${session.id}] openai error ${res.status}:`, errBody.slice(0, 200))
-        let errMsg = `API error (${res.status})`
         try {
-          const parsed = JSON.parse(errBody)
-          if (parsed.error?.message) errMsg = parsed.error.message
-          else if (parsed.message) errMsg = parsed.message
-          else if (parsed.detail) errMsg = parsed.detail
-        } catch {}
-        writeSSE(write, 'err', errMsg)
-        active.delete(session.id)
-        reject(new Error(`OpenAI error ${res.status}: ${errMsg}`))
-        return
-      }
-
-      if (!res.body) {
-        const msg = `No response body from ${baseUrl}`
-        log.error(TAG, `[${session.id}] ${msg}`)
-        active.delete(session.id)
-        reject(new Error(msg))
-        return
-      }
-
-      const reader = res.body.getReader()
-      const decoder = new TextDecoder()
-      let buf = ''
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        if (abortController.signal.aborted) break
-
-        buf += decoder.decode(value, { stream: true })
-        const lines = buf.split('\n')
-        buf = lines.pop()!
-
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue
-          const data = line.slice(6).trim()
-          if (data === '[DONE]') continue
-          try {
-            const parsed = JSON.parse(data)
-            const delta = parsed.choices?.[0]?.delta?.content
-            if (delta) {
-              fullResponse += delta
-              writeSSE(write, 'd', delta)
+          // Try with stream_options first; if the provider rejects with 400, retry without it
+          let res: Response | undefined
+          let usageEnabled = true
+          for (const includeStreamOptions of [true, false]) {
+            const payloadObj: Record<string, unknown> = {
+              model,
+              messages,
+              stream: true,
             }
-            // Extract usage from the final chunk (stream_options: include_usage)
-            if (usageEnabled && parsed.usage && onUsage) {
-              onUsage({
-                inputTokens: parsed.usage.prompt_tokens || 0,
-                outputTokens: parsed.usage.completion_tokens || 0,
-              })
+            if (includeStreamOptions) {
+              payloadObj.stream_options = { include_usage: true }
             }
-          } catch {}
+            const payload = JSON.stringify(payloadObj)
+
+            res = await fetch(url, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${apiKey}`,
+                'Content-Type': contentType,
+              },
+              body: payload,
+              signal: abortController.signal,
+            })
+
+            if (res.status === 400 && includeStreamOptions) {
+              // Provider likely rejected stream_options — retry without it
+              usageEnabled = false
+              continue
+            }
+            usageEnabled = includeStreamOptions
+            break
+          }
+
+          if (!res) {
+            active.delete(session.id)
+            reject(new Error('No response from provider'))
+            return
+          }
+
+          // Detect HTML responses (e.g. landing page returned instead of API)
+          const resContentType = res.headers.get('content-type') || ''
+          if (resContentType.includes('text/html')) {
+            const msg = 'Received HTML instead of API response. The endpoint may be misconfigured or returning a landing page.'
+            log.error(TAG, `[${session.id}] received HTML instead of API response from ${baseUrl} (provider: ${session.provider})`)
+            writeSSE(write, 'err', msg)
+            active.delete(session.id)
+            reject(new Error(msg))
+            return
+          }
+
+          if (!res.ok) {
+            const errBody = await res.text().catch(() => '')
+            log.error(TAG, `[${session.id}] openai error ${res.status}:`, errBody.slice(0, 200))
+            let errMsg = `API error (${res.status})`
+            try {
+              const parsed = JSON.parse(errBody)
+              if (parsed.error?.message) errMsg = parsed.error.message
+              else if (parsed.message) errMsg = parsed.message
+              else if (parsed.detail) errMsg = parsed.detail
+            } catch {}
+            writeSSE(write, 'err', errMsg)
+            active.delete(session.id)
+            reject(new Error(`OpenAI error ${res.status}: ${errMsg}`))
+            return
+          }
+
+          if (!res.body) {
+            const msg = `No response body from ${baseUrl}`
+            log.error(TAG, `[${session.id}] ${msg}`)
+            active.delete(session.id)
+            reject(new Error(msg))
+            return
+          }
+
+          const reader = res.body.getReader()
+          const decoder = new TextDecoder()
+          let buf = ''
+
+          while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+            if (abortController.signal.aborted) break
+
+            buf += decoder.decode(value, { stream: true })
+            const lines = buf.split('\n')
+            buf = lines.pop()!
+
+            for (const line of lines) {
+              if (!line.startsWith('data: ')) continue
+              const data = line.slice(6).trim()
+              if (data === '[DONE]') continue
+              try {
+                const parsed = JSON.parse(data)
+                const delta = parsed.choices?.[0]?.delta?.content
+                if (delta) {
+                  fullResponse += delta
+                  writeSSE(write, 'd', delta)
+                }
+                // Extract usage from the final chunk (stream_options: include_usage)
+                if (usageEnabled && parsed.usage && onUsage) {
+                  onUsage({
+                    inputTokens: parsed.usage.prompt_tokens || 0,
+                    outputTokens: parsed.usage.completion_tokens || 0,
+                  })
+                }
+              } catch {}
+            }
+          }
+
+          if (!fullResponse) {
+            log.error(TAG, `[${session.id}] openai stream ended with no content (provider: ${session.provider}, endpoint: ${baseUrl})`)
+          }
+        } catch (err: unknown) {
+          const errObj = err as { name?: string; message?: string }
+          if (errObj.name !== 'AbortError') {
+            log.error(TAG, `[${session.id}] openai request error:`, errObj.message)
+            writeSSE(write, 'err', `Connection failed: ${errObj.message}`)
+          }
+          active.delete(session.id)
+          reject(err)
+          return
         }
-      }
-
-      if (!fullResponse) {
-        log.error(TAG, `[${session.id}] openai stream ended with no content (provider: ${session.provider}, endpoint: ${baseUrl})`)
-      }
-    } catch (err: unknown) {
-      const errObj = err as { name?: string; message?: string }
-      if (errObj.name !== 'AbortError') {
-        log.error(TAG, `[${session.id}] openai request error:`, errObj.message)
-        writeSSE(write, 'err', `Connection failed: ${errObj.message}`)
-      }
-      active.delete(session.id)
-      reject(err)
-      return
-    }
-    active.delete(session.id)
-    resolve(fullResponse)
+        active.delete(session.id)
+        resolve(fullResponse)
+      } catch (err) { reject(err) }
+    })()
   })
 }
 

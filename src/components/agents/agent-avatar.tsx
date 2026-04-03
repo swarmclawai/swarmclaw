@@ -2,13 +2,10 @@
 
 import { useMemo } from 'react'
 import multiavatar from '@multiavatar/multiavatar'
+import DOMPurify from 'isomorphic-dompurify'
 
-/** Strip scripts/event handlers from SVG to prevent XSS */
 function sanitizeSvg(svg: string): string {
-  return svg
-    .replace(/<script[\s\S]*?<\/script>/gi, '')
-    .replace(/\bon\w+\s*=\s*"[^"]*"/gi, '')
-    .replace(/\bon\w+\s*=\s*'[^']*'/gi, '')
+  return DOMPurify.sanitize(svg, { USE_PROFILES: { svg: true, svgFilters: true } })
 }
 
 interface Props {

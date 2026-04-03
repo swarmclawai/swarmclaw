@@ -1658,6 +1658,106 @@ export const loadGoal = goalsStore.loadItem
 export const upsertGoal = goalsStore.upsert
 export const deleteGoalItem = goalsStore.deleteItem
 
+function legacyMissionStatusToWorkingStatus(value: unknown): 'idle' | 'progress' | 'blocked' | 'completed' {
+  const normalized = typeof value === 'string' ? value.trim().toLowerCase() : ''
+  if (normalized === 'achieved' || normalized === 'completed' || normalized === 'ok') return 'completed'
+  if (normalized === 'blocked' || normalized === 'waiting' || normalized === 'paused') return 'blocked'
+  if (normalized === 'active' || normalized === 'executing' || normalized === 'progress') return 'progress'
+  return 'idle'
+}
+
+function buildGoalFromLegacyMission(id: string, mission: StoredObject): StoredObject {
+  const objective = typeof mission.objective === 'string' && mission.objective.trim()
+    ? mission.objective.trim()
+    : typeof mission.title === 'string' && mission.title.trim()
+      ? mission.title.trim()
+      : 'Legacy mission objective'
+  const title = typeof mission.title === 'string' && mission.title.trim()
+    ? mission.title.trim()
+    : objective.slice(0, 120)
+  const status = typeof mission.status === 'string' && mission.status.trim().toLowerCase() === 'achieved'
+    ? 'achieved'
+    : typeof mission.status === 'string' && mission.status.trim().toLowerCase() === 'abandoned'
+      ? 'abandoned'
+      : 'active'
+
+  return {
+    id,
+    title,
+    description: typeof mission.plannerSummary === 'string' && mission.plannerSummary.trim()
+      ? mission.plannerSummary.trim()
+      : typeof mission.description === 'string' && mission.description.trim()
+        ? mission.description.trim()
+        : undefined,
+    level: mission.taskId ? 'task' : mission.agentId ? 'agent' : mission.projectId ? 'project' : 'organization',
+    parentGoalId: typeof mission.parentMissionId === 'string' && mission.parentMissionId.trim() ? mission.parentMissionId.trim() : null,
+    projectId: typeof mission.projectId === 'string' && mission.projectId.trim() ? mission.projectId.trim() : null,
+    agentId: typeof mission.agentId === 'string' && mission.agentId.trim() ? mission.agentId.trim() : null,
+    taskId: typeof mission.taskId === 'string' && mission.taskId.trim() ? mission.taskId.trim() : null,
+    objective,
+    constraints: Array.isArray(mission.constraints)
+      ? mission.constraints.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+      : [],
+    successMetric: typeof mission.successMetric === 'string' && mission.successMetric.trim() ? mission.successMetric.trim() : null,
+    budgetUsd: typeof mission.budgetUsd === 'number' && Number.isFinite(mission.budgetUsd) ? mission.budgetUsd : null,
+    deadlineAt: typeof mission.deadlineAt === 'number' && Number.isFinite(mission.deadlineAt) ? mission.deadlineAt : null,
+    status,
+    createdAt: typeof mission.createdAt === 'number' && Number.isFinite(mission.createdAt) ? mission.createdAt : Date.now(),
+    updatedAt: typeof mission.updatedAt === 'number' && Number.isFinite(mission.updatedAt) ? mission.updatedAt : Date.now(),
+  }
+}
+
+function buildWorkingStateFromLegacyMission(mission: StoredObject): StoredObject | null {
+  const sessionId = typeof mission.sessionId === 'string' && mission.sessionId.trim()
+    ? mission.sessionId.trim()
+    : ''
+  if (!sessionId) return null
+  const currentStep = typeof mission.currentStep === 'string' && mission.currentStep.trim()
+    ? mission.currentStep.trim()
+    : ''
+  const blockerSummary = typeof mission.blockerSummary === 'string' && mission.blockerSummary.trim()
+    ? mission.blockerSummary.trim()
+    : ''
+  return {
+    sessionId,
+    objective: typeof mission.objective === 'string' && mission.objective.trim() ? mission.objective.trim() : null,
+    summary: typeof mission.plannerSummary === 'string' && mission.plannerSummary.trim() ? mission.plannerSummary.trim() : null,
+    status: legacyMissionStatusToWorkingStatus(mission.status ?? mission.phase),
+    nextAction: currentStep || null,
+    planSteps: currentStep
+      ? [{ id: `legacy-mission-${sessionId}`, text: currentStep, status: 'active', createdAt: Date.now(), updatedAt: Date.now() }]
+      : [],
+    blockers: blockerSummary
+      ? [{ id: `legacy-mission-blocker-${sessionId}`, summary: blockerSummary, status: 'active', createdAt: Date.now(), updatedAt: Date.now() }]
+      : [],
+    confirmedFacts: [],
+    artifacts: [],
+    decisions: [],
+    openQuestions: [],
+    hypotheses: [],
+    evidenceRefs: [],
+    constraints: Array.isArray(mission.constraints)
+      ? mission.constraints.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+      : [],
+    successCriteria: Array.isArray(mission.successCriteria)
+      ? mission.successCriteria.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+      : [],
+    updatedAt: typeof mission.updatedAt === 'number' && Number.isFinite(mission.updatedAt) ? mission.updatedAt : Date.now(),
+  }
+}
+
+export function saveMissions(missions: Record<string, StoredObject>): void {
+  for (const [id, mission] of Object.entries(missions || {})) {
+    upsertGoal(id, buildGoalFromLegacyMission(id, mission))
+    const workingState = buildWorkingStateFromLegacyMission(mission)
+    if (workingState) upsertPersistedWorkingState(String(workingState.sessionId), workingState)
+  }
+}
+
+export function loadMissions(): Record<string, StoredObject> {
+  return loadGoals() as Record<string, StoredObject>
+}
+
 export function getSessionMessages(sessionId: string): Message[] {
   const session = loadSession(sessionId)
   return Array.isArray(session?.messages) ? session.messages : []

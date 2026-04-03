@@ -346,6 +346,100 @@ describe('main-agent-loop', () => {
     assert.equal(output.followupMessage, null)
   })
 
+  it('accepts structured autonomy ticks for durable objectives without falling back to legacy tags', () => {
+    const output = runWithTempDataDir(`
+      const storageMod = await import('@/lib/server/storage')
+      const mainLoopMod = await import('@/lib/server/agents/main-agent-loop')
+      const storage = storageMod.default || storageMod
+      const mainLoop = mainLoopMod.default || mainLoopMod
+
+      storage.saveAgents({
+        'agent-a': {
+          id: 'agent-a',
+          name: 'Agent A',
+          provider: 'openai',
+          model: 'gpt-test',
+        },
+      })
+
+      storage.saveSessions({
+        main: {
+          id: 'main',
+          name: 'Main Agent Thread',
+          shortcutForAgentId: 'agent-a',
+          cwd: process.cwd(),
+          user: 'tester',
+          provider: 'openai',
+          model: 'gpt-test',
+          claudeSessionId: null,
+          messages: [],
+          createdAt: 1,
+          lastActiveAt: 1,
+          sessionType: 'human',
+          agentId: 'agent-a',
+          heartbeatEnabled: true,
+          missionId: 'mission-1',
+        },
+      })
+
+      storage.saveMissions({
+        'mission-1': {
+          id: 'mission-1',
+          source: 'heartbeat',
+          objective: 'Ship the autonomy hardening release',
+          status: 'active',
+          phase: 'executing',
+          sessionId: 'main',
+          agentId: 'agent-a',
+          taskIds: [],
+          currentStep: 'Verify the release checklist',
+          plannerSummary: 'Use the durable controller state.',
+          verifierSummary: null,
+          blockerSummary: null,
+          waitState: null,
+          createdAt: 1,
+          updatedAt: Date.now(),
+        },
+      })
+
+      const prompt = mainLoop.buildMainLoopHeartbeatPrompt(storage.loadSessions().main, 'fallback heartbeat')
+      mainLoop.handleMainLoopRunResult({
+        sessionId: 'main',
+        message: 'Heartbeat tick',
+        internal: true,
+        source: 'heartbeat',
+        resultText: [
+          'Validated the release checklist.',
+          '[AUTONOMY_TICK]{"status":"progress","summary":"Release checklist validated.","next_action":"publish release artifacts","plan_steps":["verify artifacts","publish release artifacts"],"current_step":"verify artifacts","completed_steps":["Verify the release checklist"],"review":{"note":"Ready for artifact publication.","confidence":0.88,"needs_replan":false}}',
+        ].join('\\n'),
+      })
+      const state = mainLoop.getMainLoopStateForSession('main')
+
+      console.log(JSON.stringify({
+        promptIncludesAutonomyTick: prompt.includes('[AUTONOMY_TICK]'),
+        promptIncludesLegacyPlanTags: prompt.includes('[MAIN_LOOP_PLAN]'),
+        stateStatus: state?.status || null,
+        stateSummary: state?.summary || null,
+        stateNextAction: state?.nextAction || null,
+        statePlanSteps: state?.planSteps || [],
+        stateCurrentPlanStep: state?.currentPlanStep || null,
+        stateCompletedPlanSteps: state?.completedPlanSteps || [],
+        stateReviewNote: state?.reviewNote || null,
+      }))
+    `)
+
+    assert.equal(output.promptIncludesAutonomyTick, true)
+    assert.equal(output.promptIncludesLegacyPlanTags, false)
+    assert.equal(output.stateStatus, 'progress')
+    assert.match(String(output.stateSummary), /validated/i)
+    assert.equal(output.stateNextAction, 'publish release artifacts')
+    assert.ok((output.statePlanSteps as string[]).includes('verify artifacts'))
+    assert.ok((output.statePlanSteps as string[]).includes('publish release artifacts'))
+    assert.equal(output.stateCurrentPlanStep, 'verify artifacts')
+    assert.ok((output.stateCompletedPlanSteps as string[]).includes('Verify the release checklist'))
+    assert.match(String(output.stateReviewNote), /artifact publication/i)
+  })
+
   it('does not let internal heartbeat prompts rewrite the stored goal contract', () => {
     const output = runWithTempDataDir(`
       const storageMod = await import('@/lib/server/storage')

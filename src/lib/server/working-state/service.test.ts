@@ -224,9 +224,7 @@ describe('working-state service', () => {
         source: 'heartbeat',
         resultText: [
           'Updated the changelog and prepared the release notes.',
-          '[MAIN_LOOP_PLAN]{"steps":["publish the release notes"],"current_step":"publish the release notes","completed_steps":["verify the changelog output"]}',
-          '[MAIN_LOOP_REVIEW]{"note":"changelog verified","confidence":0.91,"needs_replan":false}',
-          '[AGENT_HEARTBEAT_META]{"goal":"Ship the release checklist","status":"progress","next_action":"publish the release notes"}',
+          '[AUTONOMY_TICK]{"status":"progress","summary":"Changelog verified and release notes prepared.","next_action":"publish the release notes","plan_steps":["publish the release notes"],"current_step":"publish the release notes","completed_steps":["verify the changelog output"],"review":{"note":"changelog verified","confidence":0.91,"needs_replan":false}}',
         ].join('\\n'),
         toolEvents: [{ name: 'shell', input: 'npm run type-check', output: 'ok' }],
       })
@@ -246,6 +244,7 @@ describe('working-state service', () => {
     assert.match(String(output.beforeNextAction), /verify the changelog output/i)
     assert.match(String(output.prompt), /verify the changelog output/i)
     assert.match(String(output.prompt), /waiting on release manager approval/i)
+    assert.match(String(output.prompt), /\[AUTONOMY_TICK\]/)
     assert.match(String(output.afterNextAction), /publish the release notes/i)
     assert.match(String(output.workingNextAction), /publish the release notes/i)
     assert.ok(Array.isArray(output.workingPlanSteps) && output.workingPlanSteps.some((step) => /publish the release notes/i.test(String((step as Record<string, unknown>).text))))

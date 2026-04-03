@@ -4,6 +4,7 @@ import { create } from 'zustand'
 import type { PendingExecApproval, ExecApprovalDecision } from '@/types'
 import { api } from '@/lib/app/api-client'
 import { errorMessage } from '@/lib/shared-utils'
+import { setIfChanged, invalidateFingerprint } from './set-if-changed'
 
 interface ApprovalState {
   approvals: Record<string, PendingExecApproval>
@@ -20,10 +21,12 @@ export const useApprovalStore = create<ApprovalState>((set) => ({
   resolvedIds: new Set<string>(),
 
   addApproval: (approval) => {
+    invalidateFingerprint('approvals')
     set((s) => ({ approvals: { ...s.approvals, [approval.id]: approval } }))
   },
 
   removeApproval: (id) => {
+    invalidateFingerprint('approvals')
     set((s) => {
       const next = { ...s.approvals }
       delete next[id]
@@ -91,7 +94,7 @@ export const useApprovalStore = create<ApprovalState>((set) => ({
       const result = await api<PendingExecApproval[]>('GET', '/openclaw/approvals')
       const approvals: Record<string, PendingExecApproval> = {}
       for (const a of result) approvals[a.id] = a
-      set({ approvals, resolvedIds: new Set<string>() })
+      setIfChanged<ApprovalState>(set, 'approvals', approvals)
     } catch {
       // ignore — gateway may be offline
     }

@@ -244,15 +244,46 @@ export function syncWorkingStateFromMainLoopState(input: {
   status?: WorkingStateStatus | null
   nextAction?: string | null
   planSteps?: string[]
+  completedPlanSteps?: string[]
   blockers?: Array<{ summary: string; kind?: WorkingBlocker['kind'] | null }>
   facts?: string[]
 }): SessionWorkingState {
-  const planSteps = Array.isArray(input.planSteps)
-    ? input.planSteps.map((step, index) => ({
-      text: step,
-      status: index === 0 && input.status !== 'completed' ? 'active' : (input.status === 'completed' ? 'resolved' : 'resolved'),
-    } satisfies WorkingPlanStepPatch))
-    : undefined
+  const planSteps = (() => {
+    const activeSteps = Array.isArray(input.planSteps)
+      ? input.planSteps
+        .map((step) => cleanText(step, 240))
+        .filter((step): step is string => Boolean(step))
+      : []
+    const completedSteps = Array.isArray(input.completedPlanSteps)
+      ? input.completedPlanSteps
+        .map((step) => cleanText(step, 240))
+        .filter((step): step is string => Boolean(step))
+      : []
+    const out: WorkingPlanStepPatch[] = []
+    const seen = new Set<string>()
+
+    for (const [index, step] of activeSteps.entries()) {
+      const key = step.toLowerCase()
+      if (seen.has(key)) continue
+      seen.add(key)
+      out.push({
+        text: step,
+        status: index === 0 && input.status !== 'completed' ? 'active' : 'resolved',
+      } satisfies WorkingPlanStepPatch)
+    }
+
+    for (const step of completedSteps) {
+      const key = step.toLowerCase()
+      if (seen.has(key)) continue
+      seen.add(key)
+      out.push({
+        text: step,
+        status: 'resolved',
+      } satisfies WorkingPlanStepPatch)
+    }
+
+    return out.length > 0 ? out : undefined
+  })()
   return applyWorkingStatePatch(input.sessionId, {
     objective: cleanMultiline(input.goal, 900) || undefined,
     summary: cleanMultiline(input.summary, 600) || undefined,
