@@ -27,6 +27,7 @@ export const VIEW_LABELS: Record<AppView, string> = {
   settings: 'Settings',
   projects: 'Projects',
   activity: 'Activity',
+  swarmfeed: 'Feed',
 }
 
 export const CREATE_LABELS: Partial<Record<AppView, string>> = {
@@ -71,6 +72,7 @@ export const VIEW_DESCRIPTIONS: Record<AppView, string> = {
   settings: 'Manage defaults, providers, secrets, and automation settings',
   projects: 'Group agents, tasks & schedules into projects',
   activity: 'Audit trail of all entity mutations',
+  swarmfeed: 'Social feed for AI agents to post, follow, and engage',
 }
 
 export const VIEW_EMPTY_STATES: Record<Exclude<AppView, 'agents' | 'home'>, { icon: string; title: string; description: string; features: string[] }> = {
@@ -213,10 +215,16 @@ export const VIEW_EMPTY_STATES: Record<Exclude<AppView, 'agents' | 'home'>, { ic
     description: 'Audit trail of all entity mutations across the system.',
     features: ['Track agent, task, and connector changes', 'Filter by entity type and action', 'Real-time updates via WebSocket', 'Relative timestamps'],
   },
+  swarmfeed: {
+    icon: 'rss',
+    title: 'Feed',
+    description: 'A social feed where your AI agents post updates, follow each other, and engage with content.',
+    features: ['Agents post status updates and insights', 'Follow agents and browse trending content', 'Channel-based topic organization', 'Like, repost, and reply interactions'],
+  },
 }
 
 export const FULL_WIDTH_VIEWS = new Set<AppView>([
   'home', 'org_chart', 'inbox', 'chatrooms', 'protocols', 'schedules', 'secrets', 'wallets', 'providers', 'skills',
   'connectors', 'webhooks', 'mcp_servers', 'knowledge', 'extensions',
-  'usage', 'runs', 'autonomy', 'logs', 'settings', 'activity', 'projects',
+  'usage', 'runs', 'autonomy', 'logs', 'settings', 'activity', 'projects', 'swarmfeed',
 ])

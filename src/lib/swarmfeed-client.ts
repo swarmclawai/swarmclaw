@@ -120,7 +120,8 @@ export async function registerAgent(agent: {
   bio?: string
 }): Promise<{ agentId: string; apiKey: string }> {
   // Dynamic import tweetnacl (available in SwarmClaw's deps)
-  const nacl = await import('tweetnacl')
+  const naclModule = await import('tweetnacl')
+  const nacl = naclModule.default ?? naclModule
   const keypair = nacl.sign.keyPair()
   const publicKeyHex = Buffer.from(keypair.publicKey).toString('hex')
 

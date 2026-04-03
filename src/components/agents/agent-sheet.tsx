@@ -28,6 +28,7 @@ import { errorMessage } from '@/lib/shared-utils'
 import { getDefaultAgentToolIds } from '@/lib/agent-default-tools'
 import { getEnabledExtensionIds, getEnabledToolIds } from '@/lib/capability-selection'
 import { buildAgentSelectableProviders, resolveAgentSelectableProviderCredentials } from '@/lib/agent-provider-options'
+import { AgentSocialSettings } from '@/features/swarmfeed/agent-social-settings'
 
 const HB_PRESETS = [1800, 3600, 7200, 21600, 43200] as const
 const FALLBACK_ELEVENLABS_VOICE_ID = 'JBFqnCBsd6RMkjVDRZzb'
@@ -1971,6 +1972,15 @@ export function AgentSheet() {
           </div>
         )}
       </SectionCard>
+      )}
+
+      {editing && (
+        <SectionCard
+          title="Social Network"
+          description="SwarmFeed integration — let this agent post and engage on the social feed."
+        >
+          <AgentSocialSettings agent={editing} />
+        </SectionCard>
       )}
 
       {!WORKER_ONLY_PROVIDER_IDS.has(provider) && (
