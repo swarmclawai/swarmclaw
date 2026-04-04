@@ -60,8 +60,6 @@
     "build:ci": "NEXT_DISABLE_ESLINT=1 node ./scripts/run-next-build.mjs",
     "start": "node .next/standalone/server.js",
     "start:standalone": "node .next/standalone/server.js",
-    "smoke:browser": "node ./scripts/browser-route-smoke.mjs",
-    "smoke:browser:workbench": "node ./scripts/browser-workbench-smoke.mjs",
     "sandbox:build:browser": "docker build -f Dockerfile.sandbox-browser -t swarmclaw-sandbox-browser:bookworm-slim .",
     "benchmark:autonomy": "node ./scripts/benchmark-autonomy-harness.mjs",
     "benchmark:agent-regression": "node --import tsx ./scripts/run-agent-regression-suite.ts",
@@ -157,8 +155,7 @@
   "devDependencies": {
     "@types/dagre": "^0.7.54",
     "eslint": "^9",
-    "eslint-config-next": "16.1.7",
-    "playwright": "1.59.0-alpha-1771104257000"
+    "eslint-config-next": "16.1.7"
   },
   "optionalDependencies": {
     "botbuilder": "^4.23.3",
