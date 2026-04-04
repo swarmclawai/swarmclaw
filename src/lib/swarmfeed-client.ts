@@ -6,7 +6,7 @@ interface SwarmFeedConfig {
 }
 
 const config = hmrSingleton<SwarmFeedConfig>('swarmfeed_config', () => ({
-  apiUrl: process.env.SWARMFEED_API_URL || 'http://localhost:3700',
+  apiUrl: process.env.SWARMFEED_API_URL || 'https://swarmfeed-api.onrender.com',
 }))
 
 /**

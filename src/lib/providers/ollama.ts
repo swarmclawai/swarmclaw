@@ -2,6 +2,7 @@ import fs from 'fs'
 import http from 'http'
 import https from 'https'
 import type { StreamChatOptions } from './index'
+import { streamOpenAiChat } from './openai'
 import { IMAGE_EXTS, TEXT_EXTS, MAX_HISTORY_MESSAGES, writeSSE } from './provider-defaults'
 import { log } from '@/lib/server/logger'
 import { resolveOllamaRuntimeConfig } from '@/lib/server/ollama-runtime'
@@ -9,23 +10,34 @@ import { resolveImagePath } from '@/lib/server/resolve-image'
 
 const TAG = 'provider-ollama'
 
-export function streamOllamaChat({ session, message, imagePath, apiKey, write, active, loadHistory, onUsage, signal }: StreamChatOptions): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const messages = buildMessages(session, message, imagePath, loadHistory)
-    const runtime = resolveOllamaRuntimeConfig({
-      model: session.model,
-      ollamaMode: session.ollamaMode,
-      apiKey,
-      apiEndpoint: session.apiEndpoint,
-    })
-    const model = runtime.model || 'llama3'
-    const endpoint = runtime.endpoint
-    if (runtime.useCloud && !runtime.apiKey) {
+/** Ollama Cloud uses the OpenAI-compatible /v1 endpoint, not the native /api/chat protocol. */
+const OLLAMA_CLOUD_OPENAI_ENDPOINT = 'https://api.ollama.com/v1'
+
+export function streamOllamaChat(opts: StreamChatOptions): Promise<string> {
+  const { session, apiKey, write, active } = opts
+  const runtime = resolveOllamaRuntimeConfig({
+    model: session.model,
+    ollamaMode: session.ollamaMode,
+    apiKey,
+    apiEndpoint: session.apiEndpoint,
+  })
+
+  if (runtime.useCloud) {
+    if (!runtime.apiKey) {
       writeSSE(write, 'err', 'Ollama Cloud model requires an API key. Set OLLAMA_API_KEY or attach an Ollama credential.')
       active.delete(session.id)
-      resolve('')
-      return
+      return Promise.resolve('')
     }
+    // Delegate to OpenAI-compatible handler with the cloud endpoint
+    const cloudSession = { ...session, model: runtime.model || 'llama3', apiEndpoint: OLLAMA_CLOUD_OPENAI_ENDPOINT }
+    return streamOpenAiChat({ ...opts, session: cloudSession, apiKey: runtime.apiKey })
+  }
+
+  const { message, imagePath, loadHistory, onUsage, signal } = opts
+  return new Promise((resolve, reject) => {
+    const messages = buildMessages(session, message, imagePath, loadHistory)
+    const model = runtime.model || 'llama3'
+    const endpoint = runtime.endpoint
 
     const parsed = new URL(endpoint)
     const isHttps = parsed.protocol === 'https:'
@@ -81,6 +93,7 @@ export function streamOllamaChat({ session, message, imagePath, apiKey, write, a
       }
 
       let buf = ''
+      let malformedChunkLogged = false
       apiRes.on('data', (chunk: Buffer) => {
         if (abortController.aborted) return
         buf += chunk.toString()
@@ -103,7 +116,14 @@ export function streamOllamaChat({ session, message, imagePath, apiKey, write, a
                 onUsage({ inputTokens: input, outputTokens: output })
               }
             }
-          } catch {}
+          } catch {
+            if (!malformedChunkLogged) {
+              malformedChunkLogged = true
+              log.warn(TAG, `[${session.id}] failed to parse Ollama stream chunk`, {
+                sample: line.slice(0, 200),
+              })
+            }
+          }
         }
       })
 

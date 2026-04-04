@@ -725,17 +725,10 @@ export async function prepareChatTurn(input: ExecuteChatTurnInput): Promise<Prep
     }
   }
 
-  const providerType = sessionForRun.provider || 'claude-cli'
-  const provider = getProvider(providerType)
-  if (!provider) throw new Error(`Unknown provider: ${providerType}`)
-
-  if (providerType === 'claude-cli' && !fs.existsSync(session.cwd)) {
-    throw new Error(`Directory not found: ${session.cwd}`)
-  }
-
-  const apiKey = resolveApiKeyForSession(sessionForRun, provider)
-  const hideAssistantTranscript = internal && source === 'main-loop-followup'
-
+  // Persist the user message BEFORE provider/credential resolution so that if
+  // provider resolution throws (unknown provider, missing credentials, etc.),
+  // the user message is already in the DB and won't disappear from the chat
+  // when the frontend's refreshMessages overwrites the optimistic local copy.
   const shouldPersistUserMessage = shouldPersistInboundUserMessage(internal, source)
   if (shouldPersistUserMessage) {
     const [linkAnalysis, semantics] = await Promise.all([
@@ -806,6 +799,17 @@ export async function prepareChatTurn(input: ExecuteChatTurnInput): Promise<Prep
       }
     }
   }
+
+  const providerType = sessionForRun.provider || 'claude-cli'
+  const provider = getProvider(providerType)
+  if (!provider) throw new Error(`Unknown provider: ${providerType}`)
+
+  if (providerType === 'claude-cli' && !fs.existsSync(session.cwd)) {
+    throw new Error(`Directory not found: ${session.cwd}`)
+  }
+
+  const apiKey = resolveApiKeyForSession(sessionForRun, provider)
+  const hideAssistantTranscript = internal && source === 'main-loop-followup'
 
   const useLocalOpenClawNativeRuntime = providerType === 'openclaw' && isLocalOpenClawEndpoint(sessionForRun.apiEndpoint)
   const enabledSessionExtensions = getEnabledCapabilityIds(sessionForRun)

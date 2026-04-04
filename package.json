@@ -1,6 +1,6 @@
 {
   "name": "@swarmclawai/swarmclaw",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "Self-hosted AI runtime for OpenClaw, delegation, autonomy, runtime skills, crypto wallets, and chat platform connectors.",
   "license": "MIT",
   "publishConfig": {
@@ -38,6 +38,9 @@
     "scripts/easy-update.mjs",
     "scripts/ensure-sandbox-browser-image.mjs",
     "scripts/postinstall.mjs",
+    "scripts/build-bootstrap-env.mjs",
+    "scripts/run-next-build.mjs",
+    "scripts/run-next-typegen.mjs",
     "scripts/sandbox-browser-entrypoint.sh",
     "next.config.ts",
     "tsconfig.json",
@@ -52,8 +55,9 @@
     "dev": "next dev --turbopack --hostname 0.0.0.0 -p 3456",
     "dev:webpack": "next dev --webpack --hostname 0.0.0.0 -p 3456",
     "dev:clean": "rm -rf .next && next dev --turbopack --hostname 0.0.0.0 -p 3456",
-    "build": "next build --webpack",
-    "build:ci": "NEXT_DISABLE_ESLINT=1 next build --webpack",
+    "typegen": "node ./scripts/run-next-typegen.mjs",
+    "build": "node ./scripts/run-next-build.mjs",
+    "build:ci": "NEXT_DISABLE_ESLINT=1 node ./scripts/run-next-build.mjs",
     "start": "node .next/standalone/server.js",
     "start:standalone": "node .next/standalone/server.js",
     "smoke:browser": "node ./scripts/browser-route-smoke.mjs",
@@ -61,7 +65,7 @@
     "sandbox:build:browser": "docker build -f Dockerfile.sandbox-browser -t swarmclaw-sandbox-browser:bookworm-slim .",
     "benchmark:autonomy": "node ./scripts/benchmark-autonomy-harness.mjs",
     "benchmark:agent-regression": "node --import tsx ./scripts/run-agent-regression-suite.ts",
-    "type-check": "tsc --noEmit",
+    "type-check": "npm run typegen && tsc --noEmit --incremental false",
     "test": "npm run test:cli && npm run test:setup && npm run test:openclaw && npm run test:runtime && npm run test:builder",
     "format": "eslint --fix",
     "lint": "eslint",
@@ -69,10 +73,10 @@
     "lint:baseline": "node ./scripts/lint-baseline.mjs check",
     "lint:baseline:update": "node ./scripts/lint-baseline.mjs update",
     "cli": "node ./bin/swarmclaw.js",
-    "test:cli": "node --test src/cli/*.test.js bin/*.test.js scripts/postinstall.test.mjs",
+    "test:cli": "node --test src/cli/*.test.js bin/*.test.js scripts/postinstall.test.mjs scripts/run-next-build.test.mjs scripts/run-next-typegen.test.mjs",
     "test:setup": "tsx --test src/app/api/setup/check-provider/route.test.ts src/lib/server/provider-model-discovery.test.ts src/components/auth/setup-wizard/utils.test.ts src/components/auth/setup-wizard/types.test.ts src/hooks/setup-done-detection.test.ts src/lib/setup-defaults.test.ts",
     "test:openclaw": "tsx --test src/lib/openclaw/openclaw-agent-id.test.ts src/lib/openclaw/openclaw-endpoint.test.ts src/lib/server/agents/agent-runtime-config.test.ts src/lib/server/build-llm.test.ts src/lib/server/connectors/connector-routing.test.ts src/lib/server/connectors/openclaw.test.ts src/lib/server/gateway/protocol.test.ts src/lib/server/llm-response-cache.test.ts src/lib/server/mcp-conformance.test.ts src/lib/server/openclaw/agent-resolver.test.ts src/lib/server/openclaw/deploy.test.ts src/lib/server/openclaw/skills-normalize.test.ts src/lib/server/session-tools/openclaw-nodes.test.ts src/lib/server/tasks/task-quality-gate.test.ts src/lib/server/tasks/task-validation.test.ts src/lib/server/tool-capability-policy.test.ts src/lib/providers/openclaw-exports.test.ts src/app/api/openclaw/dashboard-url/route.test.ts",
-    "test:runtime": "tsx --test src/lib/server/knowledge-sources.test.ts src/lib/server/chat-execution/chat-execution-grounding.test.ts src/lib/server/protocols/protocol-service.test.ts src/lib/server/runtime/run-ledger.test.ts",
+    "test:runtime": "tsx --test src/lib/server/knowledge-sources.test.ts src/lib/server/chat-execution/chat-execution-grounding.test.ts src/lib/server/protocols/protocol-service.test.ts src/lib/server/runtime/run-ledger.test.ts src/lib/server/safe-parse-body.test.ts src/app/api/approvals/route.test.ts src/app/api/chats/chat-route.test.ts src/app/api/connectors/connector-doctor-route.test.ts src/app/api/logs/route.test.ts src/app/api/tts/route.test.ts",
     "test:builder": "tsx --test src/features/protocols/builder/utils/nodes-to-template.test.ts src/features/protocols/builder/utils/template-to-nodes.test.ts src/features/protocols/builder/validators/dag-validator.test.ts",
     "test:e2e": "tsx .workbench/browser-e2e/run.ts",
     "test:mcp:conformance": "node --import tsx ./scripts/mcp-conformance-check.ts",
@@ -153,7 +157,8 @@
   "devDependencies": {
     "@types/dagre": "^0.7.54",
     "eslint": "^9",
-    "eslint-config-next": "16.1.7"
+    "eslint-config-next": "16.1.7",
+    "playwright": "1.59.0-alpha-1771104257000"
   },
   "optionalDependencies": {
     "botbuilder": "^4.23.3",

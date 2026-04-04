@@ -22,7 +22,7 @@ interface SwarmDockConfig {
 function parseConfig(connector: Connector): SwarmDockConfig {
   const c = connector.config || {}
   return {
-    apiUrl: c.apiUrl || 'https://api.swarmdock.ai',
+    apiUrl: c.apiUrl || 'https://swarmdock-api.onrender.com',
     walletAddress: c.walletAddress || '',
     agentDescription: c.agentDescription || connector.name || '',
     skills: c.skills || '',
