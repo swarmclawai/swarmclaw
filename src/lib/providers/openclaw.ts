@@ -9,6 +9,7 @@ import { deriveOpenClawWsUrl } from '@/lib/openclaw/openclaw-endpoint'
 import { normalizeOpenClawAgentId } from '@/lib/openclaw/openclaw-agent-id'
 import { loadAgents } from '../server/storage'
 import { getSharedDeviceToken } from '../server/openclaw/sync'
+import { DATA_DIR } from '../server/data-dir'
 import {
   resolveOpenClawGatewayAgentIdFromList,
   type OpenClawGatewayAgentSummary,
@@ -54,9 +55,8 @@ function resolveCliStateDir(): string {
 }
 
 function getSwarmClawIdentityPath(): string {
-  const dataDir = path.join(process.cwd(), 'data')
-  if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true })
-  return path.join(dataDir, 'openclaw-device.json')
+  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true })
+  return path.join(DATA_DIR, 'openclaw-device.json')
 }
 
 function tryLoadIdentityFile(filePath: string): DeviceIdentity | null {

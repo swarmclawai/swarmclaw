@@ -6,6 +6,10 @@ import path from "path";
 import { fileURLToPath } from "url";
 
 const PROJECT_ROOT = path.dirname(fileURLToPath(import.meta.url))
+const RUNTIME_STATE_GLOBS = [
+  'data/**/*',
+  '.tmp-swarmclaw-build/**/*',
+]
 
 function getGitSha(): string {
   try {
@@ -46,10 +50,11 @@ function getAllowedDevOrigins(): string[] {
 const nextConfig: NextConfig = {
   output: 'standalone',
   outputFileTracingExcludes: {
-    '/api/**': ['data/browser-profiles/**/*', 'data/browser-profiles-regression/**/*'],
-    instrumentation: ['data/browser-profiles/**/*', 'data/browser-profiles-regression/**/*'],
-    '/instrumentation': ['data/browser-profiles/**/*', 'data/browser-profiles-regression/**/*'],
-    'next-server': ['data/browser-profiles/**/*', 'data/browser-profiles-regression/**/*'],
+    '/*': RUNTIME_STATE_GLOBS,
+    '/api/**': RUNTIME_STATE_GLOBS,
+    instrumentation: RUNTIME_STATE_GLOBS,
+    '/instrumentation': RUNTIME_STATE_GLOBS,
+    'next-server': RUNTIME_STATE_GLOBS,
   },
   turbopack: {
     // Pin workspace root to the project directory so a stale lockfile

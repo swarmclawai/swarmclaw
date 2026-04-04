@@ -23,7 +23,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: npm
           registry-url: https://registry.npmjs.org
 
@@ -38,6 +38,46 @@ jobs:
 
       - name: Build
         run: npm run build:ci
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Start built app for smoke test
+        run: |
+          mkdir -p artifacts
+          ACCESS_KEY=ci-smoke PORT=3456 HOSTNAME=127.0.0.1 npm start > artifacts/smoke-server.log 2>&1 &
+          echo $! > /tmp/swarmclaw-release.pid
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:3456/login >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          cat artifacts/smoke-server.log
+          exit 1
+
+      - name: Browser route smoke
+        env:
+          SWARMCLAW_ACCESS_KEY: ci-smoke
+          SWARMCLAW_URL: http://127.0.0.1:3456
+        run: npm run smoke:browser
+
+      - name: Upload smoke artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-smoke-artifacts
+          path: |
+            artifacts/smoke-server.log
+            .tmp-smoke-artifacts/**
+          if-no-files-found: ignore
+
+      - name: Stop built app
+        if: always()
+        run: |
+          if [ -f /tmp/swarmclaw-release.pid ]; then
+            kill "$(cat /tmp/swarmclaw-release.pid)" || true
+          fi
 
       - name: Sync package version with tag
         id: package_version

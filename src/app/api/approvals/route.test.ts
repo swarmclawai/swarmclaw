@@ -47,7 +47,7 @@ test('GET and POST /api/approvals handle human-loop approvals only', () => {
       data: { question: 'Deploy now?' },
     })
 
-    const pendingBefore = await route.GET()
+    const pendingBefore = await route.GET(new Request('http://local/api/approvals'))
     const pendingBeforeJson = await pendingBefore.json()
 
     const approveResponse = await route.POST(new Request('http://local/api/approvals', {
@@ -57,7 +57,7 @@ test('GET and POST /api/approvals handle human-loop approvals only', () => {
     }))
     const approvePayload = await approveResponse.json()
 
-    const pendingAfter = await route.GET()
+    const pendingAfter = await route.GET(new Request('http://local/api/approvals'))
     const pendingAfterJson = await pendingAfter.json()
 
     const storedApproval = storage.loadApprovals()[humanApproval.id]
@@ -102,9 +102,35 @@ test('POST /api/approvals rejects invalid payloads', () => {
     console.log(JSON.stringify({
       invalidStatus: invalidResponse.status,
       invalidError: invalidPayload?.error || null,
+      invalidIssues: invalidPayload?.issues || null,
     }))
   `)
 
   assert.equal(output.invalidStatus, 400)
-  assert.match(String(output.invalidError || ''), /id and approved required/i)
+  assert.equal(output.invalidError, 'Validation failed')
+  assert.deepEqual(output.invalidIssues, [
+    { path: 'approved', message: 'Invalid input: expected boolean, received undefined' },
+  ])
+})
+
+test('POST /api/approvals rejects malformed JSON with a 400', () => {
+  const output = runWithTempDataDir(`
+    const routeMod = await import('./src/app/api/approvals/route')
+    const route = routeMod.default || routeMod
+
+    const invalidResponse = await route.POST(new Request('http://local/api/approvals', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{bad-json',
+    }))
+    const invalidPayload = await invalidResponse.json()
+
+    console.log(JSON.stringify({
+      invalidStatus: invalidResponse.status,
+      invalidError: invalidPayload?.error || null,
+    }))
+  `)
+
+  assert.equal(output.invalidStatus, 400)
+  assert.equal(output.invalidError, 'Invalid or missing request body')
 })

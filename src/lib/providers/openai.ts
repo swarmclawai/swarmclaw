@@ -147,6 +147,7 @@ export function streamOpenAiChat({ session, message, imagePath, imageUrl, apiKey
           const reader = res.body.getReader()
           const decoder = new TextDecoder()
           let buf = ''
+          let malformedChunkLogged = false
 
           while (true) {
             const { done, value } = await reader.read()
@@ -175,7 +176,14 @@ export function streamOpenAiChat({ session, message, imagePath, imageUrl, apiKey
                     outputTokens: parsed.usage.completion_tokens || 0,
                   })
                 }
-              } catch {}
+              } catch {
+                if (!malformedChunkLogged) {
+                  malformedChunkLogged = true
+                  log.warn(TAG, `[${session.id}] failed to parse OpenAI stream chunk`, {
+                    sample: data.slice(0, 200),
+                  })
+                }
+              }
             }
           }
 

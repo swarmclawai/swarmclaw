@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it, before, after } from 'node:test'
+import { z } from 'zod'
 
 let safeParseBody: typeof import('@/lib/server/safe-parse-body').safeParseBody
 before(async () => {
@@ -49,5 +50,36 @@ describe('safeParseBody', () => {
     assert.equal(result.error, undefined)
     assert.equal(result.data!.name, 'test')
     assert.equal(result.data!.count, 7)
+  })
+
+  it('validates the parsed body against a provided zod schema', async () => {
+    const result = await safeParseBody(
+      jsonRequest(JSON.stringify({ name: 'ok', count: 3 })),
+      z.object({
+        name: z.string().min(1),
+        count: z.number().int().nonnegative(),
+      }),
+    )
+    assert.equal(result.error, undefined)
+    assert.deepEqual(result.data, { name: 'ok', count: 3 })
+  })
+
+  it('returns a 400 validation error when schema parsing fails', async () => {
+    const result = await safeParseBody(
+      jsonRequest(JSON.stringify({ name: '', count: -1 })),
+      z.object({
+        name: z.string().min(1, 'name is required'),
+        count: z.number().int().nonnegative('count must be non-negative'),
+      }),
+    )
+    assert.equal(result.data, undefined)
+    assert.ok(result.error)
+    assert.equal(result.error.status, 400)
+    const body = await result.error.json()
+    assert.equal(body.error, 'Validation failed')
+    assert.deepEqual(body.issues, [
+      { path: 'name', message: 'name is required' },
+      { path: 'count', message: 'count must be non-negative' },
+    ])
   })
 })

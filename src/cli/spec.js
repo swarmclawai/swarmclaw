@@ -215,6 +215,7 @@ const COMMAND_GROUPS = {
     commands: {
       list: { description: 'Fetch logs (supports --query lines=200,level=INFO)', method: 'GET', path: '/logs' },
       clear: { description: 'Clear log file', method: 'DELETE', path: '/logs' },
+      report: { description: 'Write a client/browser error entry to the application log', method: 'POST', path: '/logs' },
     },
   },
 

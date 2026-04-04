@@ -6,12 +6,13 @@ import Database from 'better-sqlite3'
 import { perf } from '@/lib/server/runtime/perf'
 import { log } from '@/lib/server/logger'
 import { notify } from '@/lib/server/ws-hub'
-
-const TAG = 'storage'
 import { DATA_DIR, IS_BUILD_BOOTSTRAP, WORKSPACE_DIR } from './data-dir'
 import { normalizeHeartbeatSettingFields } from '@/lib/runtime/heartbeat-defaults'
 import { normalizeRuntimeSettingFields } from '@/lib/runtime/runtime-loop'
 import { normalizeCapabilitySelection } from '@/lib/capability-selection'
+
+const TAG = 'storage'
+const malformedRecordWarnings = new Set<string>()
 import type {
   Agent,
   AppNotification,
@@ -236,8 +237,16 @@ function loadCollectionWithNormalizationState(table: string): {
       if (!normalized || typeof normalized !== 'object' || Array.isArray(normalized)) continue
       result[id] = normalized as StoredObject
       if (changed) normalizedCount += 1
-    } catch {
-      // Ignore malformed records instead of crashing list endpoints.
+    } catch (err) {
+      const fingerprint = `${table}:${id}`
+      if (!malformedRecordWarnings.has(fingerprint)) {
+        malformedRecordWarnings.add(fingerprint)
+        log.warn(TAG, 'Ignoring malformed stored record during collection load', {
+          table,
+          id,
+          error: err instanceof Error ? err.message : String(err),
+        })
+      }
     }
   }
   endPerf({ count: raw.size, normalizedCount })

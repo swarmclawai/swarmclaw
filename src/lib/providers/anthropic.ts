@@ -90,6 +90,7 @@ export function streamAnthropicChat({ session, message, imagePath, apiKey, syste
           }
 
           let buf = ''
+          let malformedChunkLogged = false
           apiRes.on('data', (chunk: Buffer) => {
             if (abortController.aborted) return
             buf += chunk.toString()
@@ -112,7 +113,14 @@ export function streamAnthropicChat({ session, message, imagePath, apiKey, syste
                 if (parsed.type === 'message_delta' && parsed.usage) {
                   usageOutput = parsed.usage.output_tokens || 0
                 }
-              } catch {}
+              } catch {
+                if (!malformedChunkLogged) {
+                  malformedChunkLogged = true
+                  log.warn(TAG, `[${session.id}] failed to parse Anthropic stream chunk`, {
+                    sample: data.slice(0, 200),
+                  })
+                }
+              }
             }
           })
 

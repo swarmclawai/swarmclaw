@@ -1,9 +1,22 @@
 import { NextResponse } from 'next/server'
+import { z } from 'zod'
+
 import { enqueueSessionRun, type SessionQueueMode } from '@/lib/server/runtime/session-run-manager'
 import { log } from '@/lib/server/logger'
+import { safeParseBody } from '@/lib/server/safe-parse-body'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
+
+const ChatRouteBodySchema = z.object({
+  message: z.string().optional().default(''),
+  imagePath: z.string().optional(),
+  imageUrl: z.string().optional(),
+  attachedFiles: z.array(z.string()).optional(),
+  internal: z.boolean().optional().default(false),
+  queueMode: z.enum(['steer', 'collect', 'followup']).optional(),
+  replyToId: z.string().optional(),
+}).passthrough()
 
 function normalizeQueueMode(raw: unknown, internal: boolean): SessionQueueMode {
   if (raw === 'steer' || raw === 'collect' || raw === 'followup') return raw
@@ -13,15 +26,17 @@ function normalizeQueueMode(raw: unknown, internal: boolean): SessionQueueMode {
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
-    const body = await req.json().catch(() => ({}))
+    const { data: body, error } = await safeParseBody(req, ChatRouteBodySchema)
+    if (error) return error
 
-    const message = typeof body.message === 'string' ? body.message : ''
-    const imagePath = typeof body.imagePath === 'string' ? body.imagePath : undefined
-    const imageUrl = typeof body.imageUrl === 'string' ? body.imageUrl : undefined
-    const attachedFiles = Array.isArray(body.attachedFiles) ? body.attachedFiles.filter((f: unknown) => typeof f === 'string') as string[] : undefined
-    const internal = body.internal === true
+    const message = body.message
+    const imagePath = body.imagePath
+    const imageUrl = body.imageUrl
+    const attachedFiles = body.attachedFiles
+    const internal = body.internal
     const queueMode = normalizeQueueMode(body.queueMode, internal)
-    const replyToId = typeof body.replyToId === 'string' ? body.replyToId : undefined
+    const replyToId = body.replyToId
+    const source = internal ? 'heartbeat' : 'chat'
 
     const hasFiles = !!(imagePath || imageUrl || (attachedFiles && attachedFiles.length > 0))
     if (!message.trim() && !hasFiles) {
@@ -50,7 +65,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           imageUrl,
           attachedFiles,
           internal,
-          source: internal ? 'heartbeat' : 'chat',
+          source,
           mode: queueMode,
           onEvent: (ev) => writeEvent(ev as unknown as Record<string, unknown>),
           replyToId,
@@ -78,6 +93,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
               status: run.deduped ? 'deduped' : run.coalesced ? 'coalesced' : 'queued',
               position: run.position,
               internal,
+              source,
               mode: queueMode,
             },
           }),

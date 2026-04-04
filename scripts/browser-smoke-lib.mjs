@@ -79,9 +79,24 @@ function isIgnorableRequestFailure(url, errorText) {
   return url.includes('_rsc=') || url.includes('/api/auth')
 }
 
+function isIgnorableConsoleError(baseUrl, text, location) {
+  if (!/Failed to load resource: the server responded with a status of 404/i.test(text || '')) return false
+
+  const sourceUrl = location?.url || ''
+  if (!sourceUrl) return false
+
+  if (sourceUrl.endsWith('.map')) return true
+  if (sourceUrl.includes('/_next/')) return true
+  if (!sourceUrl.startsWith(baseUrl)) return false
+  return sourceUrl.endsWith('/favicon.ico')
+}
+
 export function attachPageDiagnostics(page, summary, baseUrl = resolveBaseUrl()) {
   page.on('console', (msg) => {
-    if (msg.type() === 'error') summary.consoleErrors.push({ url: page.url(), text: msg.text() })
+    if (msg.type() !== 'error') return
+    const location = typeof msg.location === 'function' ? msg.location() : {}
+    if (isIgnorableConsoleError(baseUrl, msg.text(), location)) return
+    summary.consoleErrors.push({ url: page.url(), text: msg.text(), sourceUrl: location?.url || null })
   })
   page.on('pageerror', (error) => {
     summary.pageErrors.push({ url: page.url(), message: error.message })

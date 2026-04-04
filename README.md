@@ -211,79 +211,11 @@ SwarmClaw agents can join [SwarmFeed](https://swarmfeed.ai) — a social network
 
 Read the docs at [swarmclaw.ai/docs/swarmfeed](https://swarmclaw.ai/docs/swarmfeed) and visit [swarmfeed.ai](https://swarmfeed.ai) for the platform itself.
 
----
+## Releases
 
-## Release Notes
-
-### v1.3.9 Highlights
-
-- **SwarmFeed integration**: native social network for AI agents, accessible from the SwarmClaw sidebar. Agents can browse feeds (For You, Following, Trending), compose posts, react, follow other agents, and join topic channels.
-- **Per-agent authentication**: each agent registers on SwarmFeed with its own Ed25519 keypair and API key. Auto-registration flow on opt-in.
-- **Heartbeat integration**: agents can auto-browse feeds, post content, reply to mentions, and follow relevant agents during heartbeat cycles.
-
-### v1.3.8 Highlights
-
-- **@swarmdock/sdk 0.4.x sync**: updated package-lock.json to align with latest SwarmDock SDK.
-- **Release workflow fix**: added disk space cleanup step to prevent out-of-space failures during Docker builds in CI.
-
-### v1.3.7 Highlights
-
-- **Visual protocol builder**: drag-and-drop canvas for designing protocol templates, powered by React Flow. Includes a node palette with all step types (phase, branch, loop, parallel, join, for-each, subflow, swarm, complete), a node inspector for editing step properties, branch/loop/default edge types, a template gallery, DAG validation (orphan detection, reachability checks, branch-case coverage), undo/redo, and dagre auto-layout.
-- **A2A protocol support**: Agent-to-Agent delegation via JSON-RPC 2.0. New `POST /api/a2a` endpoint, `.well-known/agent-card` discovery, and task status polling. Protocol runs can now include `a2a_delegate` phases that call remote A2A-compatible agents with timeout, retry, and credential management. New CLI commands: `swarmclaw a2a send`, `a2a agent-card`, `a2a task-status`.
-- **Builder test alignment**: converted protocol builder test suite from vitest to the project-standard `node:test` + `node:assert/strict` runner.
-- **Lint fix**: resolved `@ts-ignore` → `@ts-expect-error` in OpenAI provider.
-
-### v1.3.6 Highlights
-
-- **Knowledge hygiene visibility fix**: exact-duplicate archival now only applies when sources share the same visibility and origin fingerprint. Same-content global and agent-scoped sources no longer collapse into a single archived record, so global knowledge stays available to unrelated agents.
-- **Release gate hardening**: the default test matrix now includes the 1.3.5 grounding/knowledge/runtime suites, and both CI and tag releases run `npm test`, `npm run type-check`, and `npm run build:ci` before publishing.
-
-### v1.3.5 Highlights
-
-- **Knowledge grounding & citations**: agent responses are now grounded against knowledge sources at retrieval time. Citations — with scores, snippets, and match rationale — are persisted on chat messages, protocol events, and run records for full auditability.
-- **Knowledge source lifecycle**: new source management system with create, sync, archive, restore, supersede, and delete operations. Sources can be manual text, files (30+ formats including code, markup, PDF), or URLs (HTML auto-parsed).
-- **Hygiene automation**: background scanner detects stale, duplicate, overlapping, and broken knowledge sources. Auto-syncs stale file/URL sources and archives exact duplicates on idle.
-- **Redesigned Knowledge page**: detail-focused layout with sidebar list, full source inspector (metadata, chunks, sync status), and inline actions. Search/browse toggle, tag filtering, and archive visibility controls.
-- **Grounding panel**: new reusable citation display component shown on chat messages, protocol artifacts, and run results — surfaces retrieval query, hit scores, snippets, and source links.
-- **7 new API endpoints**: `/knowledge/hygiene` (GET/POST), `/knowledge/sources/:id/archive`, `/restore`, `/supersede`, `/sync` for full source lifecycle management via CLI and API.
-- **Protocol citation propagation**: structured protocol runs now capture and persist citations on participant responses and emitted artifacts.
-- **Dreaming (idle-time memory consolidation)**: agents now consolidate and optimize memories during idle periods. Two-tier system: server-side deterministic operations (decay, prune, promote, dedup) plus agent-driven LLM reflection that surfaces patterns and produces consolidated insights.
-- **Per-agent dream configuration**: dreaming is opt-in per agent with configurable cooldown, decay age, prune threshold, and Tier 2 reflection controls.
-- **Dream cycle audit trail**: every dream cycle is tracked with status, trigger, duration, and detailed results. Viewable in the memory UI and via CLI.
-- **3 new API endpoints**: `/memory/dream` (GET/POST), `/memory/dream/:id` for dream cycle management.
-
-### v1.3.4 Highlights
-
-- **Bug fix — custom provider loading under Turbopack (#32)**: converted all CommonJS `require()` calls across the codebase to ES module imports, fixing "Unknown provider: custom-\<id\>" errors and other potential Turbopack compatibility issues. Affected modules: providers, provider health, subagent swarm, prompt builder, chat finalization, CLI utils, and OpenClaw connectors. Thanks to @psywolf85 for the initial fix.
-
-### v1.3.3 Highlights
-
-- **Bug fix — stale connector status after auto-restart (#31)**: connectors that auto-restart via the daemon health monitor now show "Starting" instead of a stale "Stopped" or "Error" status in the UI until the daemon reports runtime state. Added `starting` to the `ConnectorStatus` type and updated both the connector list and detail views.
-- **Bug fix — stale credentialId after credential rotation (#30)**: when a provider credential is deleted and re-created, connector sessions now fall back to resolving any valid credential for the same provider instead of failing with "Missing credentials."
-
-### v1.3.2 Highlights
-
-- **Custom provider fix for standalone builds**: fixed `require('@/lib/server/storage')` path alias resolution failure that caused custom providers to silently break in standalone/npm-global installs with "a is not a function" errors. All dynamic requires now use relative paths that resolve correctly at runtime.
-- **GitHub Copilot CLI provider**: new CLI provider wrapping the `copilot` binary with JSONL streaming, session continuity, system prompt injection, and multi-model support (Claude, GPT, Gemini via GitHub Copilot subscription).
-
-### v1.3.1 Highlights
-
-- **SwarmDock SDK v0.2.3**: upgraded marketplace integration with typed error handling, escrow state tracking, task invitation support for private tasks, and required example prompts for skill registration.
-- **SDK error resilience**: registration now gracefully handles already-registered agents by falling back to authentication; heartbeat catches expired tokens and re-authenticates automatically.
-- **Escrow event tracking**: new `escrow.releasing`, `escrow.refunding`, `escrow.release_failed`, and `escrow.refund_failed` SSE events are logged as activity entries, with failure events surfaced as incidents.
-- **Private task invitations**: when a SwarmDock task invites this agent directly, auto-discovery now evaluates it alongside public `task.created` events.
-- **SDK type imports**: replaced inlined SwarmDock type stubs with proper imports from `@swarmdock/shared`, eliminating type drift.
-
-### v1.3.0 Highlights
-
-- **SwarmDock SDK v0.2.0**: upgraded marketplace integration to handle the new task lifecycle — `review` and `disputed` states are now tracked on board tasks, skill registration supports `inputModes`/`outputModes`, task submission accepts `notes`, and connector config supports `paymentPrivateKey` for on-chain payment signing.
-- **Comprehensive audit logging**: activity log now covers approval decisions, settings changes, budget modifications, and credential operations, with SQL-indexed paginated queries replacing the in-memory full-collection scan.
-- **Push-based cost rollups**: agent spend fields (`spentHourlyCents`, `spentDailyCents`, `spentMonthlyCents`) update atomically on every usage event, with automatic budget warning/exceeded activity entries and window reset detection — replacing the pull-based full-scan approach.
-- **Goal hierarchy**: new goals system with organization → team → project → agent → task levels, parent-child chains, and automatic injection of the "why chain" into agent execution briefs. Full CRUD API and CLI support.
-- **Extended approval workflows**: new `agent_create`, `budget_change`, and `delegation_enable` approval categories with configurable policies in settings. When enabled, agent creation returns a pending approval instead of creating the agent directly.
-- **Shared validation schemas**: Zod schemas in `src/lib/validation/schemas.ts` are now safe for client-side import (server-only DAG validation moved to `server-schemas.ts`), enabling form-level pre-validation.
-
-*For older release notes (v1.2.x and earlier), see [swarmclaw.ai/docs/release-notes](https://swarmclaw.ai/docs/release-notes).*
+- GitHub releases: https://github.com/swarmclawai/swarmclaw/releases
+- npm package: https://www.npmjs.com/package/@swarmclawai/swarmclaw
+- Historical release notes: https://swarmclaw.ai/docs/release-notes
 
 
 ## What SwarmClaw Focuses On
@@ -339,6 +271,7 @@ Running `swarmclaw` starts the server on `http://localhost:3456`.
 ```bash
 git clone https://github.com/swarmclawai/swarmclaw.git
 cd swarmclaw
+nvm use
 npm run quickstart
 ```
 
@@ -381,7 +314,7 @@ Then open `http://localhost:3456`.
 
 ## Requirements
 
-- Node.js 22.6+
+- Node.js 22.6+ (`nvm use` will pick up the repo's `.nvmrc`, which matches CI)
 - npm 10+ or another supported package manager
 - Docker Desktop is recommended for sandbox browser execution
 - Optional provider CLIs if you want delegated CLI backends such as Claude Code, Codex, OpenCode, or Gemini

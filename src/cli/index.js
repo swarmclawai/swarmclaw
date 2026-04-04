@@ -298,6 +298,9 @@ const COMMAND_GROUPS = [
     commands: [
       cmd('list', 'GET', '/logs', 'List logs (use --query lines=200, --query level=INFO,ERROR)'),
       cmd('clear', 'DELETE', '/logs', 'Clear logs file'),
+      cmd('report', 'POST', '/logs', 'Write a client/browser error entry to the application log', {
+        expectsJsonBody: true,
+      }),
     ],
   },
   {

@@ -1,6 +1,9 @@
 import { spawnSync } from 'child_process'
 import { errorMessage, hmrSingleton, jitteredBackoff } from '@/lib/shared-utils'
 import { upsertStoredItem, loadCollection } from './storage'
+import { log } from './logger'
+
+const TAG = 'provider-health'
 
 type DelegateTool = 'delegate_to_claude_code' | 'delegate_to_codex_cli' | 'delegate_to_opencode_cli' | 'delegate_to_gemini_cli'
 
@@ -72,7 +75,12 @@ export function markProviderFailure(providerId: string, error: string, credentia
   })
   try {
     upsertStoredItem('provider_health', key, states.get(key)!)
-  } catch {}
+  } catch (err) {
+    log.warn(TAG, 'Failed to persist provider failure state', {
+      providerKey: key,
+      error: errorMessage(err),
+    })
+  }
 }
 
 export function markProviderSuccess(providerId: string, credentialId?: string | null): void {
@@ -88,7 +96,12 @@ export function markProviderSuccess(providerId: string, credentialId?: string | 
   })
   try {
     upsertStoredItem('provider_health', key, states.get(key)!)
-  } catch {}
+  } catch (err) {
+    log.warn(TAG, 'Failed to persist provider success state', {
+      providerKey: key,
+      error: errorMessage(err),
+    })
+  }
 }
 
 export function isProviderCoolingDown(providerId: string, credentialId?: string | null): boolean {
@@ -195,7 +208,10 @@ export function restoreProviderHealthState(): number {
       }
     }
     return restored
-  } catch { return 0 }
+  } catch (err) {
+    log.warn(TAG, 'Failed to restore persisted provider health state', { error: errorMessage(err) })
+    return 0
+  }
 }
 
 // ---------------------------------------------------------------------------
