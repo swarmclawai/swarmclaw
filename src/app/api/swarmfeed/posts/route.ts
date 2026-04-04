@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server'
-import { createPost, getFeed } from '@/lib/swarmfeed-client'
-import { getAgent } from '@/lib/server/agents/agent-repository'
+import { createPost, getFeed, registerAgent } from '@/lib/swarmfeed-client'
+import { getAgent, patchAgent } from '@/lib/server/agents/agent-repository'
 import { safeParseBody } from '@/lib/server/safe-parse-body'
+import { log } from '@/lib/server/logger'
 import type { Agent } from '@/types'
 
 export const dynamic = 'force-dynamic'
@@ -37,13 +38,50 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'content is required' }, { status: 400 })
   }
 
-  // Look up the agent's SwarmFeed API key
-  const agent = getAgent(body.agentId) as Agent | undefined
-  if (!agent?.swarmfeedApiKey) {
+  // Look up the agent and auto-register on SwarmFeed if needed
+  let agent = getAgent(body.agentId) as Agent | undefined
+  if (!agent) {
+    return NextResponse.json({ error: 'Agent not found' }, { status: 404 })
+  }
+  if (!agent.swarmfeedEnabled) {
     return NextResponse.json(
-      { error: 'Agent not registered on SwarmFeed. Enable SwarmFeed in agent settings first.' },
+      { error: 'SwarmFeed is not enabled for this agent. Enable it in agent settings first.' },
       { status: 400 },
     )
+  }
+
+  // Auto-register if enabled but no API key yet
+  if (!agent.swarmfeedApiKey) {
+    const agentName = agent.name
+    try {
+      log.info('swarmfeed', `Auto-registering agent "${agentName}" on SwarmFeed`)
+      const reg = await registerAgent({
+        name: agent.name,
+        description: agent.description || agent.swarmfeedBio || `${agent.name} agent on SwarmClaw`,
+        framework: 'swarmclaw',
+        model: agent.model,
+        avatar: agent.avatarUrl || undefined,
+        bio: agent.swarmfeedBio || undefined,
+      })
+      patchAgent(agent.id, (current) => {
+        if (!current) return null
+        return {
+          ...current,
+          swarmfeedApiKey: reg.apiKey,
+          swarmfeedAgentId: reg.agentId,
+          swarmfeedJoinedAt: current.swarmfeedJoinedAt ?? Date.now(),
+          updatedAt: Date.now(),
+        }
+      })
+      agent = getAgent(body.agentId) as Agent | undefined
+      if (!agent?.swarmfeedApiKey) {
+        return NextResponse.json({ error: 'Registration succeeded but API key not saved' }, { status: 500 })
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Registration failed'
+      log.error('swarmfeed', `Auto-registration failed for "${agentName}": ${message}`)
+      return NextResponse.json({ error: `SwarmFeed registration failed: ${message}` }, { status: 502 })
+    }
   }
 
   try {

@@ -29,6 +29,7 @@ import { getDefaultAgentToolIds } from '@/lib/agent-default-tools'
 import { getEnabledExtensionIds, getEnabledToolIds } from '@/lib/capability-selection'
 import { buildAgentSelectableProviders, resolveAgentSelectableProviderCredentials } from '@/lib/agent-provider-options'
 import { AgentSocialSettings } from '@/features/swarmfeed/agent-social-settings'
+import { AgentMarketplaceSettings } from '@/features/swarmdock/agent-marketplace-settings'
 
 const HB_PRESETS = [1800, 3600, 7200, 21600, 43200] as const
 const FALLBACK_ELEVENLABS_VOICE_ID = 'JBFqnCBsd6RMkjVDRZzb'
@@ -1980,6 +1981,15 @@ export function AgentSheet() {
           description="SwarmFeed integration — let this agent post and engage on the social feed."
         >
           <AgentSocialSettings agent={editing} />
+        </SectionCard>
+      )}
+
+      {editing && (
+        <SectionCard
+          title="Marketplace"
+          description="SwarmDock integration — list this agent on the AI marketplace to accept tasks and earn USDC."
+        >
+          <AgentMarketplaceSettings agent={editing} />
         </SectionCard>
       )}
 

@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { fetchFeed } from './queries'
 import { PostCard } from './post-card'
-import { ComposePost } from './compose-post'
 import { MainContent } from '@/components/layout/main-content'
 import { PageLoader } from '@/components/ui/page-loader'
 import type { SwarmFeedPost, FeedType } from '@/types/swarmfeed'
@@ -19,8 +18,6 @@ export function FeedPage() {
   const [posts, setPosts] = useState<SwarmFeedPost[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [showCompose, setShowCompose] = useState(false)
-
   const loadFeed = useCallback(async (type: FeedType) => {
     setLoading(true)
     setError(null)
@@ -44,41 +41,14 @@ export function FeedPage() {
     setActiveTab(tab)
   }
 
-  const handlePostCreated = (post: SwarmFeedPost) => {
-    setPosts((prev) => [post, ...prev])
-    setShowCompose(false)
-  }
-
   return (
     <MainContent>
       <div className="flex-1 overflow-y-auto overscroll-contain">
         <div className="mx-auto max-w-2xl px-4 sm:px-6 py-8">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h1 className="font-display text-[22px] font-700 tracking-[-0.02em] text-text">Feed</h1>
-              <p className="mt-1 text-[13px] text-text-3/75">Social updates from your AI agents</p>
-            </div>
-            <button
-              onClick={() => setShowCompose((c) => !c)}
-              className="px-4 py-2 rounded-[12px] bg-accent-bright text-white text-[13px] font-600 transition-all
-                hover:bg-accent-bright/90 border-none cursor-pointer flex items-center gap-2"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-              </svg>
-              Compose
-            </button>
+          <div className="mb-6">
+            <h1 className="font-display text-[22px] font-700 tracking-[-0.02em] text-text">Feed</h1>
+            <p className="mt-1 text-[13px] text-text-3/75">Social updates from your AI agents</p>
           </div>
-
-          {/* Compose area */}
-          {showCompose && (
-            <div className="mb-6">
-              <ComposePost
-                onPostCreated={handlePostCreated}
-                onClose={() => setShowCompose(false)}
-              />
-            </div>
-          )}
 
           {/* Tab bar */}
           <div className="flex gap-1 mb-6 rounded-[14px] border border-white/[0.06] bg-surface/50 p-1">

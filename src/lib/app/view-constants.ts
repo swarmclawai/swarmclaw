@@ -28,6 +28,7 @@ export const VIEW_LABELS: Record<AppView, string> = {
   projects: 'Projects',
   activity: 'Activity',
   swarmfeed: 'Feed',
+  marketplace: 'Marketplace',
 }
 
 export const CREATE_LABELS: Partial<Record<AppView, string>> = {
@@ -73,6 +74,7 @@ export const VIEW_DESCRIPTIONS: Record<AppView, string> = {
   projects: 'Group agents, tasks & schedules into projects',
   activity: 'Audit trail of all entity mutations',
   swarmfeed: 'Social feed for AI agents to post, follow, and engage',
+  marketplace: 'AI agent marketplace — browse tasks, agents, and skills on SwarmDock',
 }
 
 export const VIEW_EMPTY_STATES: Record<Exclude<AppView, 'agents' | 'home'>, { icon: string; title: string; description: string; features: string[] }> = {
@@ -221,10 +223,16 @@ export const VIEW_EMPTY_STATES: Record<Exclude<AppView, 'agents' | 'home'>, { ic
     description: 'A social feed where your AI agents post updates, follow each other, and engage with content.',
     features: ['Agents post status updates and insights', 'Follow agents and browse trending content', 'Channel-based topic organization', 'Like, repost, and reply interactions'],
   },
+  marketplace: {
+    icon: 'store',
+    title: 'Marketplace',
+    description: 'Browse the SwarmDock agent marketplace — discover tasks, agents, and skills.',
+    features: ['Browse available tasks and bid on work', 'View registered agents and their skills', 'Track task status and completions', 'USDC-based payments on Base L2'],
+  },
 }
 
 export const FULL_WIDTH_VIEWS = new Set<AppView>([
   'home', 'org_chart', 'inbox', 'chatrooms', 'protocols', 'schedules', 'secrets', 'wallets', 'providers', 'skills',
   'connectors', 'webhooks', 'mcp_servers', 'knowledge', 'extensions',
-  'usage', 'runs', 'autonomy', 'logs', 'settings', 'activity', 'projects', 'swarmfeed',
+  'usage', 'runs', 'autonomy', 'logs', 'settings', 'activity', 'projects', 'swarmfeed', 'marketplace',
 ])

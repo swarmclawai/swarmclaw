@@ -32,6 +32,7 @@ const VIEW_TO_PATH: Record<AppView, string> = {
   projects: '/projects',
   activity: '/activity',
   swarmfeed: '/swarmfeed',
+  marketplace: '/marketplace',
 }
 
 /** Build a URL path for a given view, optionally with an entity ID. */

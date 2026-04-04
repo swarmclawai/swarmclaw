@@ -21,6 +21,8 @@ import { serviceFail, serviceOk } from '@/lib/server/service-result'
 import { listSessions, saveSession } from '@/lib/server/sessions/session-repository'
 import { loadUsage } from '@/lib/server/usage/usage-repository'
 import { notify } from '@/lib/server/ws-hub'
+import { log } from '@/lib/server/logger'
+import { tryAutoRegisterSwarmFeed } from '@/lib/server/agents/agent-swarm-registration'
 import type { Agent, Session } from '@/types'
 import type { ServiceResult } from '@/lib/server/service-result'
 
@@ -191,6 +193,14 @@ export function createAgent(input: {
   saveAgent(id, agent)
   logActivity({ entityType: 'agent', entityId: id, action: 'created', actor: 'user', summary: `Agent created: "${agent.name}"` })
   notify('agents')
+
+  // Auto-register on SwarmFeed when created with it enabled
+  if (agent.swarmfeedEnabled && !agent.swarmfeedApiKey) {
+    tryAutoRegisterSwarmFeed(agent).catch((err) => {
+      log.error('agent-service', `SwarmFeed auto-registration failed for "${agent.name}": ${err instanceof Error ? err.message : err}`)
+    })
+  }
+
   return agent
 }
 
@@ -315,6 +325,14 @@ export function updateAgent(agentId: string, body: Record<string, unknown>): Age
   if (Object.keys(budgetChanges).length > 0) {
     logActivity({ entityType: 'budget', entityId: agentId, action: 'configured', actor: 'user', summary: `Budget updated for agent "${updated.name}"`, detail: budgetChanges })
   }
+
+  // Auto-register on SwarmFeed/SwarmDock when enabled without existing credentials
+  if (updated.swarmfeedEnabled && !updated.swarmfeedApiKey) {
+    tryAutoRegisterSwarmFeed(updated).catch((err) => {
+      log.error('agent-service', `SwarmFeed auto-registration failed for "${updated.name}": ${err instanceof Error ? err.message : err}`)
+    })
+  }
+
   return updated
 }
 

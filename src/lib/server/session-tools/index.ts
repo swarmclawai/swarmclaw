@@ -44,6 +44,8 @@ import { buildSkillsTools } from './skills-tool'
 import { buildFilesTools } from './files-tool'
 import { buildMemoryTool } from './memory-tool'
 import { buildPlatformV2Tools } from './platform-tool'
+import { buildSwarmFeedTools } from './swarmfeed'
+import { buildSwarmDockTools } from './swarmdock'
 import './connector'
 import { normalizeToolInputArgs } from './normalize-tool-args'
 import { enforceFileAccessPolicy } from './file-access-policy'
@@ -208,6 +210,8 @@ export async function buildSessionTools(cwd: string, enabledExtensions: string[]
       ['files_v2', buildFilesTools],
       ['memory_v2', buildMemoryTool],
       ['platform_v2', buildPlatformV2Tools],
+      ['swarmfeed', buildSwarmFeedTools],
+      ['swarmdock', buildSwarmDockTools],
     ]
 
     for (const [extensionId, builder] of nativeBuilders) {

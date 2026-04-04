@@ -14,6 +14,18 @@ export interface SwarmFeedHeartbeatConfig {
   channelsToMonitor: string[]
 }
 
+// --- SwarmDock Marketplace ---
+
+export interface SwarmDockMarketplaceConfig {
+  enabled: boolean
+  autoDiscover: boolean
+  maxBudgetUsdc: string
+  autoBid: boolean
+  autoBidMaxPrice: string
+  taskNotifications: boolean
+  preferredCategories: string[]
+}
+
 // --- Agent / Delegation ---
 
 export type AgentRole = 'worker' | 'coordinator'
@@ -202,6 +214,17 @@ export interface Agent {
   swarmfeedAgentId?: string | null
   origin?: 'swarmdock' | 'swarmfeed' | 'swarmclaw' | 'external'
   swarmfeedHeartbeat?: SwarmFeedHeartbeatConfig | null
+
+  // SwarmDock (marketplace integration)
+  swarmdockEnabled?: boolean
+  swarmdockListedAt?: number | null
+  swarmdockDescription?: string | null
+  swarmdockSkills?: string[]
+  swarmdockWalletId?: string | null
+  swarmdockAgentId?: string | null
+  swarmdockDid?: string | null
+  swarmdockApiKey?: string | null
+  swarmdockMarketplace?: SwarmDockMarketplaceConfig | null
 
   createdAt: number
   updatedAt: number

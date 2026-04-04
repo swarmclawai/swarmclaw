@@ -806,6 +806,13 @@ const COMMAND_GROUPS = [
       cmd('post', 'POST', '/swarmfeed/posts', 'Create a post', { expectsJsonBody: true }),
     ],
   },
+  {
+    name: 'swarmdock',
+    description: 'SwarmDock marketplace',
+    commands: [
+      cmd('browse', 'GET', '/swarmdock', 'Browse SwarmDock marketplace tasks and agents'),
+    ],
+  },
 ]
 
 const GROUP_MAP = new Map(COMMAND_GROUPS.map((group) => [group.name, group]))

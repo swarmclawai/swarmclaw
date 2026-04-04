@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+import fs from 'node:fs'
+import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { pathToFileURL } from 'node:url'
@@ -10,6 +12,17 @@ const require = createRequire(import.meta.url)
 
 export const DEFAULT_MAX_OLD_SPACE_SIZE_MB = '8192'
 export const TRACE_COPY_WARNING = 'Failed to copy traced files'
+export const NEXT_STANDALONE_METADATA_RELATIVE_DIR = path.join(
+  'node_modules',
+  'next',
+  'dist',
+  'lib',
+  'metadata',
+)
+export const REQUIRED_NEXT_METADATA_FILES = [
+  'get-metadata-route.js',
+  'is-metadata-route.js',
+]
 
 export function mergeNodeOptions(nodeOptions = '', maxOldSpaceSizeMb = DEFAULT_MAX_OLD_SPACE_SIZE_MB) {
   const trimmed = nodeOptions.trim()
@@ -39,6 +52,36 @@ export function hasTraceCopyWarning(output = '') {
   return output.includes(TRACE_COPY_WARNING)
 }
 
+function hasRequiredNextMetadataFiles(dir) {
+  return REQUIRED_NEXT_METADATA_FILES.every((fileName) => fs.existsSync(path.join(dir, fileName)))
+}
+
+export function repairStandaloneNextMetadata(cwd = process.cwd()) {
+  const standaloneDir = path.join(cwd, '.next', 'standalone')
+  if (!fs.existsSync(standaloneDir)) return false
+
+  const standaloneMetadataDir = path.join(standaloneDir, NEXT_STANDALONE_METADATA_RELATIVE_DIR)
+  if (hasRequiredNextMetadataFiles(standaloneMetadataDir)) return false
+
+  const installedMetadataDir = path.join(cwd, 'node_modules', 'next', 'dist', 'lib', 'metadata')
+  if (!hasRequiredNextMetadataFiles(installedMetadataDir)) {
+    throw new Error(
+      `Missing required Next metadata runtime files under ${installedMetadataDir}.`,
+    )
+  }
+
+  fs.mkdirSync(path.dirname(standaloneMetadataDir), { recursive: true })
+  fs.cpSync(installedMetadataDir, standaloneMetadataDir, { recursive: true, force: true })
+
+  if (!hasRequiredNextMetadataFiles(standaloneMetadataDir)) {
+    throw new Error(
+      `Failed to repair Next metadata runtime files under ${standaloneMetadataDir}.`,
+    )
+  }
+
+  return true
+}
+
 export function runNextBuild(args = process.argv.slice(2), env = process.env, cwd = process.cwd()) {
   const nextBin = require.resolve('next/dist/bin/next')
   return spawnSync(process.execPath, [nextBin, 'build', '--webpack', ...args], {
@@ -60,6 +103,9 @@ function main() {
     process.exit(1)
   }
   if (typeof result.status === 'number') {
+    if (result.status === 0 && repairStandaloneNextMetadata(process.cwd())) {
+      console.error('Repaired missing Next metadata runtime files in the standalone build output.')
+    }
     process.exit(result.status)
   }
   if (result.signal) {

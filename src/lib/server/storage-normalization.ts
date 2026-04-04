@@ -528,6 +528,16 @@ function normalizeStoredRecordInner(
     if (typeof agent.swarmfeedAgentId !== 'string' && agent.swarmfeedAgentId !== null) agent.swarmfeedAgentId = null
     if (!agent.origin) agent.origin = 'swarmclaw'
     if (agent.swarmfeedHeartbeat === undefined) agent.swarmfeedHeartbeat = null
+    // SwarmDock defaults
+    if (typeof agent.swarmdockEnabled !== 'boolean') agent.swarmdockEnabled = false
+    if (agent.swarmdockListedAt === undefined) agent.swarmdockListedAt = null
+    if (typeof agent.swarmdockDescription !== 'string' && agent.swarmdockDescription !== null) agent.swarmdockDescription = null
+    if (!Array.isArray(agent.swarmdockSkills)) agent.swarmdockSkills = []
+    if (typeof agent.swarmdockWalletId !== 'string' && agent.swarmdockWalletId !== null) agent.swarmdockWalletId = null
+    if (typeof agent.swarmdockAgentId !== 'string' && agent.swarmdockAgentId !== null) agent.swarmdockAgentId = null
+    if (typeof agent.swarmdockDid !== 'string' && agent.swarmdockDid !== null) agent.swarmdockDid = null
+    if (typeof agent.swarmdockApiKey !== 'string' && agent.swarmdockApiKey !== null) agent.swarmdockApiKey = null
+    if (agent.swarmdockMarketplace === undefined) agent.swarmdockMarketplace = null
     // Org chart normalization
     if (agent.orgChart && typeof agent.orgChart === 'object' && !Array.isArray(agent.orgChart)) {
       const oc = agent.orgChart as Record<string, unknown>

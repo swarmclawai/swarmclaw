@@ -25,6 +25,10 @@ export async function GET(req: Request) {
     const agents = Object.values(loadAgents()) as Agent[]
     const feedAgent = agents.find((a) => a.swarmfeedEnabled && a.swarmfeedApiKey)
     agentApiKey = feedAgent?.swarmfeedApiKey ?? undefined
+    // No registered agent — return empty feed instead of triggering a 401
+    if (!agentApiKey) {
+      return NextResponse.json({ posts: [], nextCursor: undefined })
+    }
   }
 
   try {

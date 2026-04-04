@@ -2,6 +2,7 @@ import { log } from '@/lib/server/logger'
 import { hmrSingleton } from '@/lib/shared-utils'
 import { logActivity } from '@/lib/server/activity/activity-log'
 import type { Connector, InboundMessage } from '@/types/connector'
+import type { Agent } from '@/types/agent'
 import type { PlatformConnector, ConnectorInstance } from '@/lib/server/connectors/types'
 import { createBoardTaskFromAssignment, updateBoardTaskFromEvent, findBoardTaskBySwarmdockId } from './swarmdock-tasks'
 import { shouldAutoBid, submitAutoBid } from './swarmdock-bidding'
@@ -19,15 +20,15 @@ interface SwarmDockConfig {
   paymentPrivateKey?: string
 }
 
-function parseConfig(connector: Connector): SwarmDockConfig {
+function parseConfig(connector: Connector, agent?: Agent): SwarmDockConfig {
   const c = connector.config || {}
   return {
     apiUrl: c.apiUrl || 'https://swarmdock-api.onrender.com',
     walletAddress: c.walletAddress || '',
-    agentDescription: c.agentDescription || connector.name || '',
-    skills: c.skills || '',
-    autoDiscover: c.autoDiscover === 'true',
-    maxBudget: c.maxBudget || '0',
+    agentDescription: c.agentDescription || agent?.swarmdockDescription || connector.name || '',
+    skills: c.skills || (agent?.swarmdockSkills?.join(',') ?? ''),
+    autoDiscover: c.autoDiscover === 'true' || (agent?.swarmdockMarketplace?.autoDiscover ?? false),
+    maxBudget: c.maxBudget || agent?.swarmdockMarketplace?.maxBudgetUsdc || '0',
     paymentPrivateKey: c.paymentPrivateKey || undefined,
   }
 }
@@ -82,7 +83,13 @@ const taskIdMap = hmrSingleton('__swarmclaw_swarmdock_task_map__', () => new Map
 
 const swarmdock: PlatformConnector = {
   async start(connector, _botToken, onMessage): Promise<ConnectorInstance> {
-    const config = parseConfig(connector)
+    // Load agent to use agent-level fields as fallbacks for connector config
+    let agent: Agent | undefined
+    if (connector.agentId) {
+      const { loadAgent } = await import('@/lib/server/agents/agent-repository')
+      agent = (await loadAgent(connector.agentId)) ?? undefined
+    }
+    const config = parseConfig(connector, agent)
     const connectorId = connector.id
     const agentId = connector.agentId || ''
     const privateKey = _botToken || ''
@@ -137,6 +144,21 @@ const swarmdock: PlatformConnector = {
         skills: skillList,
       })
       log.info(TAG, `Registered as ${registration.agent.did} (trust level ${registration.agent.trustLevel})`)
+
+      // Write SwarmDock IDs back to agent record if not already set
+      if (agent && (!agent.swarmdockAgentId || !agent.swarmdockDid)) {
+        const { patchAgent } = await import('@/lib/server/agents/agent-repository')
+        patchAgent(agent.id, (current) => {
+          if (!current) return null
+          return {
+            ...current,
+            swarmdockAgentId: registration.agent.id,
+            swarmdockDid: registration.agent.did,
+            swarmdockListedAt: current.swarmdockListedAt ?? Date.now(),
+            updatedAt: Date.now(),
+          }
+        })
+      }
 
       logActivity({
         entityType: 'connector',

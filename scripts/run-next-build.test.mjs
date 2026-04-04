@@ -1,13 +1,18 @@
 import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { describe, it } from 'node:test'
 
 import { BUILD_BOOTSTRAP_ROOT_NAME } from './build-bootstrap-env.mjs'
 import {
   DEFAULT_MAX_OLD_SPACE_SIZE_MB,
+  NEXT_STANDALONE_METADATA_RELATIVE_DIR,
+  REQUIRED_NEXT_METADATA_FILES,
   buildNextBuildEnv,
   hasTraceCopyWarning,
   mergeNodeOptions,
+  repairStandaloneNextMetadata,
 } from './run-next-build.mjs'
 
 describe('run-next-build', () => {
@@ -56,5 +61,67 @@ describe('run-next-build', () => {
       hasTraceCopyWarning('Warning: Failed to copy traced files for /tmp/app.js'),
       true,
     )
+  })
+
+  it('repairStandaloneNextMetadata copies required Next metadata files into standalone output', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'swarmclaw-next-build-'))
+    try {
+      const sourceDir = path.join(tempDir, 'node_modules', 'next', 'dist', 'lib', 'metadata')
+      fs.mkdirSync(path.join(tempDir, '.next', 'standalone'), { recursive: true })
+      fs.mkdirSync(sourceDir, { recursive: true })
+      for (const fileName of REQUIRED_NEXT_METADATA_FILES) {
+        fs.writeFileSync(path.join(sourceDir, fileName), `export const fileName = '${fileName}'\n`)
+      }
+
+      const repaired = repairStandaloneNextMetadata(tempDir)
+      assert.equal(repaired, true)
+
+      const targetDir = path.join(tempDir, '.next', 'standalone', NEXT_STANDALONE_METADATA_RELATIVE_DIR)
+      for (const fileName of REQUIRED_NEXT_METADATA_FILES) {
+        assert.equal(fs.existsSync(path.join(targetDir, fileName)), true)
+      }
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true })
+    }
+  })
+
+  it('repairStandaloneNextMetadata is a no-op when standalone metadata files already exist', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'swarmclaw-next-build-'))
+    try {
+      const sourceDir = path.join(tempDir, 'node_modules', 'next', 'dist', 'lib', 'metadata')
+      const targetDir = path.join(tempDir, '.next', 'standalone', NEXT_STANDALONE_METADATA_RELATIVE_DIR)
+      fs.mkdirSync(sourceDir, { recursive: true })
+      fs.mkdirSync(targetDir, { recursive: true })
+      for (const fileName of REQUIRED_NEXT_METADATA_FILES) {
+        fs.writeFileSync(path.join(sourceDir, fileName), `source:${fileName}\n`)
+        fs.writeFileSync(path.join(targetDir, fileName), `target:${fileName}\n`)
+      }
+
+      const repaired = repairStandaloneNextMetadata(tempDir)
+      assert.equal(repaired, false)
+
+      for (const fileName of REQUIRED_NEXT_METADATA_FILES) {
+        assert.equal(fs.readFileSync(path.join(targetDir, fileName), 'utf8'), `target:${fileName}\n`)
+      }
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true })
+    }
+  })
+
+  it('repairStandaloneNextMetadata fails fast when the installed Next package is missing required files', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'swarmclaw-next-build-'))
+    try {
+      fs.mkdirSync(path.join(tempDir, '.next', 'standalone'), { recursive: true })
+      const sourceDir = path.join(tempDir, 'node_modules', 'next', 'dist', 'lib', 'metadata')
+      fs.mkdirSync(sourceDir, { recursive: true })
+      fs.writeFileSync(path.join(sourceDir, REQUIRED_NEXT_METADATA_FILES[0]), 'export {}\n')
+
+      assert.throws(
+        () => repairStandaloneNextMetadata(tempDir),
+        /Missing required Next metadata runtime files/,
+      )
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true })
+    }
   })
 })
