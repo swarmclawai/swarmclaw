@@ -513,7 +513,7 @@ export async function prepareChatTurn(input: ExecuteChatTurnInput): Promise<Prep
   const session = getSession(sessionId)
   if (!session) throw new Error(`Session not found: ${sessionId}`)
   const runStartedAt = Date.now()
-  const runMessageStartIndex = getMessageCount(sessionId)
+  let runMessageStartIndex = getMessageCount(sessionId)
 
   const appSettings = loadSettings()
   const lifecycleRunId = runId || `${sessionId}:${runStartedAt}`
@@ -798,6 +798,9 @@ export async function prepareChatTurn(input: ExecuteChatTurnInput): Promise<Prep
         }
       }
     }
+    // Update runMessageStartIndex to account for newly appended user message(s)
+    // so that partial persistence and finalization don't overwrite them.
+    runMessageStartIndex = getMessageCount(sessionId)
   }
 
   const providerType = sessionForRun.provider || 'claude-cli'

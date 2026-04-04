@@ -265,7 +265,7 @@ test('buildChatModel uses Ollama Cloud only when explicit cloud mode is selected
 
   assert.equal(llm.model, 'glm-5')
   assert.equal(llm.apiKey, 'ollama-cloud-key')
-  assert.equal(llm.clientConfig?.baseURL, 'https://api.ollama.com/v1')
+  assert.equal(llm.clientConfig?.baseURL, 'https://ollama.com/v1')
 })
 
 test('resolveGenerationModelConfig uses explicit cloud mode when repairing a stale Ollama credential reference', () => {
@@ -296,7 +296,7 @@ test('resolveGenerationModelConfig uses explicit cloud mode when repairing a sta
 
   assert.equal(resolved.provider, 'ollama')
   assert.equal(resolved.model, 'glm-5:cloud')
-  assert.equal(resolved.apiEndpoint, 'https://api.ollama.com')
+  assert.equal(resolved.apiEndpoint, 'https://ollama.com')
 })
 
 test('resolveGenerationModelConfig defaults legacy Ollama preferences to local when no explicit mode is stored', () => {

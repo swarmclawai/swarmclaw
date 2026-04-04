@@ -175,7 +175,7 @@ test('resolveAgentRouteCandidatesWithProfiles keeps explicit Ollama cloud routes
   assert.equal(route.model, 'glm-5:cloud')
   assert.equal(route.ollamaMode, 'cloud')
   assert.equal(route.credentialId, 'cred-ollama-cloud')
-  assert.equal(route.apiEndpoint, 'https://api.ollama.com')
+  assert.equal(route.apiEndpoint, 'https://ollama.com')
 })
 
 test('resolveAgentRouteCandidatesWithProfiles keeps explicit Ollama local routes local even with a credential and :cloud model', async () => {

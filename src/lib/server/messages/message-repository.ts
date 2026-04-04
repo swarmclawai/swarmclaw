@@ -286,6 +286,37 @@ export function clearMessages(sessionId: string): void {
 /** Replace the entire message list (used after in-memory prune operations). */
 export function replaceAllMessages(sessionId: string, messages: Message[]): void {
   perf.measureSync('message-repo', 'replaceAllMessages', () => {
+    // Safety guard: reload current user messages from DB and ensure none are
+    // dropped by the replacement. This prevents races where partial persistence
+    // or finalization load a stale snapshot that's missing recently-appended
+    // user messages.
+    const currentRows = stmts().selectAll.all(sessionId) as Array<{ data: string }>
+    const currentUserMessages: Message[] = []
+    for (const row of currentRows) {
+      const m = parseMsg(row.data)
+      if (m && m.role === 'user') currentUserMessages.push(m)
+    }
+    const replacementUserTimes = new Set(
+      messages.filter(m => m.role === 'user' && typeof m.time === 'number').map(m => m.time),
+    )
+    const missingUsers = currentUserMessages.filter(
+      m => typeof m.time === 'number' && !replacementUserTimes.has(m.time),
+    )
+    if (missingUsers.length > 0) {
+      // Re-insert missing user messages at their correct position (before the
+      // first assistant message that follows them chronologically).
+      for (const user of missingUsers) {
+        let insertIdx = messages.length
+        for (let i = 0; i < messages.length; i++) {
+          if (messages[i].role === 'assistant' && typeof messages[i].time === 'number'
+              && (messages[i].time as number) >= (user.time as number)) {
+            insertIdx = i
+            break
+          }
+        }
+        messages.splice(insertIdx, 0, user)
+      }
+    }
     withTransaction(() => {
       stmts().deleteAll.run(sessionId)
       const ins = stmts().insert

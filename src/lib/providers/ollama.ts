@@ -11,7 +11,7 @@ import { resolveImagePath } from '@/lib/server/resolve-image'
 const TAG = 'provider-ollama'
 
 /** Ollama Cloud uses the OpenAI-compatible /v1 endpoint, not the native /api/chat protocol. */
-const OLLAMA_CLOUD_OPENAI_ENDPOINT = 'https://api.ollama.com/v1'
+const OLLAMA_CLOUD_OPENAI_ENDPOINT = 'https://ollama.com/v1'
 
 export function streamOllamaChat(opts: StreamChatOptions): Promise<string> {
   const { session, apiKey, write, active } = opts
