@@ -10,7 +10,7 @@ import { resolveCredentialSecret } from './credentials/credential-service'
 import { getSession } from './sessions/session-repository'
 import type { Agent } from '@/types'
 
-const OLLAMA_CLOUD_URL = 'https://ollama.com/v1'
+const OLLAMA_CLOUD_URL = 'https://api.ollama.com/v1'
 const OLLAMA_LOCAL_URL = 'http://localhost:11434/v1'
 export const OPENAI_COMPAT_MODEL_TIMEOUT_MS = 180_000
 export const OPENAI_COMPAT_MODEL_MAX_RETRIES = 2
