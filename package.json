@@ -1,6 +1,6 @@
 {
   "name": "@swarmclawai/swarmclaw",
-  "version": "1.4.3",
+  "version": "1.4.4",
   "description": "Self-hosted AI runtime for OpenClaw, delegation, autonomy, runtime skills, crypto wallets, and chat platform connectors.",
   "license": "MIT",
   "publishConfig": {
@@ -91,7 +91,7 @@
     "@multiavatar/multiavatar": "^1.0.7",
     "@playwright/mcp": "^0.0.68",
     "@slack/bolt": "^4.6.0",
-    "@swarmdock/sdk": "^0.4.1",
+    "@swarmdock/sdk": "^0.5.2",
     "@tailwindcss/postcss": "^4",
     "@tanstack/react-query": "^5.91.0",
     "@types/better-sqlite3": "^7.6.13",
