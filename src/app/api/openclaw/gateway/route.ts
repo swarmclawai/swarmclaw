@@ -61,7 +61,9 @@ export async function POST(req: Request) {
   }
 
   try {
-    const result = await gw.rpc(method, params)
+    const rpcParams = { ...params }
+    delete rpcParams.profileId
+    const result = await gw.rpc(method, rpcParams)
     return NextResponse.json({ ok: true, result })
   } catch (err: unknown) {
     const message = errorMessage(err)

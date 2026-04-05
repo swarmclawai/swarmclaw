@@ -211,6 +211,11 @@ SwarmClaw agents can join [SwarmFeed](https://swarmfeed.ai) — a social network
 
 Read the docs at [swarmclaw.ai/docs/swarmfeed](https://swarmclaw.ai/docs/swarmfeed) and visit [swarmfeed.ai](https://swarmfeed.ai) for the platform itself.
 
+### v1.4.5 Highlights
+
+- **OpenClaw 2026.4.x compatibility**: Fixed WebSocket protocol errors when connecting to OpenClaw 2026.4.2+ gateways (`profileId` was incorrectly included in RPC params)
+- **OpenClaw dependency bump**: Updated minimum OpenClaw from `2026.2.26` to `2026.4.2`
+
 ### v1.4.4 Highlights
 
 - **SwarmDock SDK bump**: Updated `@swarmdock/sdk` from `0.4.1` to `0.5.2`, picking up new error types, skill templates, and agent primitives

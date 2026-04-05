@@ -29,7 +29,7 @@ test('executeNodesAction lists nodes against the selected gateway profile', asyn
   const result = JSON.parse(raw)
   assert.equal(result.status, 'ok')
   assert.equal(calls[0]?.method, 'node.list')
-  assert.deepEqual(calls[0]?.params, { profileId: 'gateway-1' })
+  assert.deepEqual(calls[0]?.params, {})
   assert.equal(result.result.nodes[0].nodeId, 'node-1')
 })
 
@@ -71,7 +71,7 @@ test('executeNodesAction routes device pairing approvals to the device RPC surfa
   const result = JSON.parse(raw)
   assert.equal(result.status, 'ok')
   assert.equal(calls[0]?.method, 'device.pair.approve')
-  assert.deepEqual(calls[0]?.params, { requestId: 'req-1', profileId: 'gateway-1' })
+  assert.deepEqual(calls[0]?.params, { requestId: 'req-1' })
 })
 
 test('executeNodesAction forwards notify payloads through node.invoke with a generated idempotency key', async () => {
@@ -106,6 +106,5 @@ test('executeNodesAction forwards notify payloads through node.invoke with a gen
     params: { urgency: 'high', message: 'hello from test' },
     timeoutMs: 5000,
     idempotencyKey: 'fixed-id',
-    profileId: 'gateway-1',
   })
 })

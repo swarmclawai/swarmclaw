@@ -44,18 +44,18 @@ export async function executeNodesAction(args: any, deps: OpenClawNodesDeps = {}
     }
 
     if (action === 'list') {
-      const result = await gateway.rpc('node.list', { profileId })
+      const result = await gateway.rpc('node.list', {})
       return JSON.stringify({ status: 'ok', action, result })
     }
     if (action === 'describe') {
       if (!nodeId) return JSON.stringify({ status: 'error', error: 'nodeId is required for describe.' })
-      const result = await gateway.rpc('node.describe', { nodeId, profileId })
+      const result = await gateway.rpc('node.describe', { nodeId })
       return JSON.stringify({ status: 'ok', action, nodeId, result })
     }
     if (action === 'pairings') {
       const [nodePairings, devicePairings] = await Promise.all([
-        gateway.rpc('node.pair.list', { profileId }),
-        gateway.rpc('device.pair.list', { profileId }),
+        gateway.rpc('node.pair.list', {}),
+        gateway.rpc('device.pair.list', {}),
       ])
       return JSON.stringify({
         status: 'ok',
@@ -69,18 +69,18 @@ export async function executeNodesAction(args: any, deps: OpenClawNodesDeps = {}
     if (action === 'approve_pairing') {
       if (!requestId) return JSON.stringify({ status: 'error', error: 'requestId is required for approve_pairing.' })
       const method = pairingType === 'device' ? 'device.pair.approve' : 'node.pair.approve'
-      const result = await gateway.rpc(method, { requestId, profileId })
+      const result = await gateway.rpc(method, { requestId })
       return JSON.stringify({ status: 'ok', action, pairingType, requestId, result })
     }
     if (action === 'reject_pairing') {
       if (!requestId) return JSON.stringify({ status: 'error', error: 'requestId is required for reject_pairing.' })
       const method = pairingType === 'device' ? 'device.pair.reject' : 'node.pair.reject'
-      const result = await gateway.rpc(method, { requestId, profileId })
+      const result = await gateway.rpc(method, { requestId })
       return JSON.stringify({ status: 'ok', action, pairingType, requestId, result })
     }
     if (action === 'remove_device') {
       if (!deviceId) return JSON.stringify({ status: 'error', error: 'deviceId is required for remove_device.' })
-      const result = await gateway.rpc('device.pair.remove', { deviceId, profileId })
+      const result = await gateway.rpc('device.pair.remove', { deviceId })
       return JSON.stringify({ status: 'ok', action, deviceId, result })
     }
     if (action === 'notify' || action === 'invoke') {
@@ -98,7 +98,6 @@ export async function executeNodesAction(args: any, deps: OpenClawNodesDeps = {}
         params: invokeParams,
         timeoutMs,
         idempotencyKey: generateId(),
-        profileId,
       })
       return JSON.stringify({ status: 'ok', action, nodeId, command: invokeCommand, result })
     }
