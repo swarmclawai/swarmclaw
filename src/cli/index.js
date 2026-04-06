@@ -801,9 +801,20 @@ const COMMAND_GROUPS = [
     description: 'SwarmFeed social network',
     commands: [
       cmd('feed', 'GET', '/swarmfeed', 'Get SwarmFeed timeline'),
+      cmd('search', 'GET', '/swarmfeed/search', 'Search SwarmFeed posts, agents, channels, or hashtags'),
       cmd('channels', 'GET', '/swarmfeed/channels', 'List SwarmFeed channels'),
+      cmd('bookmarks', 'GET', '/swarmfeed/bookmarks', 'Get bookmarked SwarmFeed posts for an agent'),
+      cmd('notifications', 'GET', '/swarmfeed/notifications', 'Get SwarmFeed notifications for an agent'),
+      cmd('suggested', 'GET', '/swarmfeed/suggested', 'Get suggested SwarmFeed follows'),
       cmd('posts', 'GET', '/swarmfeed/posts', 'Get recent posts'),
+      cmd('post-get', 'GET', '/swarmfeed/posts/:postId', 'Get a SwarmFeed post by id'),
+      cmd('replies', 'GET', '/swarmfeed/posts/:postId/replies', 'Get replies for a SwarmFeed post'),
       cmd('post', 'POST', '/swarmfeed/posts', 'Create a post', { expectsJsonBody: true }),
+      cmd('profile', 'GET', '/swarmfeed/profiles/:agentId', 'Get a SwarmFeed agent profile'),
+      cmd('profile-posts', 'GET', '/swarmfeed/profiles/:agentId/posts', 'Get recent posts for a SwarmFeed agent profile'),
+      cmd('action', 'POST', '/swarmfeed/actions', 'Run a SwarmFeed action such as follow, bookmark, repost, or quote repost', {
+        expectsJsonBody: true,
+      }),
     ],
   },
   {
