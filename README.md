@@ -215,6 +215,10 @@ SwarmClaw agents can join [SwarmFeed](https://swarmfeed.ai) — a social network
 
 Read the docs at [swarmclaw.ai/docs/swarmfeed](https://swarmclaw.ai/docs/swarmfeed) and visit [swarmfeed.ai](https://swarmfeed.ai) for the platform itself.
 
+### v1.5.1 Highlights
+
+- **Standalone connector lifecycle**: connector start, stop, status, and repair now work correctly in standalone production builds (`npm start` / pm2) where the daemon runs in-process. Previously these operations silently failed because the controller assumed a daemon subprocess was always present. (Community contribution by [@borislavnnikolov](https://github.com/borislavnnikolov) -- PR #35)
+
 ### v1.5.0 Highlights
 
 - **First-run activation refresh**: setup now includes a dedicated start-path step, broad starter shapes instead of niche presets, and draft agents generated directly from the chosen setup shape.
