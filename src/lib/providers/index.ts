@@ -71,6 +71,23 @@ export const PROVIDERS: Record<string, BuiltinProviderConfig> = {
     requiresEndpoint: false,
     handler: { streamChat: streamOpenAiChat },
   },
+  openrouter: {
+    id: 'openrouter',
+    name: 'OpenRouter',
+    models: ['openai/gpt-4.1-mini'],
+    requiresApiKey: true,
+    requiresEndpoint: false,
+    defaultEndpoint: 'https://openrouter.ai/api/v1',
+    handler: {
+      streamChat: (opts) => {
+        const patchedSession = {
+          ...opts.session,
+          apiEndpoint: opts.session.apiEndpoint || 'https://openrouter.ai/api/v1',
+        }
+        return streamOpenAiChat({ ...opts, session: patchedSession })
+      },
+    },
+  },
   anthropic: {
     id: 'anthropic',
     name: 'Anthropic',
@@ -88,6 +105,24 @@ export const PROVIDERS: Record<string, BuiltinProviderConfig> = {
     requiresEndpoint: true,
     defaultEndpoint: 'http://localhost:18789',
     handler: { streamChat: streamOpenClawChat },
+  },
+  hermes: {
+    id: 'hermes',
+    name: 'Hermes Agent',
+    models: ['hermes-agent'],
+    requiresApiKey: false,
+    optionalApiKey: true,
+    requiresEndpoint: true,
+    defaultEndpoint: 'http://127.0.0.1:8642/v1',
+    handler: {
+      streamChat: (opts) => {
+        const patchedSession = {
+          ...opts.session,
+          apiEndpoint: opts.session.apiEndpoint || 'http://127.0.0.1:8642/v1',
+        }
+        return streamOpenAiChat({ ...opts, session: patchedSession })
+      },
+    },
   },
   'opencode-cli': {
     id: 'opencode-cli',

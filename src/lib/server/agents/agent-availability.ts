@@ -27,6 +27,6 @@ export function buildWorkerOnlyAgentMessage(
   const name = typeof agent?.name === 'string' && agent.name.trim()
     ? agent.name.trim()
     : 'This agent'
-  if (action) return `${name} is a CLI-based agent and cannot ${action}. CLI agents can only be used for direct chats and delegation.`
-  return `${name} is a CLI-based agent and cannot join chatrooms. CLI agents can only be used for direct chats and delegation.`
+  if (action) return `${name} uses a runtime-managed provider and cannot ${action}. Runtime-managed agents can only be used for direct chats and delegation.`
+  return `${name} uses a runtime-managed provider and cannot join chatrooms. Runtime-managed agents can only be used for direct chats and delegation.`
 }

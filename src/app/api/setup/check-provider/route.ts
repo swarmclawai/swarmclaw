@@ -7,6 +7,7 @@ import { normalizeOllamaSetupEndpoint, normalizeOpenClawUrl, parseErrorMessage }
 
 type SetupProvider =
   | 'openai'
+  | 'openrouter'
   | 'anthropic'
   | 'google'
   | 'deepseek'
@@ -19,6 +20,7 @@ type SetupProvider =
   | 'deepinfra'
   | 'ollama'
   | 'openclaw'
+  | 'hermes'
 
 interface SetupCheckBody {
   provider?: string
@@ -46,13 +48,14 @@ async function checkOpenAiCompatible(
   modelHint?: string,
 ): Promise<{ ok: boolean; message: string; normalizedEndpoint: string }> {
   const normalizedEndpoint = (endpointRaw || defaultEndpoint).replace(/\/+$/, '')
+  const authHeaders = apiKey ? { authorization: `Bearer ${apiKey}` } : undefined
 
   // First, discover a model to test with (prefer the hint, fall back to the first available model)
   let testModel = modelHint || ''
   if (!testModel) {
     try {
       const modelsRes = await fetch(`${normalizedEndpoint}/models`, {
-        headers: { authorization: `Bearer ${apiKey}` },
+        headers: authHeaders,
         signal: AbortSignal.timeout(8_000),
         cache: 'no-store',
       })
@@ -79,6 +82,8 @@ async function checkOpenAiCompatible(
       'Fireworks AI': 'accounts/fireworks/models/llama4-scout-instruct-basic',
       Nebius: 'deepseek-ai/DeepSeek-R1-0528',
       DeepInfra: 'deepseek-ai/DeepSeek-R1-0528',
+      OpenRouter: 'openai/gpt-4.1-mini',
+      'Hermes Agent': 'hermes-agent',
     }
     testModel = fallbacks[providerName] || 'gpt-4o-mini'
   }
@@ -87,8 +92,8 @@ async function checkOpenAiCompatible(
   const res = await fetch(`${normalizedEndpoint}/chat/completions`, {
     method: 'POST',
     headers: {
-      authorization: `Bearer ${apiKey}`,
       'content-type': 'application/json',
+      ...(authHeaders || {}),
     },
     body: JSON.stringify({
       model: testModel,
@@ -294,6 +299,12 @@ export async function POST(req: Request) {
         const result = await checkOpenAiCompatible(info.name, apiKey, endpoint, info.defaultEndpoint, model)
         return NextResponse.json(result)
       }
+      case 'openrouter': {
+        if (!apiKey) return NextResponse.json({ ok: false, message: 'OpenRouter API key is required.' })
+        const info = OPENAI_COMPATIBLE_DEFAULTS.openrouter
+        const result = await checkOpenAiCompatible(info.name, apiKey, endpoint, info.defaultEndpoint, model)
+        return NextResponse.json(result)
+      }
       case 'anthropic': {
         if (!apiKey) return NextResponse.json({ ok: false, message: 'Anthropic API key is required.' })
         const result = await checkAnthropic(apiKey, model)
@@ -310,6 +321,11 @@ export async function POST(req: Request) {
       case 'deepinfra': {
         const info = OPENAI_COMPATIBLE_DEFAULTS[provider]
         if (!apiKey) return NextResponse.json({ ok: false, message: `${info.name} API key is required.` })
+        const result = await checkOpenAiCompatible(info.name, apiKey, endpoint, info.defaultEndpoint, model)
+        return NextResponse.json(result)
+      }
+      case 'hermes': {
+        const info = OPENAI_COMPATIBLE_DEFAULTS.hermes
         const result = await checkOpenAiCompatible(info.name, apiKey, endpoint, info.defaultEndpoint, model)
         return NextResponse.json(result)
       }

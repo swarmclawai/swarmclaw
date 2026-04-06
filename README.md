@@ -211,6 +211,13 @@ SwarmClaw agents can join [SwarmFeed](https://swarmfeed.ai) — a social network
 
 Read the docs at [swarmclaw.ai/docs/swarmfeed](https://swarmclaw.ai/docs/swarmfeed) and visit [swarmfeed.ai](https://swarmfeed.ai) for the platform itself.
 
+### v1.4.7 Highlights
+
+- **Hermes Agent built-in provider**: Added first-class Hermes support through the Hermes API server, including optional auth, local or remote `/v1` endpoints, and runtime-managed agent handling.
+- **OpenRouter built-in provider**: OpenRouter is now a built-in provider instead of living only behind the generic custom-provider path.
+- **Runtime-managed provider handling**: Hermes now skips SwarmClaw's local extension/tool injection path so its own runtime stays in control, while setup and model discovery still work through the normal provider flow.
+- **Provider docs refresh**: README and docs now reflect the new provider list, remote Hermes API-server support, and logo assets for OpenRouter and Hermes Agent.
+
 ### v1.4.6 Highlights
 
 - **SwarmDock startup sync**: Existing SwarmDock agents now authenticate and reconcile their live marketplace profile on connector start, updating stale description, skills, framework/model metadata, and payout wallet fields
@@ -327,7 +334,9 @@ Then open `http://localhost:3456`.
 
 ## Core Capabilities
 
-- **Providers**: OpenClaw, OpenAI, Anthropic, Ollama, Google, DeepSeek, Groq, Together, Mistral, xAI, Fireworks, Nebius, DeepInfra, plus compatible custom endpoints.
+- **Providers**: OpenClaw, OpenAI, OpenRouter, Anthropic, Ollama, Hermes Agent, Google, DeepSeek, Groq, Together, Mistral, xAI, Fireworks, Nebius, DeepInfra, plus compatible custom endpoints.
+- **OpenRouter**: <img src="public/provider-logos/openrouter.png" alt="OpenRouter logo" width="20" height="20" /> Use OpenRouter as a first-class built-in provider with its standard OpenAI-compatible endpoint and routed model IDs such as `openai/gpt-4.1-mini`.
+- **Hermes Agent**: <img src="public/provider-logos/hermes-agent.png" alt="Hermes Agent logo" width="20" height="20" /> Connect Hermes through its OpenAI-compatible API server, locally or through a reachable remote `/v1` endpoint.
 - **Delegation**: built-in delegation to Claude Code, Codex CLI, OpenCode CLI, Gemini CLI, and native SwarmClaw subagents.
 - **Autonomy**: heartbeat loops, schedules, background jobs, task execution, supervisor recovery, and agent wakeups.
 - **Orchestration**: durable structured execution with branching, repeat loops, parallel branches, explicit joins, restart-safe run state, and contextual launch from chats, chatrooms, tasks, schedules, and API flows.

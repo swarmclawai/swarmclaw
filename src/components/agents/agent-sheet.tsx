@@ -35,6 +35,7 @@ const HB_PRESETS = [1800, 3600, 7200, 21600, 43200] as const
 const FALLBACK_ELEVENLABS_VOICE_ID = 'JBFqnCBsd6RMkjVDRZzb'
 const AUTO_SYNC_MODEL_PROVIDER_IDS = new Set<ProviderType>([
   'openai',
+  'openrouter',
   'anthropic',
   'google',
   'deepseek',
@@ -45,6 +46,7 @@ const AUTO_SYNC_MODEL_PROVIDER_IDS = new Set<ProviderType>([
   'fireworks',
   'nebius',
   'deepinfra',
+  'hermes',
   'ollama',
 ])
 const CONNECTION_TEST_TIMEOUT_MS = 40_000
@@ -1645,12 +1647,15 @@ export function AgentSheet() {
         </div>
       )}
 
-      {currentProvider?.requiresEndpoint && (provider === 'openclaw' || (provider === 'ollama' && ollamaMode === 'local')) && (
+      {currentProvider?.requiresEndpoint && (provider !== 'ollama' || ollamaMode === 'local') && (
         <div className="mb-8">
-          <SectionLabel>{provider === 'openclaw' ? 'OpenClaw Endpoint' : 'Endpoint'}</SectionLabel>
+          <SectionLabel>{provider === 'openclaw' ? 'OpenClaw Endpoint' : provider === 'hermes' ? 'Hermes API Endpoint' : 'Endpoint'}</SectionLabel>
           <input type="text" value={apiEndpoint || ''} onChange={(e) => setApiEndpoint(e.target.value || null)} placeholder={currentProvider.defaultEndpoint || 'http://localhost:11434'} className={`${inputClass} font-mono text-[14px]`} />
           {provider === 'openclaw' && (
             <p className="text-[13px] text-text-3/70 mt-2">The URL of your OpenClaw gateway</p>
+          )}
+          {provider === 'hermes' && (
+            <p className="text-[13px] text-text-3/70 mt-2">Point this at the Hermes API server, usually <code className="text-text-2">http://127.0.0.1:8642/v1</code>.</p>
           )}
         </div>
       )}
@@ -2502,7 +2507,9 @@ export function AgentSheet() {
               ? 'Claude CLI uses its own built-in capabilities — no additional local tool/platform configuration is needed.'
               : provider === 'codex-cli'
                 ? 'OpenAI Codex CLI uses its own built-in tools (shell, files, etc.) — no additional local tool configuration needed.'
-                : 'OpenCode CLI uses its own built-in tools (shell, files, etc.) — no additional local tool configuration needed.'}
+                : provider === 'hermes'
+                  ? 'Hermes Agent runs behind its own API server and tool runtime. SwarmClaw sends prompts to Hermes directly instead of injecting local platform tools.'
+                  : 'OpenCode CLI uses its own built-in tools (shell, files, etc.) — no additional local tool configuration needed.'}
           </p>
         </div>
       )}

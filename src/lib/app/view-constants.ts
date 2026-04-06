@@ -131,7 +131,7 @@ export const VIEW_EMPTY_STATES: Record<Exclude<AppView, 'agents' | 'home'>, { ic
     icon: 'zap',
     title: 'Providers',
     description: 'Manage LLM providers including built-in and custom OpenAI-compatible endpoints.',
-    features: ['Built-in support for Claude, OpenAI, Anthropic, and Ollama', 'Add custom OpenAI-compatible providers (OpenRouter, Together, Groq)', 'Configure base URLs, models, and API keys per provider', 'Custom providers work seamlessly with all features'],
+    features: ['Built-in support for OpenAI, OpenRouter, Anthropic, Ollama, Hermes Agent, and CLI runtimes', 'Add custom OpenAI-compatible providers for local or internal gateways', 'Configure base URLs, models, and API keys per provider', 'Built-in and custom providers work seamlessly with all features'],
   },
   skills: {
     icon: 'book',

@@ -27,9 +27,19 @@ test('getDefaultModelForProvider returns non-empty for openai', () => {
   assert.ok(model, 'openai model should be truthy')
 })
 
+test('getDefaultModelForProvider returns non-empty for openrouter', () => {
+  const model = getDefaultModelForProvider('openrouter')
+  assert.ok(model, 'openrouter model should be truthy')
+})
+
 test('getDefaultModelForProvider returns non-empty for anthropic', () => {
   const model = getDefaultModelForProvider('anthropic')
   assert.ok(model, 'anthropic model should be truthy')
+})
+
+test('getDefaultModelForProvider returns non-empty for hermes', () => {
+  const model = getDefaultModelForProvider('hermes')
+  assert.ok(model, 'hermes model should be truthy')
 })
 
 test('getDefaultModelForProvider returns non-empty for ollama', () => {

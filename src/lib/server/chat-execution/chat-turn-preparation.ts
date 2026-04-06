@@ -44,7 +44,7 @@ import {
   splitCapabilityIds,
 } from '@/lib/capability-selection'
 import { normalizeProviderEndpoint, isLocalOpenClawEndpoint } from '@/lib/openclaw/openclaw-endpoint'
-import { NON_LANGGRAPH_PROVIDER_IDS } from '@/lib/provider-sets'
+import { NON_LANGGRAPH_PROVIDER_IDS, RUNTIME_MANAGED_PROVIDER_IDS } from '@/lib/provider-sets'
 import {
   bridgeHumanReplyFromChat,
 } from '@/lib/server/chatrooms/session-mailbox'
@@ -815,9 +815,11 @@ export async function prepareChatTurn(input: ExecuteChatTurnInput): Promise<Prep
   const hideAssistantTranscript = internal && source === 'main-loop-followup'
 
   const useLocalOpenClawNativeRuntime = providerType === 'openclaw' && isLocalOpenClawEndpoint(sessionForRun.apiEndpoint)
+  const useProviderManagedRuntime = RUNTIME_MANAGED_PROVIDER_IDS.has(providerType)
   const enabledSessionExtensions = getEnabledCapabilityIds(sessionForRun)
   const hasExtensions = enabledSessionExtensions.length > 0
     && !NON_LANGGRAPH_PROVIDER_IDS.has(providerType)
+    && !useProviderManagedRuntime
     && !useLocalOpenClawNativeRuntime
 
   const systemPrompt = heartbeatLightContext

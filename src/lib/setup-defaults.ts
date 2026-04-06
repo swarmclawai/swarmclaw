@@ -6,6 +6,7 @@
 export type SetupProvider =
   | 'anthropic'
   | 'openai'
+  | 'openrouter'
   | 'google'
   | 'deepseek'
   | 'groq'
@@ -17,6 +18,7 @@ export type SetupProvider =
   | 'deepinfra'
   | 'ollama'
   | 'openclaw'
+  | 'hermes'
   | 'custom'
 
 export interface SetupProviderOption {
@@ -53,6 +55,19 @@ export const SETUP_PROVIDERS: SetupProviderOption[] = [
     modelLibraryUrl: 'https://platform.openai.com/docs/models',
   },
   {
+    id: 'openrouter',
+    name: 'OpenRouter',
+    description: 'One API key for a broad multi-provider model catalog through an OpenAI-compatible API.',
+    requiresKey: true,
+    supportsEndpoint: false,
+    defaultEndpoint: 'https://openrouter.ai/api/v1',
+    keyUrl: 'https://openrouter.ai/keys',
+    keyLabel: 'openrouter.ai',
+    badge: 'Catalog',
+    icon: 'R',
+    modelLibraryUrl: 'https://openrouter.ai/models',
+  },
+  {
     id: 'openclaw',
     name: 'OpenClaw',
     description: 'Deploy or connect official-only local and remote OpenClaw gateways, then map starter agents across your swarm by role, tag, or use case.',
@@ -63,6 +78,18 @@ export const SETUP_PROVIDERS: SetupProviderOption[] = [
     optionalKey: true,
     badge: 'First-Tier',
     icon: 'C',
+  },
+  {
+    id: 'hermes',
+    name: 'Hermes Agent',
+    description: 'Connect Hermes Agent through its local or remote OpenAI-compatible API server runtime.',
+    requiresKey: false,
+    supportsEndpoint: true,
+    allowMultiple: true,
+    defaultEndpoint: 'http://127.0.0.1:8642/v1',
+    optionalKey: true,
+    badge: 'API Server',
+    icon: 'H',
   },
   {
     id: 'anthropic',
@@ -192,7 +219,7 @@ export const SETUP_PROVIDERS: SetupProviderOption[] = [
   {
     id: 'custom',
     name: 'Custom Provider',
-    description: 'Any OpenAI-compatible API endpoint (OpenRouter, LM Studio, vLLM, etc.).',
+    description: 'Any OpenAI-compatible API endpoint (LM Studio, vLLM, local gateways, etc.).',
     requiresKey: false,
     supportsEndpoint: true,
     allowMultiple: true,
@@ -598,6 +625,13 @@ export const DEFAULT_AGENTS: Record<SetupProvider, DefaultAgentConfig> = {
     model: 'gpt-4o',
     tools: STARTER_AGENT_TOOLS,
   },
+  openrouter: {
+    name: 'Router',
+    description: 'A helpful assistant powered through OpenRouter.',
+    systemPrompt: SWARMCLAW_ASSISTANT_PROMPT,
+    model: 'openai/gpt-4.1-mini',
+    tools: STARTER_AGENT_TOOLS,
+  },
   google: {
     name: 'Gemini',
     description: 'A helpful Gemini-powered assistant.',
@@ -673,6 +707,13 @@ export const DEFAULT_AGENTS: Record<SetupProvider, DefaultAgentConfig> = {
     description: 'A manager agent for talking to and coordinating OpenClaw instances.',
     systemPrompt: 'You are an operator focused on reliable execution, clear status updates, and task completion.',
     model: '',
+    tools: STARTER_AGENT_TOOLS,
+  },
+  hermes: {
+    name: 'Hermes',
+    description: 'A runtime-backed assistant powered by Hermes Agent.',
+    systemPrompt: SWARMCLAW_ASSISTANT_PROMPT,
+    model: 'hermes-agent',
     tools: STARTER_AGENT_TOOLS,
   },
   custom: {

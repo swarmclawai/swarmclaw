@@ -246,6 +246,7 @@ async function parseErrorMessage(res: Response, fallback: string): Promise<strin
 
 export const OPENAI_COMPATIBLE_DEFAULTS: Record<string, { name: string; defaultEndpoint: string }> = {
   openai: { name: 'OpenAI', defaultEndpoint: 'https://api.openai.com/v1' },
+  openrouter: { name: 'OpenRouter', defaultEndpoint: 'https://openrouter.ai/api/v1' },
   google: { name: 'Google Gemini', defaultEndpoint: 'https://generativelanguage.googleapis.com/v1beta/openai' },
   deepseek: { name: 'DeepSeek', defaultEndpoint: 'https://api.deepseek.com/v1' },
   groq: { name: 'Groq', defaultEndpoint: 'https://api.groq.com/openai/v1' },
@@ -255,15 +256,18 @@ export const OPENAI_COMPATIBLE_DEFAULTS: Record<string, { name: string; defaultE
   fireworks: { name: 'Fireworks AI', defaultEndpoint: 'https://api.fireworks.ai/inference/v1' },
   nebius: { name: 'Nebius', defaultEndpoint: 'https://api.tokenfactory.nebius.com/v1' },
   deepinfra: { name: 'DeepInfra', defaultEndpoint: 'https://api.deepinfra.com/v1/openai' },
+  hermes: { name: 'Hermes Agent', defaultEndpoint: 'http://127.0.0.1:8642/v1' },
 }
 
 export async function pingOpenAiCompatible(
-  apiKey: string,
+  apiKey: string | undefined,
   endpoint: string,
 ): Promise<{ ok: boolean; message: string }> {
   const normalizedEndpoint = endpoint.replace(/\/+$/, '')
+  const headers: Record<string, string> = {}
+  if (apiKey) headers.authorization = `Bearer ${apiKey}`
   const res = await fetch(`${normalizedEndpoint}/models`, {
-    headers: { authorization: `Bearer ${apiKey}` },
+    headers: Object.keys(headers).length > 0 ? headers : undefined,
     signal: AbortSignal.timeout(PING_TIMEOUT_MS),
     cache: 'no-store',
   })
@@ -335,6 +339,7 @@ export async function pingProvider(
   endpoint: string | undefined,
 ): Promise<{ ok: boolean; message: string }> {
   const CLI_PROVIDERS = ['claude-cli', 'codex-cli', 'opencode-cli', 'gemini-cli', 'copilot-cli']
+  const OPTIONAL_OPENAI_COMPATIBLE_KEY_PROVIDERS = new Set(['hermes'])
   if (CLI_PROVIDERS.includes(provider)) return { ok: true, message: 'CLI provider — skipped.' }
 
   try {
@@ -352,7 +357,7 @@ export async function pingProvider(
     const defaults = OPENAI_COMPATIBLE_DEFAULTS[provider]
     const resolvedEndpoint = endpoint || defaults?.defaultEndpoint
     if (!resolvedEndpoint) return { ok: false, message: `No endpoint for provider "${provider}".` }
-    if (!apiKey) return { ok: false, message: 'No API key configured.' }
+    if (!apiKey && !OPTIONAL_OPENAI_COMPATIBLE_KEY_PROVIDERS.has(provider)) return { ok: false, message: 'No API key configured.' }
     return await pingOpenAiCompatible(apiKey, resolvedEndpoint)
   } catch (err: unknown) {
     const msg = err instanceof Error && err.name === 'TimeoutError'

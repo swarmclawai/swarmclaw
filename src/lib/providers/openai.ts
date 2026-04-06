@@ -73,6 +73,10 @@ export function streamOpenAiChat({ session, message, imagePath, imageUrl, apiKey
           // Try with stream_options first; if the provider rejects with 400, retry without it
           let res: Response | undefined
           let usageEnabled = true
+          const headers: Record<string, string> = {
+            'Content-Type': contentType,
+          }
+          if (apiKey) headers.Authorization = `Bearer ${apiKey}`
           for (const includeStreamOptions of [true, false]) {
             const payloadObj: Record<string, unknown> = {
               model,
@@ -86,10 +90,7 @@ export function streamOpenAiChat({ session, message, imagePath, imageUrl, apiKey
 
             res = await fetch(url, {
               method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${apiKey}`,
-                'Content-Type': contentType,
-              },
+              headers,
               body: payload,
               signal: abortController.signal,
             })

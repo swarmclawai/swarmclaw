@@ -6,6 +6,7 @@ describe('orchestrator-config', () => {
   it('marks CLI and OpenClaw providers as ineligible', () => {
     assert.equal(isOrchestratorProviderEligible('openai'), true)
     assert.equal(isOrchestratorProviderEligible('openclaw'), false)
+    assert.equal(isOrchestratorProviderEligible('hermes'), false)
     assert.equal(isOrchestratorProviderEligible('codex-cli'), false)
   })
 

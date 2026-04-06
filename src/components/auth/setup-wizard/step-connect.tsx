@@ -329,6 +329,12 @@ export function StepConnect({
                 <p className="text-[12px] text-text-3">Remote example: <code className="text-text-2">https://your-gateway.ts.net/v1</code>.</p>
               </div>
             )}
+            {provider === 'hermes' && (
+              <div className="mt-2 space-y-0.5">
+                <p className="text-[12px] text-text-3">Hermes Agent&apos;s API server defaults to <code className="text-text-2">http://127.0.0.1:8642/v1</code>.</p>
+                <p className="text-[12px] text-text-3">Use any reachable local or remote API-server endpoint exposed by Hermes.</p>
+              </div>
+            )}
           </div>
         )}
 

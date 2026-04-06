@@ -5,6 +5,7 @@ export const NON_ORCHESTRATOR_PROVIDERS = new Set([
   'codex-cli',
   'opencode-cli',
   'openclaw',
+  'hermes',
 ])
 
 export type OrchestratorGovernance = 'autonomous' | 'approval-required' | 'notify-only'

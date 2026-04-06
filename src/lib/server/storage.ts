@@ -669,7 +669,7 @@ if (!IS_BUILD_BOOTSTRAP) {
 ## Platform
 
 - **Agents** — Create specialized AI agents (Agents tab → "+") with a provider, model, system prompt, and tools. "Generate with AI" scaffolds agents from a description. Enable cross-agent delegation when an agent should assign work to others.
-- **Providers** — Configure LLM backends in Settings → Providers: Claude Code CLI, OpenAI Codex CLI, OpenCode CLI, Anthropic, OpenAI, Google Gemini, DeepSeek, Groq, Together AI, Mistral AI, xAI (Grok), Fireworks AI, Ollama, OpenClaw, or custom OpenAI-compatible endpoints.
+- **Providers** — Configure LLM backends in Settings → Providers: Claude Code CLI, OpenAI Codex CLI, OpenCode CLI, Gemini CLI, GitHub Copilot CLI, Anthropic, OpenAI, OpenRouter, Google Gemini, DeepSeek, Groq, Together AI, Mistral AI, xAI (Grok), Fireworks AI, Nebius, DeepInfra, Ollama, OpenClaw, Hermes Agent, or custom OpenAI-compatible endpoints.
 - **Tasks** — The Task Board tracks work items. Assign agents and they'll execute autonomously.
 - **Schedules** — Cron-based recurring jobs that run agents or tasks automatically.
 - **Skills** — Reusable markdown instruction files agents can discover and use by default; pin them to keep favorite workflows always-on.

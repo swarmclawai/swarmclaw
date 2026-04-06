@@ -208,6 +208,26 @@ test('resolveDescriptor uses explicit cloud Ollama discovery only when cloud mod
   assert.equal(descriptor?.requiresApiKey, true)
 })
 
+test('resolveDescriptor uses OpenRouter as an OpenAI-compatible provider', () => {
+  const descriptor = resolveDescriptor({
+    providerId: 'openrouter',
+  })
+  assert.equal(descriptor?.strategy, 'openai-compatible')
+  assert.equal(descriptor?.endpoint, 'https://openrouter.ai/api/v1')
+  assert.equal(descriptor?.requiresApiKey, true)
+  assert.equal(descriptor?.optionalApiKey, false)
+})
+
+test('resolveDescriptor uses Hermes as an OpenAI-compatible provider with optional auth', () => {
+  const descriptor = resolveDescriptor({
+    providerId: 'hermes',
+  })
+  assert.equal(descriptor?.strategy, 'openai-compatible')
+  assert.equal(descriptor?.endpoint, 'http://127.0.0.1:8642/v1')
+  assert.equal(descriptor?.requiresApiKey, false)
+  assert.equal(descriptor?.optionalApiKey, true)
+})
+
 // ---------------------------------------------------------------------------
 // ttlForDescriptor
 // ---------------------------------------------------------------------------

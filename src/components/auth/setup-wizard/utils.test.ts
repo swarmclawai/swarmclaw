@@ -265,4 +265,6 @@ test('requiresSetupProviderVerification skips custom providers', () => {
   assert.equal(requiresSetupProviderVerification('custom'), false)
   assert.equal(requiresSetupProviderVerification('openclaw'), false)
   assert.equal(requiresSetupProviderVerification('openai'), true)
+  assert.equal(requiresSetupProviderVerification('openrouter'), true)
+  assert.equal(requiresSetupProviderVerification('hermes'), true)
 })

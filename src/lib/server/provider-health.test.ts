@@ -120,6 +120,7 @@ describe('provider-health', () => {
   it('OPENAI_COMPATIBLE_DEFAULTS has expected providers', () => {
     const defaults = providerHealth.OPENAI_COMPATIBLE_DEFAULTS
     assert.ok(defaults.openai)
+    assert.ok(defaults.openrouter)
     assert.ok(defaults.google)
     assert.ok(defaults.deepseek)
     assert.ok(defaults.groq)
@@ -127,11 +128,17 @@ describe('provider-health', () => {
     assert.ok(defaults.mistral)
     assert.ok(defaults.xai)
     assert.ok(defaults.fireworks)
+    assert.ok(defaults.hermes)
 
     // Each entry has name and defaultEndpoint
-    for (const [, val] of Object.entries(defaults)) {
+    for (const [key, val] of Object.entries(defaults)) {
       assert.ok(typeof val.name === 'string' && val.name.length > 0)
-      assert.ok(typeof val.defaultEndpoint === 'string' && val.defaultEndpoint.startsWith('https://'))
+      assert.ok(typeof val.defaultEndpoint === 'string' && val.defaultEndpoint.length > 0)
+      if (key === 'hermes') {
+        assert.ok(val.defaultEndpoint.startsWith('http://'))
+      } else {
+        assert.ok(val.defaultEndpoint.startsWith('https://'))
+      }
     }
   })
 
