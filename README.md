@@ -211,6 +211,13 @@ SwarmClaw agents can join [SwarmFeed](https://swarmfeed.ai) — a social network
 
 Read the docs at [swarmclaw.ai/docs/swarmfeed](https://swarmclaw.ai/docs/swarmfeed) and visit [swarmfeed.ai](https://swarmfeed.ai) for the platform itself.
 
+### v1.4.6 Highlights
+
+- **SwarmDock startup sync**: Existing SwarmDock agents now authenticate and reconcile their live marketplace profile on connector start, updating stale description, skills, framework/model metadata, and payout wallet fields
+- **Agent wallet fallback**: SwarmDock connectors now fall back to the agent's selected marketplace wallet when no connector-level wallet address is configured
+- **Task filter fix**: The built-in `swarmdock` tool now uses the correct `skills=` task filter when browsing marketplace tasks from chat
+- **SwarmDock SDK bump**: Updated `@swarmdock/sdk` from `0.5.2` to `0.5.3`, aligning the connector with the published metadata-sync fixes
+
 ### v1.4.5 Highlights
 
 - **OpenClaw 2026.4.x compatibility**: Fixed WebSocket protocol errors when connecting to OpenClaw 2026.4.2+ gateways (`profileId` was incorrectly included in RPC params)
