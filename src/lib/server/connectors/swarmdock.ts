@@ -3,12 +3,54 @@ import { hmrSingleton } from '@/lib/shared-utils'
 import { logActivity } from '@/lib/server/activity/activity-log'
 import type { Connector, InboundMessage } from '@/types/connector'
 import type { Agent } from '@/types/agent'
+import type { AgentWallet } from '@/types/swarmdock'
 import type { PlatformConnector, ConnectorInstance } from '@/lib/server/connectors/types'
 import { createBoardTaskFromAssignment, updateBoardTaskFromEvent, findBoardTaskBySwarmdockId } from './swarmdock-tasks'
 import { shouldAutoBid, submitAutoBid } from './swarmdock-bidding'
-import type { Task, SSEEvent, TaskSubmitInput } from '@swarmdock/shared'
+import type {
+  Agent as SwarmDockAgentProfile,
+  AgentSkill,
+  AgentUpdateInput,
+  SSEEvent,
+  Task,
+  TaskSubmitInput,
+} from '@swarmdock/shared'
 
 const TAG = 'swarmdock'
+const DEFAULT_SWARMDOCK_API_URL = 'https://swarmdock-api.onrender.com'
+
+export interface SwarmDockSkillPayload {
+  skillId: string
+  skillName: string
+  description: string
+  category: string
+  tags: string[]
+  inputModes: string[]
+  outputModes: string[]
+  pricingModel: string
+  basePrice: string
+  examplePrompts: string[]
+}
+
+export interface DesiredSwarmDockProfile {
+  displayName: string
+  description: string
+  framework: string
+  modelProvider?: string
+  modelName?: string
+  walletAddress: string
+  skills: SwarmDockSkillPayload[]
+}
+
+type SwarmDockProfileSnapshot = Pick<
+  SwarmDockAgentProfile,
+  'id' | 'did' | 'createdAt' | 'displayName' | 'description' | 'framework' | 'modelProvider' | 'modelName' | 'walletAddress'
+> & {
+  skills?: Array<Pick<
+    AgentSkill,
+    'skillId' | 'skillName' | 'description' | 'category' | 'tags' | 'inputModes' | 'outputModes' | 'pricingModel' | 'basePrice' | 'examplePrompts'
+  >>
+}
 
 interface SwarmDockConfig {
   apiUrl: string
@@ -20,17 +62,172 @@ interface SwarmDockConfig {
   paymentPrivateKey?: string
 }
 
-function parseConfig(connector: Connector, agent?: Agent): SwarmDockConfig {
+function clean(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function parseTimestamp(value: string | null | undefined): number | null {
+  if (!value) return null
+  const parsed = Date.parse(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+export function resolveSwarmDockWalletAddress(agent?: Agent, wallet?: AgentWallet | null): string {
+  if (!agent?.swarmdockWalletId || !wallet) return ''
+  if (wallet.id !== agent.swarmdockWalletId) return ''
+  if (wallet.agentId !== agent.id) return ''
+  return clean(wallet.walletAddress)
+}
+
+export function resolveSwarmDockConfig(
+  connector: Connector,
+  agent?: Agent,
+  fallbackWalletAddress?: string | null,
+): SwarmDockConfig {
   const c = connector.config || {}
   return {
-    apiUrl: c.apiUrl || 'https://swarmdock-api.onrender.com',
-    walletAddress: c.walletAddress || '',
-    agentDescription: c.agentDescription || agent?.swarmdockDescription || connector.name || '',
-    skills: c.skills || (agent?.swarmdockSkills?.join(',') ?? ''),
+    apiUrl: clean(c.apiUrl) || DEFAULT_SWARMDOCK_API_URL,
+    walletAddress: clean(c.walletAddress) || clean(fallbackWalletAddress),
+    agentDescription: clean(c.agentDescription) || clean(agent?.swarmdockDescription) || clean(connector.name),
+    skills: clean(c.skills) || (Array.isArray(agent?.swarmdockSkills) ? agent.swarmdockSkills.join(',') : ''),
     autoDiscover: c.autoDiscover === 'true' || (agent?.swarmdockMarketplace?.autoDiscover ?? false),
-    maxBudget: c.maxBudget || agent?.swarmdockMarketplace?.maxBudgetUsdc || '0',
-    paymentPrivateKey: c.paymentPrivateKey || undefined,
+    maxBudget: clean(c.maxBudget) || clean(agent?.swarmdockMarketplace?.maxBudgetUsdc) || '0',
+    paymentPrivateKey: clean(c.paymentPrivateKey) || undefined,
   }
+}
+
+export function buildSwarmDockSkillPayload(skills: string): SwarmDockSkillPayload[] {
+  return skills
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .map((skillId) => ({
+      skillId,
+      skillName: skillId.replace(/-/g, ' '),
+      description: `${skillId} capability`,
+      category: skillId,
+      tags: [],
+      basePrice: '1000000',
+      inputModes: ['text'],
+      outputModes: ['text'],
+      pricingModel: 'per-task',
+      examplePrompts: generateExamplePrompts(skillId),
+    }))
+}
+
+export function buildDesiredSwarmDockProfile(
+  connector: Connector,
+  config: SwarmDockConfig,
+  agent?: Agent,
+): DesiredSwarmDockProfile {
+  return {
+    displayName: connector.name,
+    description: config.agentDescription,
+    framework: 'swarmclaw',
+    modelProvider: agent?.provider,
+    modelName: agent?.model,
+    walletAddress: config.walletAddress,
+    skills: buildSwarmDockSkillPayload(config.skills),
+  }
+}
+
+function normalizeComparableSkills(skills: Array<Pick<
+  AgentSkill | SwarmDockSkillPayload,
+  'skillId' | 'skillName' | 'description' | 'category' | 'tags' | 'inputModes' | 'outputModes' | 'pricingModel' | 'basePrice' | 'examplePrompts'
+>>): SwarmDockSkillPayload[] {
+  return skills
+    .map((skill) => ({
+      skillId: skill.skillId,
+      skillName: skill.skillName,
+      description: skill.description,
+      category: skill.category,
+      tags: [...(skill.tags ?? [])],
+      inputModes: [...(skill.inputModes ?? [])],
+      outputModes: [...(skill.outputModes ?? [])],
+      pricingModel: skill.pricingModel,
+      basePrice: String(skill.basePrice),
+      examplePrompts: [...(skill.examplePrompts ?? [])],
+    }))
+    .sort((a, b) => a.skillId.localeCompare(b.skillId))
+}
+
+export function diffSwarmDockProfile(
+  liveProfile: SwarmDockProfileSnapshot,
+  desired: DesiredSwarmDockProfile,
+): { profileFields: AgentUpdateInput; shouldUpdateSkills: boolean } {
+  const profileFields: AgentUpdateInput = {}
+
+  if (liveProfile.displayName !== desired.displayName) profileFields.displayName = desired.displayName
+  if ((liveProfile.description ?? '') !== desired.description) profileFields.description = desired.description
+  if ((liveProfile.framework ?? '') !== desired.framework) profileFields.framework = desired.framework
+  if ((liveProfile.modelProvider ?? '') !== (desired.modelProvider ?? '')) profileFields.modelProvider = desired.modelProvider ?? ''
+  if ((liveProfile.modelName ?? '') !== (desired.modelName ?? '')) profileFields.modelName = desired.modelName ?? ''
+  if (liveProfile.walletAddress !== desired.walletAddress) profileFields.walletAddress = desired.walletAddress
+
+  const liveSkills = normalizeComparableSkills(liveProfile.skills ?? [])
+  const desiredSkills = normalizeComparableSkills(desired.skills)
+  const shouldUpdateSkills = JSON.stringify(liveSkills) !== JSON.stringify(desiredSkills)
+
+  return { profileFields, shouldUpdateSkills }
+}
+
+export async function syncSwarmDockProfile(
+  client: {
+    profile: {
+      get: () => Promise<SwarmDockProfileSnapshot>
+      update: (fields: AgentUpdateInput) => Promise<unknown>
+      updateSkills: (skills: SwarmDockSkillPayload[]) => Promise<unknown>
+    }
+  },
+  desired: DesiredSwarmDockProfile,
+): Promise<{ liveProfile: SwarmDockProfileSnapshot; updatedProfile: boolean; updatedSkills: boolean }> {
+  const liveProfile = await client.profile.get()
+  const { profileFields, shouldUpdateSkills } = diffSwarmDockProfile(liveProfile, desired)
+  const updatedProfile = Object.keys(profileFields).length > 0
+
+  if (updatedProfile) {
+    await client.profile.update(profileFields)
+  }
+  if (shouldUpdateSkills) {
+    await client.profile.updateSkills(desired.skills)
+  }
+
+  return { liveProfile, updatedProfile, updatedSkills: shouldUpdateSkills }
+}
+
+export function buildSwarmDockAgentBackfill(
+  profile: Pick<SwarmDockAgentProfile, 'id' | 'did'> & { createdAt?: string | null },
+): Pick<Agent, 'swarmdockAgentId' | 'swarmdockDid' | 'swarmdockListedAt'> {
+  return {
+    swarmdockAgentId: profile.id,
+    swarmdockDid: profile.did,
+    swarmdockListedAt: parseTimestamp(profile.createdAt) ?? Date.now(),
+  }
+}
+
+async function persistSwarmDockAgentBackfill(
+  agent: Agent | undefined,
+  profile: Pick<SwarmDockAgentProfile, 'id' | 'did'> & { createdAt?: string | null },
+) {
+  if (!agent) return
+  const backfill = buildSwarmDockAgentBackfill(profile)
+  const { patchAgent } = await import('@/lib/server/agents/agent-repository')
+  patchAgent(agent.id, (current) => {
+    if (!current) return null
+
+    const needsId = !current.swarmdockAgentId
+    const needsDid = !current.swarmdockDid
+    const needsListedAt = current.swarmdockListedAt == null
+    if (!needsId && !needsDid && !needsListedAt) return current
+
+    return {
+      ...current,
+      ...(needsId ? { swarmdockAgentId: backfill.swarmdockAgentId } : {}),
+      ...(needsDid ? { swarmdockDid: backfill.swarmdockDid } : {}),
+      ...(needsListedAt ? { swarmdockListedAt: backfill.swarmdockListedAt } : {}),
+      updatedAt: Date.now(),
+    }
+  })
 }
 
 function buildTaskPrompt(task: Task): string {
@@ -89,7 +286,13 @@ const swarmdock: PlatformConnector = {
       const { loadAgent } = await import('@/lib/server/agents/agent-repository')
       agent = (await loadAgent(connector.agentId)) ?? undefined
     }
-    const config = parseConfig(connector, agent)
+    let walletAddressFallback = ''
+    if (agent?.swarmdockWalletId) {
+      const { loadWallet } = await import('@/lib/server/wallets/wallet-repository')
+      walletAddressFallback = resolveSwarmDockWalletAddress(agent, loadWallet(agent.swarmdockWalletId))
+    }
+
+    const config = resolveSwarmDockConfig(connector, agent, walletAddressFallback)
     const connectorId = connector.id
     const agentId = connector.agentId || ''
     const privateKey = _botToken || ''
@@ -118,47 +321,21 @@ const swarmdock: PlatformConnector = {
         : {}),
     })
 
-    // Register agent on SwarmDock (Ed25519 challenge-response)
-    const skillList = config.skills
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean)
-      .map((skillId) => ({
-        skillId,
-        skillName: skillId.replace(/-/g, ' '),
-        description: `${skillId} capability`,
-        category: skillId,
-        basePrice: '1000000', // $1.00 default
-        inputModes: ['text'],
-        outputModes: ['text'],
-        examplePrompts: generateExamplePrompts(skillId),
-      }))
+    const desiredProfile = buildDesiredSwarmDockProfile(connector, config, agent)
 
     log.info(TAG, `Registering agent "${connector.name}" on SwarmDock at ${config.apiUrl}`)
     try {
       const registration = await client.register({
-        displayName: connector.name,
-        description: config.agentDescription,
-        framework: 'swarmclaw',
-        walletAddress: config.walletAddress,
-        skills: skillList,
+        displayName: desiredProfile.displayName,
+        description: desiredProfile.description,
+        framework: desiredProfile.framework,
+        modelProvider: desiredProfile.modelProvider,
+        modelName: desiredProfile.modelName,
+        walletAddress: desiredProfile.walletAddress,
+        skills: desiredProfile.skills,
       })
       log.info(TAG, `Registered as ${registration.agent.did} (trust level ${registration.agent.trustLevel})`)
-
-      // Write SwarmDock IDs back to agent record if not already set
-      if (agent && (!agent.swarmdockAgentId || !agent.swarmdockDid)) {
-        const { patchAgent } = await import('@/lib/server/agents/agent-repository')
-        patchAgent(agent.id, (current) => {
-          if (!current) return null
-          return {
-            ...current,
-            swarmdockAgentId: registration.agent.id,
-            swarmdockDid: registration.agent.did,
-            swarmdockListedAt: current.swarmdockListedAt ?? Date.now(),
-            updatedAt: Date.now(),
-          }
-        })
-      }
+      await persistSwarmDockAgentBackfill(agent, registration.agent)
 
       logActivity({
         entityType: 'connector',
@@ -171,6 +348,14 @@ const swarmdock: PlatformConnector = {
       if (err instanceof ConflictError) {
         log.info(TAG, `Agent already registered, authenticating`)
         await client.authenticate()
+        const syncResult = await syncSwarmDockProfile(client, desiredProfile)
+        await persistSwarmDockAgentBackfill(agent, syncResult.liveProfile)
+        if (syncResult.updatedProfile || syncResult.updatedSkills) {
+          log.info(
+            TAG,
+            `Synchronized live SwarmDock profile${syncResult.updatedProfile ? ' fields' : ''}${syncResult.updatedProfile && syncResult.updatedSkills ? ' and' : ''}${syncResult.updatedSkills ? ' skills' : ''}`,
+          )
+        }
       } else {
         throw err
       }

@@ -1,6 +1,6 @@
 {
   "name": "@swarmclawai/swarmclaw",
-  "version": "1.4.5",
+  "version": "1.4.6",
   "description": "Self-hosted AI runtime for OpenClaw, delegation, autonomy, runtime skills, crypto wallets, and chat platform connectors.",
   "license": "MIT",
   "publishConfig": {
@@ -73,7 +73,7 @@
     "cli": "node ./bin/swarmclaw.js",
     "test:cli": "node --test src/cli/*.test.js bin/*.test.js scripts/postinstall.test.mjs scripts/run-next-build.test.mjs scripts/run-next-typegen.test.mjs",
     "test:setup": "tsx --test src/app/api/setup/check-provider/route.test.ts src/lib/server/provider-model-discovery.test.ts src/components/auth/setup-wizard/utils.test.ts src/components/auth/setup-wizard/types.test.ts src/hooks/setup-done-detection.test.ts src/lib/setup-defaults.test.ts",
-    "test:openclaw": "tsx --test src/lib/openclaw/openclaw-agent-id.test.ts src/lib/openclaw/openclaw-endpoint.test.ts src/lib/server/agents/agent-runtime-config.test.ts src/lib/server/build-llm.test.ts src/lib/server/connectors/connector-routing.test.ts src/lib/server/connectors/openclaw.test.ts src/lib/server/gateway/protocol.test.ts src/lib/server/llm-response-cache.test.ts src/lib/server/mcp-conformance.test.ts src/lib/server/openclaw/agent-resolver.test.ts src/lib/server/openclaw/deploy.test.ts src/lib/server/openclaw/skills-normalize.test.ts src/lib/server/session-tools/openclaw-nodes.test.ts src/lib/server/tasks/task-quality-gate.test.ts src/lib/server/tasks/task-validation.test.ts src/lib/server/tool-capability-policy.test.ts src/lib/providers/openclaw-exports.test.ts src/app/api/openclaw/dashboard-url/route.test.ts",
+    "test:openclaw": "tsx --test src/lib/openclaw/openclaw-agent-id.test.ts src/lib/openclaw/openclaw-endpoint.test.ts src/lib/server/agents/agent-runtime-config.test.ts src/lib/server/build-llm.test.ts src/lib/server/connectors/connector-routing.test.ts src/lib/server/connectors/openclaw.test.ts src/lib/server/connectors/swarmdock.test.ts src/lib/server/gateway/protocol.test.ts src/lib/server/llm-response-cache.test.ts src/lib/server/mcp-conformance.test.ts src/lib/server/openclaw/agent-resolver.test.ts src/lib/server/openclaw/deploy.test.ts src/lib/server/openclaw/skills-normalize.test.ts src/lib/server/session-tools/openclaw-nodes.test.ts src/lib/server/session-tools/swarmdock.test.ts src/lib/server/tasks/task-quality-gate.test.ts src/lib/server/tasks/task-validation.test.ts src/lib/server/tool-capability-policy.test.ts src/lib/providers/openclaw-exports.test.ts src/app/api/openclaw/dashboard-url/route.test.ts",
     "test:runtime": "tsx --test src/lib/server/knowledge-sources.test.ts src/lib/server/chat-execution/chat-execution-grounding.test.ts src/lib/server/protocols/protocol-service.test.ts src/lib/server/runtime/run-ledger.test.ts src/lib/server/safe-parse-body.test.ts src/app/api/approvals/route.test.ts src/app/api/chats/chat-route.test.ts src/app/api/connectors/connector-doctor-route.test.ts src/app/api/logs/route.test.ts src/app/api/tts/route.test.ts",
     "test:builder": "tsx --test src/features/protocols/builder/utils/nodes-to-template.test.ts src/features/protocols/builder/utils/template-to-nodes.test.ts src/features/protocols/builder/validators/dag-validator.test.ts",
     "test:e2e": "tsx .workbench/browser-e2e/run.ts",
@@ -91,7 +91,7 @@
     "@multiavatar/multiavatar": "^1.0.7",
     "@playwright/mcp": "^0.0.68",
     "@slack/bolt": "^4.6.0",
-    "@swarmdock/sdk": "^0.5.2",
+    "@swarmdock/sdk": "^0.5.3",
     "@tailwindcss/postcss": "^4",
     "@tanstack/react-query": "^5.91.0",
     "@types/better-sqlite3": "^7.6.13",
