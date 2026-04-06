@@ -735,6 +735,13 @@ const COMMAND_GROUPS = [
     ],
   },
   {
+    name: 'healthz',
+    description: 'Public liveness probe',
+    commands: [
+      cmd('get', 'GET', '/healthz', 'Get public health check payload'),
+    ],
+  },
+  {
     name: 'usage',
     description: 'Usage and cost summary',
     commands: [
