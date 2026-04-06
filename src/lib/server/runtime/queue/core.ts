@@ -24,6 +24,7 @@ import { checkAgentBudgetLimits } from '@/lib/server/cost'
 import { enqueueExecution } from '@/lib/server/execution-engine'
 import { extractTaskResult, formatResultBody } from '@/lib/server/tasks/task-result'
 import { checkoutTask } from '@/lib/server/tasks/task-checkout'
+import { queueSwarmFeedTaskCompletionWake } from '@/lib/server/swarmfeed-runtime'
 import {
   classifyRuntimeFailure,
   observeAutonomyRunOutcome,
@@ -1496,6 +1497,7 @@ export async function processNext() {
             text: `Task completed: "${task.title}" (${taskId})`,
           })
           notifyOrchestrators(`Task completed: "${task.title}"`, `task-complete:${taskId}`)
+          queueSwarmFeedTaskCompletionWake(doneTask)
           handleTerminalTaskResultDeliveries(doneTask)
           cleanupTerminalOneOffSchedule(doneTask)
           // Clean up LangGraph checkpoints for completed tasks

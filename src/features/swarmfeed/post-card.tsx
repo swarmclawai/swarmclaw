@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
+import { Bookmark, Heart, MessageSquare, Quote, Repeat2 } from 'lucide-react'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
 import type { SwarmFeedPost } from '@/types/swarmfeed'
 
@@ -13,102 +14,233 @@ function formatTimestamp(iso: string): string {
   const hrs = Math.floor(min / 60)
   if (hrs < 24) return `${hrs}h`
   const days = Math.floor(hrs / 24)
-  return `${days}d`
+  if (days < 7) return `${days}d`
+  return new Date(iso).toLocaleDateString()
 }
 
-export function PostCard({ post, onLike, onRepost }: {
+type ToggleAction = 'like' | 'repost' | 'bookmark'
+export type PostCardAction = 'like' | 'unlike' | 'repost' | 'unrepost' | 'bookmark' | 'unbookmark'
+
+type Props = {
   post: SwarmFeedPost
-  onLike?: (postId: string) => void
-  onRepost?: (postId: string) => void
-}) {
+  channelLabel?: string | null
+  canInteract?: boolean
+  onProfileOpen?: (agentId: string) => void
+  onThreadOpen?: (postId: string, mode?: 'reply' | 'quote') => void
+  onAction?: (action: PostCardAction, post: SwarmFeedPost) => Promise<void>
+}
+
+export function PostCard({
+  post,
+  channelLabel,
+  canInteract = true,
+  onProfileOpen,
+  onThreadOpen,
+  onAction,
+}: Props) {
   const [liked, setLiked] = useState(false)
   const [reposted, setReposted] = useState(false)
-  const [localLikeCount, setLocalLikeCount] = useState(post.likeCount)
-  const [localRepostCount, setLocalRepostCount] = useState(post.repostCount)
+  const [bookmarked, setBookmarked] = useState(false)
+  const [likeCount, setLikeCount] = useState(post.likeCount)
+  const [repostCount, setRepostCount] = useState(post.repostCount)
+  const [bookmarkCount, setBookmarkCount] = useState(post.bookmarkCount)
+  const [busyAction, setBusyAction] = useState<ToggleAction | null>(null)
 
-  const handleLike = () => {
-    if (!liked) {
-      setLiked(true)
-      setLocalLikeCount((c) => c + 1)
-      onLike?.(post.id)
+  async function runAction(action: ToggleAction) {
+    if (!canInteract || busyAction) return
+    setBusyAction(action)
+    const prev = {
+      liked,
+      reposted,
+      bookmarked,
+      likeCount,
+      repostCount,
+      bookmarkCount,
     }
-  }
 
-  const handleRepost = () => {
-    if (!reposted) {
-      setReposted(true)
-      setLocalRepostCount((c) => c + 1)
-      onRepost?.(post.id)
+    const wasActive = action === 'like' ? liked : action === 'repost' ? reposted : bookmarked
+    const emittedAction: PostCardAction =
+      action === 'like'
+        ? (wasActive ? 'unlike' : 'like')
+        : action === 'repost'
+          ? (wasActive ? 'unrepost' : 'repost')
+          : (wasActive ? 'unbookmark' : 'bookmark')
+
+    if (action === 'like') {
+      setLiked(!wasActive)
+      setLikeCount((value) => Math.max(0, value + (wasActive ? -1 : 1)))
+    }
+    if (action === 'repost') {
+      setReposted(!wasActive)
+      setRepostCount((value) => Math.max(0, value + (wasActive ? -1 : 1)))
+    }
+    if (action === 'bookmark') {
+      setBookmarked(!wasActive)
+      setBookmarkCount((value) => Math.max(0, value + (wasActive ? -1 : 1)))
+    }
+
+    try {
+      await onAction?.(emittedAction, post)
+    } catch {
+      setLiked(prev.liked)
+      setReposted(prev.reposted)
+      setBookmarked(prev.bookmarked)
+      setLikeCount(prev.likeCount)
+      setRepostCount(prev.repostCount)
+      setBookmarkCount(prev.bookmarkCount)
+    } finally {
+      setBusyAction(null)
     }
   }
 
   return (
-    <div className="rounded-[16px] border border-white/[0.06] bg-surface/70 p-4 sm:p-5 transition-all hover:bg-surface/90">
-      {/* Agent header */}
-      <div className="flex items-center gap-3 mb-3">
-        <AgentAvatar
-          seed={post.agent?.id || post.agentId}
-          avatarUrl={post.agent?.avatar || null}
-          name={post.agent?.name || 'Agent'}
-          size={36}
-        />
+    <article className="rounded-[18px] border border-white/[0.06] bg-surface/80 p-4 transition-all hover:bg-surface/95 sm:p-5">
+      <div className="mb-3 flex items-start gap-3">
+        <button
+          type="button"
+          onClick={() => post.agentId && onProfileOpen?.(post.agentId)}
+          className="cursor-pointer rounded-full border-none bg-transparent p-0"
+        >
+          <AgentAvatar
+            seed={post.agent?.id || post.agentId}
+            avatarUrl={post.agent?.avatar || null}
+            name={post.agent?.name || 'Agent'}
+            size={38}
+          />
+        </button>
+
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <span className="font-display text-[14px] font-600 text-text truncate">
-              {post.agent?.name || 'Unknown Agent'}
-            </span>
-            <span className="text-[12px] text-text-3/60">{formatTimestamp(post.createdAt)}</span>
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <button
+              type="button"
+              onClick={() => post.agentId && onProfileOpen?.(post.agentId)}
+              className="cursor-pointer border-none bg-transparent p-0 text-left font-display text-[14px] font-700 text-text hover:text-accent-bright"
+            >
+              {post.agent?.name || 'Unknown agent'}
+            </button>
+            {post.agent?.framework && (
+              <span className="rounded-full border border-white/[0.08] px-2 py-0.5 text-[10px] font-700 uppercase tracking-[0.12em] text-text-3/70">
+                {post.agent.framework}
+              </span>
+            )}
+            <span className="text-[12px] text-text-3/55">{formatTimestamp(post.createdAt)}</span>
           </div>
-          {post.channelId && (
-            <span className="text-[11px] text-accent-bright/70 font-500">#{post.channelId}</span>
+          {(channelLabel || post.channelId) && (
+            <div className="mt-1 text-[11px] font-700 uppercase tracking-[0.1em] text-accent-bright/75">
+              {channelLabel || `#${post.channelId}`}
+            </div>
           )}
         </div>
       </div>
 
-      {/* Content */}
-      <div className="text-[14px] leading-[1.65] text-text/90 whitespace-pre-wrap break-words mb-4">
+      <div className="whitespace-pre-wrap break-words text-[14px] leading-[1.7] text-text/92">
         {post.content}
       </div>
 
-      {/* Engagement bar */}
-      <div className="flex items-center gap-5 text-text-3/60">
-        <button
-          onClick={handleLike}
-          className={`flex items-center gap-1.5 text-[12px] font-500 transition-colors bg-transparent border-none cursor-pointer
-            ${liked ? 'text-rose-400' : 'text-text-3/60 hover:text-rose-400'}`}
+      {post.linkPreview?.url && (
+        <a
+          href={post.linkPreview.url}
+          target="_blank"
+          rel="noreferrer"
+          className="mt-4 block rounded-[14px] border border-white/[0.08] bg-bg/60 p-3 no-underline transition-all hover:border-accent-bright/30"
         >
-          <svg width="15" height="15" viewBox="0 0 24 24" fill={liked ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
-          </svg>
-          {localLikeCount > 0 && <span>{localLikeCount}</span>}
-        </button>
+          <div className="text-[12px] font-700 text-text">{post.linkPreview.title || post.linkPreview.url}</div>
+          {post.linkPreview.description && (
+            <div className="mt-1 text-[12px] leading-[1.5] text-text-3/75">{post.linkPreview.description}</div>
+          )}
+        </a>
+      )}
 
-        <button
-          onClick={handleRepost}
-          className={`flex items-center gap-1.5 text-[12px] font-500 transition-colors bg-transparent border-none cursor-pointer
-            ${reposted ? 'text-emerald-400' : 'text-text-3/60 hover:text-emerald-400'}`}
+      {post.quotedPost && (
+        <div className="mt-4 rounded-[14px] border border-white/[0.08] bg-bg/55 p-3">
+          <div className="mb-2 text-[11px] font-700 uppercase tracking-[0.12em] text-text-3/60">Quoted Post</div>
+          <div className="text-[13px] font-700 text-text">{post.quotedPost.agent?.name || 'Unknown agent'}</div>
+          <div className="mt-1 whitespace-pre-wrap break-words text-[13px] leading-[1.6] text-text-2/90">
+            {post.quotedPost.content}
+          </div>
+        </div>
+      )}
+
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        <ActionButton
+          active={liked}
+          disabled={!canInteract || busyAction !== null}
+          label={likeCount}
+          tone="rose"
+          onClick={() => { void runAction('like') }}
         >
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="17 1 21 5 17 9" /><path d="M3 11V9a4 4 0 0 1 4-4h14" />
-            <polyline points="7 23 3 19 7 15" /><path d="M21 13v2a4 4 0 0 1-4 4H3" />
-          </svg>
-          {localRepostCount > 0 && <span>{localRepostCount}</span>}
-        </button>
-
-        <div className="flex items-center gap-1.5 text-[12px] font-500 text-text-3/60">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-          </svg>
-          {post.replyCount > 0 && <span>{post.replyCount}</span>}
-        </div>
-
-        <div className="flex items-center gap-1.5 text-[12px] font-500 text-text-3/60">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-          </svg>
-          {post.bookmarkCount > 0 && <span>{post.bookmarkCount}</span>}
-        </div>
+          <Heart size={14} className={liked ? 'fill-current' : ''} />
+        </ActionButton>
+        <ActionButton
+          active={reposted}
+          disabled={!canInteract || busyAction !== null}
+          label={repostCount}
+          tone="emerald"
+          onClick={() => { void runAction('repost') }}
+        >
+          <Repeat2 size={14} />
+        </ActionButton>
+        <ActionButton
+          active={bookmarked}
+          disabled={!canInteract || busyAction !== null}
+          label={bookmarkCount}
+          tone="amber"
+          onClick={() => { void runAction('bookmark') }}
+        >
+          <Bookmark size={14} className={bookmarked ? 'fill-current' : ''} />
+        </ActionButton>
+        <ActionButton
+          disabled={false}
+          label={post.replyCount}
+          onClick={() => onThreadOpen?.(post.id, 'reply')}
+        >
+          <MessageSquare size={14} />
+        </ActionButton>
+        <ActionButton
+          disabled={false}
+          onClick={() => onThreadOpen?.(post.id, 'quote')}
+        >
+          <Quote size={14} />
+        </ActionButton>
       </div>
-    </div>
+    </article>
+  )
+}
+
+function ActionButton({
+  active = false,
+  disabled,
+  label,
+  tone = 'neutral',
+  onClick,
+  children,
+}: {
+  active?: boolean
+  disabled: boolean
+  label?: number
+  tone?: 'neutral' | 'rose' | 'emerald' | 'amber'
+  onClick: () => void
+  children: ReactNode
+}) {
+  const activeClass = tone === 'rose'
+    ? 'text-rose-400 bg-rose-400/10'
+    : tone === 'emerald'
+      ? 'text-emerald-400 bg-emerald-400/10'
+      : tone === 'amber'
+        ? 'text-amber-300 bg-amber-300/10'
+        : 'text-text bg-white/[0.06]'
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`flex cursor-pointer items-center gap-1.5 rounded-[999px] border border-white/[0.08] px-3 py-1.5 text-[12px] font-700 transition-all ${
+        active ? activeClass : 'bg-bg/55 text-text-3 hover:bg-white/[0.06] hover:text-text'
+      } disabled:cursor-not-allowed disabled:opacity-50`}
+    >
+      {children}
+      {typeof label === 'number' && label > 0 ? <span>{label}</span> : null}
+    </button>
   )
 }

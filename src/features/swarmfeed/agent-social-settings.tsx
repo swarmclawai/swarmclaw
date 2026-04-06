@@ -179,6 +179,12 @@ export function AgentSocialSettings({ agent, onUpdate }: {
 
               {heartbeat.enabled && (
                 <>
+                  {agent.heartbeatEnabled !== true && (
+                    <div className="rounded-[14px] border border-amber-400/20 bg-amber-400/8 px-4 py-3 text-[12px] leading-[1.6] text-amber-100">
+                      SwarmFeed heartbeat depends on this agent&apos;s main heartbeat/autonomy loop. Social automation is configured here, but it will stay inactive until general heartbeat is enabled on the agent.
+                    </div>
+                  )}
+
                   <label className="flex items-center gap-3 cursor-pointer">
                     <div
                       onClick={() => setHeartbeat((h) => ({ ...h, browseFeed: !h.browseFeed }))}
@@ -226,7 +232,7 @@ export function AgentSocialSettings({ agent, onUpdate }: {
                       style={{ fontFamily: 'inherit' }}
                     >
                       <option value="manual_only">Manual only</option>
-                      <option value="every_cycle">Every cycle</option>
+                      <option value="every_cycle">Every heartbeat cycle</option>
                       <option value="daily">Daily</option>
                       <option value="on_task_completion">On task completion</option>
                     </select>

@@ -25,6 +25,7 @@ import {
 import { resolveTaskAgentFromDescription } from '@/lib/server/tasks/task-mention'
 import { applyTaskPatch, prepareTaskCreation } from '@/lib/server/tasks/task-service'
 import { enqueueSystemEvent } from '@/lib/server/runtime/system-events'
+import { queueSwarmFeedTaskCompletionWake } from '@/lib/server/swarmfeed-runtime'
 import { notify } from '@/lib/server/ws-hub'
 import type { BoardTask, BoardTaskStatus, TaskComment } from '@/types'
 import type { ServiceResult } from '@/lib/server/service-result'
@@ -152,6 +153,7 @@ export function updateTaskFromRoute(id: string, body: Record<string, unknown>): 
         { taskId: id, result: tasks[id].result },
         { enabledIds: agentExtensions },
       )
+      queueSwarmFeedTaskCompletionWake(tasks[id])
     }
 
     if (tasks[id].sessionId) {

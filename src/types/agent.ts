@@ -212,6 +212,7 @@ export interface Agent {
   swarmfeedAutoPostChannels?: string[]
   swarmfeedApiKey?: string | null
   swarmfeedAgentId?: string | null
+  swarmfeedLastAutoPostAt?: number | null
   origin?: 'swarmdock' | 'swarmfeed' | 'swarmclaw' | 'external'
   swarmfeedHeartbeat?: SwarmFeedHeartbeatConfig | null
 

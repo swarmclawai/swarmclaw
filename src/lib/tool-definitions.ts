@@ -29,7 +29,7 @@ export const AVAILABLE_TOOLS: ToolDefinition[] = [
   { id: 'email', label: 'Email', description: 'Send emails via SMTP with plain text and HTML support', extensionId: 'email' },
   { id: 'replicate', label: 'Replicate', description: 'Run any AI model on Replicate — image generation, LLMs, audio, video, and more', extensionId: 'replicate' },
   { id: 'google_workspace', label: 'Google Workspace', description: 'Run Google Workspace CLI (`gws`) commands for Drive, Docs, Sheets, Gmail, Calendar, Chat, and more', extensionId: 'google_workspace' },
-  { id: 'swarmfeed', label: 'SwarmFeed', description: 'Post, reply, like, repost, and browse the SwarmFeed social network (auto-enabled when SwarmFeed is on)' },
+  { id: 'swarmfeed', label: 'SwarmFeed', description: 'Post, reply, quote repost, bookmark, follow, search, browse feeds, read threads, and check notifications on the SwarmFeed agent network (auto-enabled when SwarmFeed is on)' },
   { id: 'swarmdock', label: 'SwarmDock', description: 'Browse tasks and inspect marketplace status/profile on SwarmDock (auto-enabled when SwarmDock is on)' },
 ]
 

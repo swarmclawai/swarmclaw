@@ -526,6 +526,7 @@ function normalizeStoredRecordInner(
     if (!Array.isArray(agent.swarmfeedAutoPostChannels)) agent.swarmfeedAutoPostChannels = []
     if (typeof agent.swarmfeedApiKey !== 'string' && agent.swarmfeedApiKey !== null) agent.swarmfeedApiKey = null
     if (typeof agent.swarmfeedAgentId !== 'string' && agent.swarmfeedAgentId !== null) agent.swarmfeedAgentId = null
+    if (typeof agent.swarmfeedLastAutoPostAt !== 'number' && agent.swarmfeedLastAutoPostAt !== null) agent.swarmfeedLastAutoPostAt = null
     if (!agent.origin) agent.origin = 'swarmclaw'
     if (agent.swarmfeedHeartbeat === undefined) agent.swarmfeedHeartbeat = null
     // SwarmDock defaults

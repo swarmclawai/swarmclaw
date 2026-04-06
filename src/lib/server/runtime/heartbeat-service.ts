@@ -30,6 +30,7 @@ import { errorMessage, hmrSingleton, jitteredBackoff } from '@/lib/shared-utils'
 import { logExecution } from '@/lib/server/execution-log'
 import { createNotification } from '@/lib/server/create-notification'
 import { WORKER_ONLY_PROVIDER_IDS } from '@/lib/provider-sets'
+import { buildSwarmFeedHeartbeatGuidance } from '@/lib/server/swarmfeed-runtime'
 
 const HEARTBEAT_TICK_MS = 60_000
 const MAX_CONCURRENT_HEARTBEATS = 1
@@ -378,7 +379,11 @@ export function buildAgentHeartbeatPrompt(
   const effectiveFileContent = isHeartbeatContentEffectivelyEmpty(strippedContent) ? '' : strippedContent
   if (effectiveFileContent) sections.push(`\nHEARTBEAT.md contents:\n${effectiveFileContent.slice(0, 2000)}`)
 
-  const recentMessages = (session.id ? getRecentMessages(session.id, 5) : []) as HeartbeatPromptMessage[]
+  const recentMessages = (
+    Array.isArray(session.messages)
+      ? session.messages.slice(-5)
+      : (session.id ? getRecentMessages(session.id, 5) : [])
+  ) as HeartbeatPromptMessage[]
   const recentContext = recentMessages
     .map((m) => {
       const text = (m.text || '').slice(0, 200)
@@ -416,6 +421,8 @@ export function buildAgentHeartbeatPrompt(
 
   // ── Phase 5: Execution instructions ──
   if (fallbackPrompt !== DEFAULT_HEARTBEAT_PROMPT) sections.push(`\nAgent instructions:\n${fallbackPrompt}`)
+  const swarmFeedGuidance = buildSwarmFeedHeartbeatGuidance(agent as Agent)
+  if (swarmFeedGuidance) sections.push(`\n${swarmFeedGuidance}`)
 
   sections.push('')
   sections.push('You are running an autonomous heartbeat tick. Review your goal and recent context.')
