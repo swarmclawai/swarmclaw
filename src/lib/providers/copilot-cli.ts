@@ -46,7 +46,7 @@ export function streamCopilotCliChat({ session, message, imagePath, systemPrompt
   const prompt = promptParts.join('\n\n')
 
   const args = ['-p', prompt, '--output-format=json', '-s', '--yolo']
-  if (session.copilotSessionId) args.push('--resume', session.copilotSessionId)
+  if (session.copilotSessionId) args.push(`--resume=${session.copilotSessionId}`)
   if (session.model) args.push('--model', session.model)
 
   // System prompt: write temp AGENTS.override.md in a temp config dir
@@ -106,14 +106,35 @@ export function streamCopilotCliChat({ session, message, imagePath, systemPrompt
         const ev = JSON.parse(line) as Record<string, unknown>
         eventCount++
 
-        // Capture session ID from init event
+        const data = ev.data as Record<string, unknown> | undefined
+
+        // Capture session ID — legacy 'init' event or modern 'result' event
         if (ev.type === 'init' && typeof ev.session_id === 'string') {
           session.copilotSessionId = ev.session_id
-          log.info('copilot-cli', `Got session_id: ${ev.session_id}`)
+          log.info('copilot-cli', `Got session_id (init): ${ev.session_id}`)
+        } else if (ev.type === 'result' && typeof ev.sessionId === 'string') {
+          session.copilotSessionId = ev.sessionId
+          log.info('copilot-cli', `Got session_id (result): ${ev.sessionId}`)
         }
 
-        // Streaming text deltas
-        if (ev.type === 'content_block_delta') {
+        // Modern format: streaming delta — assistant.message_delta { data: { deltaContent } }
+        if (ev.type === 'assistant.message_delta' && typeof data?.deltaContent === 'string') {
+          fullResponse += data.deltaContent
+          write(`data: ${JSON.stringify({ t: 'd', text: data.deltaContent })}\n\n`)
+        }
+
+        // Modern format: full assistant message — assistant.message { data: { content } }
+        else if (ev.type === 'assistant.message' && typeof data?.content === 'string') {
+          // Only emit as final result if we haven't been streaming deltas
+          if (!fullResponse) {
+            fullResponse = data.content
+            write(`data: ${JSON.stringify({ t: 'r', text: data.content })}\n\n`)
+          }
+          log.debug('copilot-cli', `Assistant message (${data.content.length} chars)`)
+        }
+
+        // Legacy: streaming text deltas — content_block_delta { delta: { text } }
+        else if (ev.type === 'content_block_delta') {
           const delta = ev.delta as Record<string, unknown> | undefined
           if (typeof delta?.text === 'string') {
             fullResponse += delta.text
@@ -121,19 +142,19 @@ export function streamCopilotCliChat({ session, message, imagePath, systemPrompt
           }
         }
 
-        // Agent message chunks (ACP format)
+        // Legacy: agent message chunks (ACP format)
         else if (ev.type === 'agent_message_chunk' && typeof ev.text === 'string') {
           fullResponse += ev.text
           write(`data: ${JSON.stringify({ t: 'd', text: ev.text })}\n\n`)
         }
 
-        // Assistant message content
+        // Legacy: assistant message content
         else if (ev.type === 'message' && ev.role === 'assistant' && typeof ev.content === 'string') {
           fullResponse += ev.content
           write(`data: ${JSON.stringify({ t: 'd', text: ev.content })}\n\n`)
         }
 
-        // Completed item with agent_message
+        // Legacy: completed item with agent_message
         else if (ev.type === 'item.completed' && (ev.item as Record<string, unknown>)?.type === 'agent_message') {
           const item = ev.item as Record<string, unknown>
           if (typeof item.text === 'string') {
@@ -143,7 +164,7 @@ export function streamCopilotCliChat({ session, message, imagePath, systemPrompt
           }
         }
 
-        // Final result
+        // Legacy: final result with string result field
         else if (ev.type === 'result' && typeof ev.result === 'string') {
           fullResponse = ev.result
           write(`data: ${JSON.stringify({ t: 'r', text: ev.result })}\n\n`)
