@@ -1,0 +1,33 @@
+app = "swarmclaw"
+primary_region = "iad"
+
+[build]
+image = "ghcr.io/swarmclawai/swarmclaw:latest"
+
+[env]
+NODE_ENV = "production"
+PORT = "3456"
+OTEL_SERVICE_NAME = "swarmclaw"
+
+[http_service]
+internal_port = 3456
+force_https = true
+auto_stop_machines = false
+auto_start_machines = true
+min_machines_running = 1
+
+[mounts]
+source = "swarmclaw_data"
+destination = "/app/data"
+
+[checks.health]
+type = "http"
+port = 3456
+path = "/api/healthz"
+interval = "15s"
+timeout = "5s"
+
+[[vm]]
+memory = "2048mb"
+cpu_kind = "shared"
+cpus = 2

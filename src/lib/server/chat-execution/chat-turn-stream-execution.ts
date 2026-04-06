@@ -22,6 +22,7 @@ import {
 import { perf } from '@/lib/server/runtime/perf'
 import { getSessionMessages } from '@/lib/server/sessions/session-repository'
 import { notify } from '@/lib/server/ws-hub'
+import { setSpanAttributes, withServerSpan } from '@/lib/server/observability/otel-tracing'
 import { errorMessage as toErrorMessage } from '@/lib/shared-utils'
 
 import type { ExecuteChatTurnInput } from './chat-execution-types'
@@ -142,22 +143,34 @@ export async function executePreparedChatTurn(params: {
     )
 
     if (hasExtensions) {
-      const result = await streamAgentChat({
-        session: sessionForRun,
-        message: effectiveMessage,
-        imagePath: resolvedImagePath,
-        imageUrl,
-        attachedFiles,
-        apiKey,
-        systemPrompt,
-        executionBrief,
-        extraSystemContext: [executionBriefContextBlock].filter((value): value is string => typeof value === 'string' && value.trim().length > 0),
-        write: (raw) => parseAndEmit(raw),
-        history: heartbeatHistory ?? applyContextClearBoundary(getSessionMessages(sessionId)),
-        signal: abortController.signal,
-        source,
-        classification,
-        promptMode,
+      const result = await withServerSpan('swarmclaw.chat.agentic_stream', {
+        'swarmclaw.session.id': sessionId,
+        'swarmclaw.chat.source': source,
+        'swarmclaw.chat.provider': providerType,
+        'gen_ai.request.model': sessionForRun.model,
+      }, async (span) => {
+        const agenticResult = await streamAgentChat({
+          session: sessionForRun,
+          message: effectiveMessage,
+          imagePath: resolvedImagePath,
+          imageUrl,
+          attachedFiles,
+          apiKey,
+          systemPrompt,
+          executionBrief,
+          extraSystemContext: [executionBriefContextBlock].filter((value): value is string => typeof value === 'string' && value.trim().length > 0),
+          write: (raw) => parseAndEmit(raw),
+          history: heartbeatHistory ?? applyContextClearBoundary(getSessionMessages(sessionId)),
+          signal: abortController.signal,
+          source,
+          classification,
+          promptMode,
+        })
+        setSpanAttributes(span, {
+          'swarmclaw.chat.tool_event_count': agenticResult.toolEvents.length,
+          'swarmclaw.chat.has_retrieval_trace': Boolean(agenticResult.knowledgeRetrievalTrace),
+        })
+        return agenticResult
       })
       fullResponse = result.finalResponse || result.fullText
       knowledgeRetrievalTrace = result.knowledgeRetrievalTrace || null
@@ -232,7 +245,20 @@ export async function executePreparedChatTurn(params: {
           signal: abortController.signal,
         })
         try {
-          fullResponse = await doStreamChat()
+          fullResponse = await withServerSpan('swarmclaw.chat.model_stream', {
+            'swarmclaw.session.id': sessionId,
+            'swarmclaw.chat.source': source,
+            'swarmclaw.chat.provider': providerType,
+            'gen_ai.request.model': sessionForRun.model,
+          }, async (span) => {
+            const response = await doStreamChat()
+            setSpanAttributes(span, {
+              'gen_ai.usage.input_tokens': directUsage.inputTokens || 0,
+              'gen_ai.usage.output_tokens': directUsage.outputTokens || 0,
+              'swarmclaw.chat.response_cacheable': canUseResponseCache,
+            })
+            return response
+          })
         } catch (streamErr: unknown) {
           const streamErrMsg = toErrorMessage(streamErr)
           const streamStatus = (streamErr as Record<string, unknown>)?.status
@@ -243,7 +269,20 @@ export async function executePreparedChatTurn(params: {
               historyLen: directHistorySnapshot.length,
             })
             directHistorySnapshot = directHistorySnapshot.slice(-10)
-            fullResponse = await doStreamChat()
+            fullResponse = await withServerSpan('swarmclaw.chat.model_stream.retry', {
+              'swarmclaw.session.id': sessionId,
+              'swarmclaw.chat.source': source,
+              'swarmclaw.chat.provider': providerType,
+              'gen_ai.request.model': sessionForRun.model,
+              'swarmclaw.chat.retry_reason': 'context_overflow',
+            }, async (span) => {
+              const response = await doStreamChat()
+              setSpanAttributes(span, {
+                'gen_ai.usage.input_tokens': directUsage.inputTokens || 0,
+                'gen_ai.usage.output_tokens': directUsage.outputTokens || 0,
+              })
+              return response
+            })
           } else {
             throw streamErr
           }

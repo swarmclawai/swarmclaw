@@ -91,6 +91,7 @@ export function proxy(request: NextRequest) {
   if (
     !pathname.startsWith('/api/')
     || pathname === '/api/auth'
+    || pathname === '/api/healthz'
     || isWebhookTrigger
     || isConnectorWebhook
   ) {

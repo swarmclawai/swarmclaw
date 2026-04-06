@@ -39,6 +39,7 @@ import {
   syncProtocolParentFromChildRun,
 } from '@/lib/server/protocols/protocol-step-helpers'
 import { stepProtocolRun } from '@/lib/server/protocols/protocol-step-processors'
+import { setSpanAttributes, withServerSpan } from '@/lib/server/observability/otel-tracing'
 
 // ---- Singletons ----
 
@@ -308,79 +309,91 @@ export async function runProtocolRun(runId: string, deps?: ProtocolRunDeps): Pro
     return loadProtocolRunById(runId)
   }
   try {
-    let run = loadProtocolRunById(runId)
-    if (!run) return null
-    if (run.status === 'cancelled' || run.status === 'archived' || run.status === 'completed' || run.status === 'paused') return run
-    run = persistRun({
-      ...run,
-      status: run.status === 'waiting' ? 'running' : run.status,
-      waitingReason: null,
-      pauseReason: null,
-      lastError: null,
-      startedAt: run.startedAt || now(deps),
-      updatedAt: now(deps),
-    })
-    if (run.parentRunId) syncProtocolParentFromChildRun(run, deps)
+    return await withServerSpan('swarmclaw.protocol.run', {
+      'swarmclaw.protocol.run_id': runId,
+    }, async (span) => {
+      let run = loadProtocolRunById(runId)
+      if (!run) return null
+      setSpanAttributes(span, {
+        'swarmclaw.protocol.template_id': run.templateId,
+        'swarmclaw.protocol.source_kind': run.sourceRef.kind,
+        'swarmclaw.protocol.participant_count': run.participantAgentIds.length,
+        'swarmclaw.protocol.status': run.status,
+      })
+      if (run.status === 'cancelled' || run.status === 'archived' || run.status === 'completed' || run.status === 'paused') return run
+      run = persistRun({
+        ...run,
+        status: run.status === 'waiting' ? 'running' : run.status,
+        waitingReason: null,
+        pauseReason: null,
+        lastError: null,
+        startedAt: run.startedAt || now(deps),
+        updatedAt: now(deps),
+      })
+      if (run.parentRunId) syncProtocolParentFromChildRun(run, deps)
 
-    const MAX_STEP_ITERATIONS = 500
-    let stepIterations = 0
-    while (run.status === 'running' || run.status === 'draft') {
-      stepIterations++
-      if (stepIterations > MAX_STEP_ITERATIONS) {
-        run = persistRun({ ...run, status: 'failed', lastError: `Exceeded maximum step iterations (${MAX_STEP_ITERATIONS}). Possible infinite loop in step graph.`, updatedAt: now(deps) })
-        appendProtocolEvent(run.id, { type: 'failed', summary: `Exceeded maximum step iterations (${MAX_STEP_ITERATIONS}).` }, deps)
-        break
-      }
-      if (shouldYieldBetweenProtocolSteps(deps)) {
-        // Yield between steps in the fire-and-forget runtime so I/O, HTTP responses,
-        // and timers can run.
-        await new Promise(r => setTimeout(r, 0))
-      }
-      const latest = loadProtocolRunById(run.id)
-      if (!latest) return null
-      if (latest.status === 'paused' || latest.status === 'cancelled' || latest.status === 'archived' || latest.status === 'completed') {
-        run = latest
-        break
-      }
-      run = latest
-      renewProtocolLease(run.id)
-
-      // DAG scheduler: compute step readiness before stepping
-      const sched = computeStepReadiness(run.steps || [], run.entryStepId || null, run.stepState)
-      if (sched.dagMode) {
-        run = persistRun({
-          ...run,
-          stepState: sched.stepState,
-          completedStepIds: sched.completedStepIds,
-          runningStepIds: sched.runningStepIds,
-          readyStepIds: sched.readyStepIds,
-          failedStepIds: sched.failedStepIds,
-          updatedAt: now(deps),
-        })
-        if (sched.readyStepIds.length === 0 && sched.runningStepIds.length === 0) {
-          // No more work — either all done or stuck
-          const allSteps = run.steps || []
-          const allCompleted = allSteps.every((s) => sched.stepState[s.id]?.status === 'completed')
-          if (allCompleted) {
-            run = completeProtocolRun(run, deps)
-          } else {
-            run = persistRun({ ...run, status: 'failed', lastError: 'DAG stuck: no ready steps and not all completed.', updatedAt: now(deps) })
-            appendProtocolEvent(run.id, { type: 'failed', summary: 'DAG stuck: no ready steps and not all completed.' }, deps)
-          }
+      const MAX_STEP_ITERATIONS = 500
+      let stepIterations = 0
+      while (run.status === 'running' || run.status === 'draft') {
+        stepIterations++
+        if (stepIterations > MAX_STEP_ITERATIONS) {
+          run = persistRun({ ...run, status: 'failed', lastError: `Exceeded maximum step iterations (${MAX_STEP_ITERATIONS}). Possible infinite loop in step graph.`, updatedAt: now(deps) })
+          appendProtocolEvent(run.id, { type: 'failed', summary: `Exceeded maximum step iterations (${MAX_STEP_ITERATIONS}).` }, deps)
           break
         }
-        if (sched.readyStepIds.length > 0) {
-          // Pick first ready step as currentStepId
-          const nextReadyId = sched.readyStepIds[0]
-          run = persistRun({ ...run, currentStepId: nextReadyId, updatedAt: now(deps) })
+        if (shouldYieldBetweenProtocolSteps(deps)) {
+          // Yield between steps in the fire-and-forget runtime so I/O, HTTP responses,
+          // and timers can run.
+          await new Promise(r => setTimeout(r, 0))
         }
-      }
+        const latest = loadProtocolRunById(run.id)
+        if (!latest) return null
+        if (latest.status === 'paused' || latest.status === 'cancelled' || latest.status === 'archived' || latest.status === 'completed') {
+          run = latest
+          break
+        }
+        run = latest
+        renewProtocolLease(run.id)
 
-      run = await stepProtocolRun(run, deps)
-      if (run.status === 'waiting' || run.status === 'paused' || run.status === 'failed' || run.status === 'cancelled' || run.status === 'archived' || run.status === 'completed') break
-    }
-    if (run.parentRunId) syncProtocolParentFromChildRun(run, deps)
-    return run
+        const sched = computeStepReadiness(run.steps || [], run.entryStepId || null, run.stepState)
+        if (sched.dagMode) {
+          run = persistRun({
+            ...run,
+            stepState: sched.stepState,
+            completedStepIds: sched.completedStepIds,
+            runningStepIds: sched.runningStepIds,
+            readyStepIds: sched.readyStepIds,
+            failedStepIds: sched.failedStepIds,
+            updatedAt: now(deps),
+          })
+          if (sched.readyStepIds.length === 0 && sched.runningStepIds.length === 0) {
+            const allSteps = run.steps || []
+            const allCompleted = allSteps.every((s) => sched.stepState[s.id]?.status === 'completed')
+            if (allCompleted) {
+              run = completeProtocolRun(run, deps)
+            } else {
+              run = persistRun({ ...run, status: 'failed', lastError: 'DAG stuck: no ready steps and not all completed.', updatedAt: now(deps) })
+              appendProtocolEvent(run.id, { type: 'failed', summary: 'DAG stuck: no ready steps and not all completed.' }, deps)
+            }
+            break
+          }
+          if (sched.readyStepIds.length > 0) {
+            const nextReadyId = sched.readyStepIds[0]
+            run = persistRun({ ...run, currentStepId: nextReadyId, updatedAt: now(deps) })
+          }
+        }
+
+        run = await stepProtocolRun(run, deps)
+        if (run.status === 'waiting' || run.status === 'paused' || run.status === 'failed' || run.status === 'cancelled' || run.status === 'archived' || run.status === 'completed') break
+      }
+      setSpanAttributes(span, {
+        'swarmclaw.protocol.step_iterations': stepIterations,
+        'swarmclaw.protocol.status': run.status,
+        'swarmclaw.protocol.current_step_id': run.currentStepId,
+      })
+      if (run.parentRunId) syncProtocolParentFromChildRun(run, deps)
+      return run
+    })
   } catch (err: unknown) {
     const failed = updateRun(runId, (current) => ({
       ...current,

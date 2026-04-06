@@ -58,6 +58,7 @@ import {
   isExternalExtensionId,
   splitCapabilityIds,
 } from '@/lib/capability-selection'
+import { setSpanAttributes, withServerSpan } from '@/lib/server/observability/otel-tracing'
 
 export type { ToolContext, SessionToolsResult }
 export { sweepOrphanedBrowsers, cleanupSessionBrowser, getActiveBrowserCount, hasActiveBrowser }
@@ -388,65 +389,80 @@ export async function buildSessionTools(cwd: string, enabledExtensions: string[]
       const schema = (candidate as unknown as { schema?: z.ZodTypeAny }).schema || z.object({}).passthrough()
       return tool(
         async (args) => {
-          // Check abort before executing any tool — prevents wasted work after chat stop
-          if (abortSignalRef.signal?.aborted) {
-            throw new DOMException('Tool execution aborted', 'AbortError')
-          }
-          const normalizedArgs = normalizeToolInputArgs((args ?? {}) as Record<string, unknown>)
-          const hookSession = resolveCurrentSession() || buildFallbackHookSession()
-          // Enforce file access policy before execution
-          if (fileAccessPolicy) {
-            const denial = enforceFileAccessPolicy(candidate.name, normalizedArgs, cwd, fileAccessPolicy)
-            if (denial) return denial
-          }
-          let guardedArgs: Record<string, unknown> | null = normalizedArgs
-          if (ctx?.beforeToolCall) {
-            const guardResult = await ctx.beforeToolCall({
-              session: hookSession,
-              toolName: candidate.name,
-              input: guardedArgs,
-              runId: ctx.runId,
-            })
-            if (guardResult?.warning) {
-              ctx.onToolCallWarning?.({
+          return withServerSpan('swarmclaw.tool.call', {
+            'swarmclaw.tool.name': candidate.name,
+            'swarmclaw.session.id': ctx?.sessionId || null,
+            'swarmclaw.agent.id': ctx?.agentId || null,
+            'swarmclaw.run.id': ctx?.runId || null,
+          }, async (span) => {
+            // Check abort before executing any tool — prevents wasted work after chat stop
+            if (abortSignalRef.signal?.aborted) {
+              setSpanAttributes(span, { 'swarmclaw.tool.aborted': true })
+              throw new DOMException('Tool execution aborted', 'AbortError')
+            }
+            const normalizedArgs = normalizeToolInputArgs((args ?? {}) as Record<string, unknown>)
+            const hookSession = resolveCurrentSession() || buildFallbackHookSession()
+            if (fileAccessPolicy) {
+              const denial = enforceFileAccessPolicy(candidate.name, normalizedArgs, cwd, fileAccessPolicy)
+              if (denial) {
+                setSpanAttributes(span, { 'swarmclaw.tool.blocked': true })
+                return denial
+              }
+            }
+            let guardedArgs: Record<string, unknown> | null = normalizedArgs
+            if (ctx?.beforeToolCall) {
+              const guardResult = await ctx.beforeToolCall({
+                session: hookSession,
                 toolName: candidate.name,
-                message: guardResult.warning,
+                input: guardedArgs,
+                runId: ctx.runId,
+              })
+              if (guardResult?.warning) {
+                ctx.onToolCallWarning?.({
+                  toolName: candidate.name,
+                  message: guardResult.warning,
+                })
+              }
+              if (typeof guardResult?.blockReason === 'string' && guardResult.blockReason.trim()) {
+                setSpanAttributes(span, { 'swarmclaw.tool.blocked': true })
+                throw new Error(guardResult.blockReason.trim())
+              }
+              if (guardResult && 'input' in guardResult) {
+                guardedArgs = guardResult.input === undefined ? guardedArgs : guardResult.input ?? null
+              }
+            }
+            const hookResult = await runCapabilityBeforeToolCall(
+              {
+                session: hookSession,
+                toolName: candidate.name,
+                input: guardedArgs,
+                runId: ctx?.runId || undefined,
+              },
+              { enabledIds: activeExtensions },
+            )
+            if (hookResult.warning) {
+              ctx?.onToolCallWarning?.({
+                toolName: candidate.name,
+                message: hookResult.warning,
               })
             }
-            if (typeof guardResult?.blockReason === 'string' && guardResult.blockReason.trim()) {
-              throw new Error(guardResult.blockReason.trim())
+            if (hookResult.blockReason) {
+              setSpanAttributes(span, { 'swarmclaw.tool.blocked': true })
+              throw new Error(hookResult.blockReason)
             }
-            if (guardResult && 'input' in guardResult) {
-              guardedArgs = guardResult.input === undefined ? guardedArgs : guardResult.input ?? null
-            }
-          }
-          const hookResult = await runCapabilityBeforeToolCall(
-            {
-              session: hookSession,
-              toolName: candidate.name,
-              input: guardedArgs,
-              runId: ctx?.runId || undefined,
-            },
-            { enabledIds: activeExtensions },
-          )
-          if (hookResult.warning) {
-            ctx?.onToolCallWarning?.({
-              toolName: candidate.name,
-              message: hookResult.warning,
+            const effectiveArgs = hookResult.input ?? guardedArgs
+            const result = await candidate.invoke(effectiveArgs ?? {})
+            const outputText = typeof result === 'string' ? result : JSON.stringify(result)
+            setSpanAttributes(span, {
+              'swarmclaw.tool.output_bytes': Buffer.byteLength(outputText, 'utf-8'),
             })
-          }
-          if (hookResult.blockReason) {
-            throw new Error(hookResult.blockReason)
-          }
-          const effectiveArgs = hookResult.input ?? guardedArgs
-          const result = await candidate.invoke(effectiveArgs ?? {})
-          const outputText = typeof result === 'string' ? result : JSON.stringify(result)
-          await runCapabilityHook(
-            'afterToolExec',
-            { session: hookSession, toolName: candidate.name, input: effectiveArgs, output: outputText },
-            { enabledIds: activeExtensions },
-          )
-          return outputText
+            await runCapabilityHook(
+              'afterToolExec',
+              { session: hookSession, toolName: candidate.name, input: effectiveArgs, output: outputText },
+              { enabledIds: activeExtensions },
+            )
+            return outputText
+          })
         },
         {
           name: candidate.name,
