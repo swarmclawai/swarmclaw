@@ -12,6 +12,7 @@ export function StepProviders({
   configuredProviderIds,
   error,
   canContinue,
+  onBack,
   onSelectProvider,
   onRemoveProvider,
   onContinue,
@@ -132,6 +133,14 @@ export function StepProviders({
       {error && <p className="mt-4 text-[13px] text-red-400">{error}</p>}
 
       <div className="mt-6 flex items-center justify-center gap-3">
+        <button
+          type="button"
+          onClick={onBack}
+          className="px-6 py-3.5 rounded-[14px] border border-white/[0.08] bg-transparent text-text-2 text-[14px]
+            font-display font-500 cursor-pointer hover:bg-white/[0.03] transition-all duration-200"
+        >
+          Back
+        </button>
         <button
           onClick={onSkip}
           className="px-6 py-3.5 rounded-[14px] border border-white/[0.08] bg-transparent text-text-2 text-[14px]

@@ -215,6 +215,12 @@ SwarmClaw agents can join [SwarmFeed](https://swarmfeed.ai) — a social network
 
 Read the docs at [swarmclaw.ai/docs/swarmfeed](https://swarmclaw.ai/docs/swarmfeed) and visit [swarmfeed.ai](https://swarmfeed.ai) for the platform itself.
 
+### v1.5.0 Highlights
+
+- **First-run activation refresh**: setup now includes a dedicated start-path step, broad starter shapes instead of niche presets, and draft agents generated directly from the chosen setup shape.
+- **Guided post-setup launchpad**: finishing setup now routes through action-oriented next steps such as opening the first agent chat, launching a structured session, connecting platforms, or reviewing usage.
+- **State-aware home and protocols**: fresh workspaces now open on a launchpad instead of a sparse ops dashboard, and the Protocols page now surfaces the visual builder and template gallery directly.
+
 ### v1.4.9 Highlights
 
 - **Standalone build reliability**: `public/`, `.next/static/`, and `css-tree/data/` are now automatically copied into the standalone build output, fixing runtime crashes and missing assets when running the standalone bundle. (Community contribution by [@borislavnnikolov](https://github.com/borislavnnikolov) — PR #34)
@@ -355,7 +361,7 @@ Then open `http://localhost:3456`.
 - **Delegation**: built-in delegation to Claude Code, Codex CLI, OpenCode CLI, Gemini CLI, and native SwarmClaw subagents.
 - **Autonomy**: heartbeat loops, schedules, background jobs, task execution, supervisor recovery, and agent wakeups.
 - **Orchestration**: durable structured execution with branching, repeat loops, parallel branches, explicit joins, restart-safe run state, and contextual launch from chats, chatrooms, tasks, schedules, and API flows.
-- **Structured Sessions**: reusable bounded runs with templates, facilitators, participants, hidden live rooms, chatroom `/breakout`, durable transcripts, outputs, and operator controls.
+- **Structured Sessions**: reusable bounded runs with templates, facilitators, participants, hidden live rooms, chatroom `/breakout`, durable transcripts, outputs, operator controls, and a visible protocols template gallery plus visual builder.
 - **Memory**: hybrid recall, graph traversal, journaling, durable documents, project-scoped context, automatic reflection memory, communication preferences, profile and boundary memory, significant events, and open follow-up loops.
 - **Wallets**: linked Base wallet generation, address management, approval-oriented limits, and agent payout identity.
 - **Connectors**: Discord, Slack, Telegram, WhatsApp, Teams, Matrix, OpenClaw, SwarmDock, SwarmFeed, and more.

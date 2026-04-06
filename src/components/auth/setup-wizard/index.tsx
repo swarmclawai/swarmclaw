@@ -7,11 +7,11 @@ import { dedup, errorMessage } from '@/lib/shared-utils'
 import type { ProviderId, GatewayProfile } from '@/types'
 import {
   SETUP_PROVIDERS,
-  SWARMCLAW_ASSISTANT_PROMPT,
   getDefaultModelForProvider,
+  type OnboardingPath,
   type SetupProvider,
 } from '@/lib/setup-defaults'
-import { getDefaultAgentToolIds } from '@/lib/agent-default-tools'
+import { DEFAULT_BUILDER_ROUTE } from '@/lib/home-launchpad'
 import type {
   SetupStep,
   SetupWizardProps,
@@ -21,9 +21,10 @@ import type {
   ProviderCheckResponse,
 } from './types'
 import { STEP_ORDER } from './types'
-import { requiresSetupProviderVerification, stepIndex } from './utils'
+import { buildStarterDrafts, defaultKitForPath, getStarterKitsForPath, requiresSetupProviderVerification, stepIndex } from './utils'
 import { SparkleIcon } from './shared'
 import { StepProgress } from './step-progress'
+import { StepPath } from './step-path'
 import { StepProviders } from './step-providers'
 import { StepConnect } from './step-connect'
 import { StepAgents } from './step-agents'
@@ -34,6 +35,9 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
   const setUser = useAppStore((s) => s.setUser)
   const loadSettings = useAppStore((s) => s.loadSettings)
   const [step, setStep] = useState<SetupStep>('profile')
+  const [onboardingPath, setOnboardingPath] = useState<OnboardingPath>('quick')
+  const [starterKitId, setStarterKitId] = useState<string>(defaultKitForPath('quick'))
+  const [intentText, setIntentText] = useState('')
 
   const [activeProvider, setActiveProvider] = useState<SetupProvider | null>(null)
   const [editingProviderId, setEditingProviderId] = useState<string | null>(null)
@@ -41,6 +45,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
 
   const [configuredProviders, setConfiguredProviders] = useState<ConfiguredProvider[]>([])
   const [draftAgents, setDraftAgents] = useState<StarterDraftAgent[]>([])
+  const [createdAgents, setCreatedAgents] = useState<CreatedAgentSummary[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -56,13 +61,23 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
   const configuredProviderIds = new Set(configuredProviders.map((cp) => cp.setupProvider))
   const canContinueFromProviders = configuredProviders.length > 0
 
+  const ensureStarterDrafts = (providers: ConfiguredProvider[], previousDrafts: StarterDraftAgent[] = draftAgents) => {
+    if (previousDrafts.length > 0) return previousDrafts
+    return buildStarterDrafts({
+      starterKitId,
+      intentText,
+      configuredProviders: providers,
+      previousDrafts,
+    })
+  }
+
   const skip = async () => {
     try {
       await api('PUT', '/settings', { setupCompleted: true })
     } catch {
       // Continue anyway.
     }
-    onComplete()
+    onComplete('/home')
   }
 
   const handleProfileContinue = async (userName: string, avatarSeed: string) => {
@@ -71,6 +86,20 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
     } catch { /* still set locally */ }
     setUser(userName)
     loadSettings()
+    setStep('path')
+  }
+
+  const handlePathChange = (path: OnboardingPath) => {
+    setOnboardingPath(path)
+    const visibleKits = getStarterKitsForPath(path)
+    const currentVisible = visibleKits.some((kit) => kit.id === starterKitId)
+    if (!currentVisible) {
+      setStarterKitId(defaultKitForPath(path))
+    }
+  }
+
+  const handlePathContinue = () => {
+    setError('')
     setStep('providers')
   }
 
@@ -117,33 +146,8 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
 
     // If this is the first provider and there are no agents yet, create a default agent
     if (!editingProviderId && draftAgents.length === 0) {
-      const cp = configured
-      setDraftAgents([{
-        id: `auto:${Math.random().toString(36).slice(2, 10)}`,
-        templateId: 'auto',
-        name: 'Assistant',
-        description: 'A helpful assistant.',
-        systemPrompt: SWARMCLAW_ASSISTANT_PROMPT,
-        soul: '',
-        providerConfigId: cp.id,
-        setupProvider: cp.setupProvider,
-        provider: cp.provider,
-        model: cp.defaultModel,
-        credentialId: cp.credentialId,
-        apiEndpoint: cp.endpoint,
-        gatewayProfileId: cp.gatewayProfileId,
-        tools: getDefaultAgentToolIds(),
-        capabilities: [],
-        delegationEnabled: false,
-        delegationTargetMode: 'all',
-        delegationTargetAgentIds: [],
-        autoDraftSkillSuggestions: true,
-        orchestratorEnabled: false,
-        orchestratorMission: '',
-        avatarSeed: Math.random().toString(36).slice(2, 10),
-        avatarUrl: null,
-        enabled: true,
-      }])
+      const starterDrafts = ensureStarterDrafts(nextConfigured, [])
+      setDraftAgents(starterDrafts)
     } else {
       // Update existing agents that reference the edited provider
       if (editingProviderId) {
@@ -175,39 +179,11 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
   }
 
   const goToAgentReview = () => {
+    if (draftAgents.length === 0) {
+      setDraftAgents(ensureStarterDrafts(configuredProviders, []))
+    }
     setError('')
     setStep('agents')
-  }
-
-  const addBlankAgent = () => {
-    const defaultProvider = configuredProviders[0] || null
-    const newAgent: StarterDraftAgent = {
-      id: `custom:${Math.random().toString(36).slice(2, 10)}`,
-      templateId: 'custom',
-      name: `Agent ${draftAgents.length + 1}`,
-      description: '',
-      systemPrompt: '',
-      soul: '',
-      providerConfigId: defaultProvider?.id || null,
-      setupProvider: defaultProvider?.setupProvider || null,
-      provider: defaultProvider?.provider || null,
-      model: defaultProvider?.defaultModel || '',
-      credentialId: defaultProvider?.credentialId || null,
-      apiEndpoint: defaultProvider?.endpoint || null,
-      gatewayProfileId: defaultProvider?.gatewayProfileId || null,
-      tools: getDefaultAgentToolIds(),
-      capabilities: [],
-      delegationEnabled: false,
-      delegationTargetMode: 'all',
-      delegationTargetAgentIds: [],
-      autoDraftSkillSuggestions: true,
-      orchestratorEnabled: false,
-      orchestratorMission: '',
-      avatarSeed: Math.random().toString(36).slice(2, 10),
-      avatarUrl: null,
-      enabled: true,
-    }
-    setDraftAgents((current) => [...current, newAgent])
   }
 
   const removeAgent = (id: string) => {
@@ -393,6 +369,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
         await appState.setCurrentAgent(created[0].id)
       }
 
+      setCreatedAgents(created)
       setStep('next')
     } catch (err: unknown) {
       setError(errorMessage(err))
@@ -405,24 +382,20 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
     const enabledDrafts = draftAgents.filter((draft) => draft.enabled)
     if (enabledDrafts.length === 0) {
       // No agents — go straight to "next" step
+      setCreatedAgents([])
       setStep('next')
       return
     }
     await createAgentsAndFinish()
   }
 
-  const finishSetup = async () => {
+  const finishSetup = async (destination = '/home') => {
     try {
       await api('PUT', '/settings', { setupCompleted: true })
     } catch {
       // Continue anyway
     }
-    onComplete()
-  }
-
-  const handleNextAddAgent = () => {
-    addBlankAgent()
-    setStep('agents')
+    onComplete(destination)
   }
 
   return (
@@ -447,12 +420,27 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
         />
       )}
 
+      {step === 'path' && (
+        <StepPath
+          onboardingPath={onboardingPath}
+          starterKitId={starterKitId}
+          intentText={intentText}
+          onPathChange={handlePathChange}
+          onStarterKitChange={setStarterKitId}
+          onIntentTextChange={setIntentText}
+          onContinue={handlePathContinue}
+          onBack={() => setStep('profile')}
+          onSkip={skip}
+        />
+      )}
+
       {step === 'providers' && (
         <StepProviders
           configuredProviders={configuredProviders}
           configuredProviderIds={configuredProviderIds}
           error={error}
           canContinue={canContinueFromProviders}
+          onBack={() => setStep('path')}
           onSelectProvider={selectProvider}
           onRemoveProvider={removeProvider}
           onContinue={goToAgentReview}
@@ -467,8 +455,8 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
           initialLabel={activeProviderLabel}
           editingProvider={editingProvider}
           configuredProviders={configuredProviders}
-          starterKitId={null}
-          intentText=""
+          starterKitId={starterKitId}
+          intentText={intentText}
           onSaveProvider={handleSaveProvider}
           onBack={handleBackFromConnect}
           onSkip={skip}
@@ -492,9 +480,13 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
 
       {step === 'next' && (
         <StepNext
-          onAddProvider={() => setStep('providers')}
-          onAddAgent={handleNextAddAgent}
-          onContinueToDashboard={finishSetup}
+          createdAgents={createdAgents}
+          onContinueToDashboard={() => finishSetup('/home')}
+          onOpenFirstAgent={() => finishSetup(createdAgents[0]?.id ? `/agents/${encodeURIComponent(createdAgents[0].id)}` : '/agents')}
+          onOpenProtocols={() => finishSetup('/protocols')}
+          onOpenBuilder={() => finishSetup(DEFAULT_BUILDER_ROUTE)}
+          onOpenConnectors={() => finishSetup('/connectors')}
+          onOpenUsage={() => finishSetup('/usage')}
         />
       )}
 

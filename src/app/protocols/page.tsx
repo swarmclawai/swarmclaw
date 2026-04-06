@@ -16,7 +16,9 @@ import {
 import { useTasksQuery } from '@/features/tasks/queries'
 import { MainContent } from '@/components/layout/main-content'
 import { StructuredSessionLauncher } from '@/components/protocols/structured-session-launcher'
+import { TemplateGallery } from '@/components/protocols/builder/template-gallery'
 import { GroundingPanel } from '@/components/knowledge/grounding-panel'
+import { DEFAULT_BUILDER_ROUTE } from '@/lib/home-launchpad'
 import { timeAgo } from '@/lib/time-format'
 import type {
   BoardTask,
@@ -390,6 +392,13 @@ export default function ProtocolsPage() {
                     >
                       New template
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => router.push(DEFAULT_BUILDER_ROUTE)}
+                      className="rounded-[10px] border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-[12px] font-700 text-text-2 transition-all hover:bg-white/[0.08] cursor-pointer"
+                    >
+                      Open visual builder
+                    </button>
                   </div>
                 </div>
 
@@ -414,6 +423,28 @@ export default function ProtocolsPage() {
                     <div className="mt-2 text-[12px] leading-relaxed text-text-3/68">
                       Use the list below for inspection, retries, archives, and branch-aware detail.
                     </div>
+                  </div>
+                </div>
+
+                <div className="mt-4 rounded-[16px] border border-white/[0.06] bg-white/[0.03] p-4">
+                  <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                    <div className="max-w-[720px]">
+                      <div className="text-[11px] font-700 uppercase tracking-[0.12em] text-text-3/55">Visual Workflow Templates</div>
+                      <div className="mt-2 text-[15px] font-700 text-text">Pick a built-in protocol and open it in the builder.</div>
+                      <div className="mt-2 text-[13px] leading-relaxed text-text-3/72">
+                        Use the gallery for the fastest path into structured workflows. Custom templates stay here too, so teams can refine reusable runs without dropping straight into JSON first.
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => router.push(DEFAULT_BUILDER_ROUTE)}
+                      className="rounded-[10px] bg-accent-bright px-3 py-2 text-[12px] font-700 text-black transition-all hover:opacity-90 cursor-pointer"
+                    >
+                      Open builder
+                    </button>
+                  </div>
+                  <div className="mt-4">
+                    <TemplateGallery templates={templates} />
                   </div>
                 </div>
 

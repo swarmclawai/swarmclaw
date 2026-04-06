@@ -1,7 +1,7 @@
 import type { GatewayProfile, ProviderId } from '@/types'
 import type { SetupProvider } from '@/lib/setup-defaults'
 
-export type SetupStep = 'profile' | 'providers' | 'connect' | 'agents' | 'next' | 'done'
+export type SetupStep = 'profile' | 'path' | 'providers' | 'connect' | 'agents' | 'next' | 'done'
 export type CheckState = 'idle' | 'checking' | 'ok' | 'error'
 
 export interface ProviderCheckResponse {
@@ -29,7 +29,7 @@ export interface SetupDoctorResponse {
 }
 
 export interface SetupWizardProps {
-  onComplete: () => void
+  onComplete: (destination?: string) => void
 }
 
 export interface ConfiguredProvider {
@@ -83,7 +83,7 @@ export interface CreatedAgentSummary {
   providerName: string
 }
 
-export const STEP_ORDER: SetupStep[] = ['profile', 'providers', 'agents']
+export const STEP_ORDER: SetupStep[] = ['profile', 'path', 'providers', 'agents']
 
 export const CONNECTOR_ICONS = [
   { name: 'Discord', icon: 'D' },
@@ -114,9 +114,22 @@ export interface StepProvidersProps {
   configuredProviderIds: Set<SetupProvider>
   error: string
   canContinue: boolean
+  onBack: () => void
   onSelectProvider: (provider: SetupProvider) => void
   onRemoveProvider: (id: string) => void
   onContinue: () => void
+  onSkip: () => void
+}
+
+export interface StepPathProps {
+  onboardingPath: import('@/lib/setup-defaults').OnboardingPath
+  starterKitId: string | null
+  intentText: string
+  onPathChange: (path: import('@/lib/setup-defaults').OnboardingPath) => void
+  onStarterKitChange: (starterKitId: string) => void
+  onIntentTextChange: (value: string) => void
+  onContinue: () => void
+  onBack: () => void
   onSkip: () => void
 }
 
@@ -147,9 +160,13 @@ export interface StepAgentsProps {
 }
 
 export interface StepNextProps {
-  onAddProvider: () => void
-  onAddAgent: () => void
+  createdAgents: CreatedAgentSummary[]
   onContinueToDashboard: () => void
+  onOpenFirstAgent: () => void
+  onOpenProtocols: () => void
+  onOpenBuilder: () => void
+  onOpenConnectors: () => void
+  onOpenUsage: () => void
 }
 
 export interface StepDoneProps {

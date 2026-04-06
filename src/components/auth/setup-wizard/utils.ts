@@ -2,6 +2,7 @@ import {
   STARTER_KITS,
   getDefaultModelForProvider,
   type OnboardingPath,
+  type StarterKit,
   type SetupProvider,
   type StarterKitAgentTemplate,
 } from '@/lib/setup-defaults'
@@ -16,6 +17,18 @@ export function stepIndex(step: SetupStep): number {
 export function defaultKitForPath(path: OnboardingPath): string {
   if (path === 'manual') return 'blank_workspace'
   return 'personal_assistant'
+}
+
+export function getStarterKitsForPath(path: OnboardingPath): StarterKit[] {
+  if (path === 'quick') {
+    const quickIds = new Set(['personal_assistant', 'builder_studio', 'research_copilot'])
+    return STARTER_KITS.filter((kit) => quickIds.has(kit.id))
+  }
+  if (path === 'intent') {
+    const intentIds = new Set(['personal_assistant', 'builder_studio', 'research_copilot', 'operator_swarm'])
+    return STARTER_KITS.filter((kit) => intentIds.has(kit.id))
+  }
+  return STARTER_KITS
 }
 
 export function applyIntentContext(prompt: string, intentText: string): string {

@@ -2,7 +2,9 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
   stepIndex,
+  defaultKitForPath,
   formatEndpointHost,
+  getStarterKitsForPath,
   isLocalOpenClawEndpoint,
   resolveOpenClawDashboardUrl,
   getOpenClawErrorHint,
@@ -21,16 +23,50 @@ test('stepIndex: profile → 0', () => {
   assert.equal(stepIndex('profile'), 0)
 })
 
-test('stepIndex: providers → 1', () => {
-  assert.equal(stepIndex('providers'), 1)
+test('stepIndex: path → 1', () => {
+  assert.equal(stepIndex('path'), 1)
 })
 
-test('stepIndex: connect maps to providers index (1)', () => {
-  assert.equal(stepIndex('connect'), 1)
+test('stepIndex: providers → 2', () => {
+  assert.equal(stepIndex('providers'), 2)
 })
 
-test('stepIndex: agents → 2', () => {
-  assert.equal(stepIndex('agents'), 2)
+test('stepIndex: connect maps to providers index (2)', () => {
+  assert.equal(stepIndex('connect'), 2)
+})
+
+test('stepIndex: agents → 3', () => {
+  assert.equal(stepIndex('agents'), 3)
+})
+
+// ---------------------------------------------------------------------------
+// onboarding path defaults
+// ---------------------------------------------------------------------------
+
+test('defaultKitForPath returns personal assistant for quick and intent', () => {
+  assert.equal(defaultKitForPath('quick'), 'personal_assistant')
+  assert.equal(defaultKitForPath('intent'), 'personal_assistant')
+})
+
+test('defaultKitForPath returns blank workspace for manual', () => {
+  assert.equal(defaultKitForPath('manual'), 'blank_workspace')
+})
+
+test('getStarterKitsForPath: quick exposes a reduced starter set', () => {
+  const ids = getStarterKitsForPath('quick').map((kit) => kit.id)
+  assert.deepEqual(ids, ['personal_assistant', 'research_copilot', 'builder_studio'])
+})
+
+test('getStarterKitsForPath: intent stays focused on broad starter shapes', () => {
+  const ids = getStarterKitsForPath('intent').map((kit) => kit.id)
+  assert.deepEqual(ids, ['personal_assistant', 'research_copilot', 'builder_studio', 'operator_swarm'])
+})
+
+test('getStarterKitsForPath: manual keeps the full catalog', () => {
+  const ids = new Set(getStarterKitsForPath('manual').map((kit) => kit.id))
+  assert.equal(ids.has('blank_workspace'), true)
+  assert.equal(ids.has('content_studio'), true)
+  assert.equal(ids.has('openclaw_fleet'), true)
 })
 
 // ---------------------------------------------------------------------------
@@ -259,6 +295,37 @@ test('buildStarterDrafts carries custom runtime provider ids alongside custom se
     assert.equal(draft.provider, 'custom-openrouter')
     assert.equal(draft.model, 'openai/gpt-4.1')
   }
+})
+
+test('buildStarterDrafts injects current intent into starter prompts', () => {
+  const cp = makeConfiguredProvider({
+    setupProvider: 'openai',
+    provider: 'openai',
+    defaultModel: 'gpt-4o',
+  })
+  const drafts = buildStarterDrafts({
+    starterKitId: 'personal_assistant',
+    intentText: 'Help me run weekly product research and turn it into follow-up tasks.',
+    configuredProviders: [cp],
+  })
+
+  assert.match(drafts[0]?.systemPrompt || '', /Current user intent:/)
+  assert.match(drafts[0]?.systemPrompt || '', /weekly product research/i)
+})
+
+test('buildStarterDrafts creates the delegate team starter pair', () => {
+  const cp = makeConfiguredProvider({
+    setupProvider: 'openai',
+    provider: 'openai',
+    defaultModel: 'gpt-4o',
+  })
+  const drafts = buildStarterDrafts({
+    starterKitId: 'operator_swarm',
+    intentText: '',
+    configuredProviders: [cp],
+  })
+
+  assert.deepEqual(drafts.map((draft) => draft.name), ['Operator', 'Maker'])
 })
 
 test('requiresSetupProviderVerification skips custom providers', () => {

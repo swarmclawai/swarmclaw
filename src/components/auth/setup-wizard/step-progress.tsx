@@ -2,6 +2,7 @@ import { STEP_ORDER } from './types'
 
 const STEP_LABELS: Record<string, string> = {
   profile: 'You',
+  path: 'Start',
   providers: 'Providers',
   agents: 'Agents',
 }

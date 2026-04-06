@@ -1,68 +1,80 @@
 'use client'
 
+import { LaunchActionCard } from '@/components/shared/launch-action-card'
 import type { StepNextProps } from './types'
 import { StepShell } from './shared'
 
 export function StepNext({
-  onAddProvider,
-  onAddAgent,
+  createdAgents,
   onContinueToDashboard,
+  onOpenFirstAgent,
+  onOpenProtocols,
+  onOpenBuilder,
+  onOpenConnectors,
+  onOpenUsage,
 }: StepNextProps) {
+  const firstAgent = createdAgents[0] || null
+
   return (
-    <StepShell>
+    <StepShell wide>
       <h1 className="font-display text-[36px] font-800 leading-[1.05] tracking-[-0.04em] mb-3">
-        What&apos;s Next?
+        Launch Your Workspace
       </h1>
-      <p className="text-[15px] text-text-2 mb-8">
-        Your agents are saved. You can keep building or head to the dashboard.
+      <p className="text-[15px] text-text-2 mb-2">
+        Setup is complete. Start from the path that gets you to an actual result fastest.
+      </p>
+      <p className="text-[13px] text-text-3 mb-7">
+        {firstAgent
+          ? `${firstAgent.name} is ready to use.`
+          : 'You finished setup without starter agents, so the launch options below focus on wiring up the rest of the workspace.'}
       </p>
 
-      <div className="flex flex-col gap-3 max-w-[480px] mx-auto mb-8">
-        <button
-          onClick={onAddProvider}
-          className="w-full px-5 py-4 rounded-[14px] border border-white/[0.08] bg-surface text-left
-            transition-all duration-200 flex items-start gap-4 cursor-pointer
-            hover:border-accent-bright/30 hover:bg-surface-hover"
-        >
-          <div className="w-10 h-10 rounded-[10px] border border-white/[0.06] bg-white/[0.04] flex items-center justify-center shrink-0 mt-0.5">
-            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" className="text-accent-bright">
-              <path d="M9 3V15M3 9H15" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-            </svg>
-          </div>
-          <div>
-            <div className="text-[15px] font-display font-600 text-text mb-1">Add Another Provider</div>
-            <div className="text-[13px] text-text-3 leading-relaxed">
-              Connect a different LLM provider for more model options.
-            </div>
-          </div>
-        </button>
-
-        <button
-          onClick={onAddAgent}
-          className="w-full px-5 py-4 rounded-[14px] border border-white/[0.08] bg-surface text-left
-            transition-all duration-200 flex items-start gap-4 cursor-pointer
-            hover:border-accent-bright/30 hover:bg-surface-hover"
-        >
-          <div className="w-10 h-10 rounded-[10px] border border-white/[0.06] bg-white/[0.04] flex items-center justify-center shrink-0 mt-0.5">
-            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" className="text-accent-bright">
-              <circle cx="9" cy="6" r="3" stroke="currentColor" strokeWidth="1.5" />
-              <path d="M3 15C3 12.2386 5.68629 10 9 10C12.3137 10 15 12.2386 15 15" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-            </svg>
-          </div>
-          <div>
-            <div className="text-[15px] font-display font-600 text-text mb-1">Add Another Agent</div>
-            <div className="text-[13px] text-text-3 leading-relaxed">
-              Create another agent using your connected providers.
-            </div>
-          </div>
-        </button>
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 mb-8">
+        <LaunchActionCard
+          title={firstAgent ? 'Open First Agent Chat' : 'Open Agents'}
+          description={firstAgent
+            ? `Jump straight into ${firstAgent.name} and start working from the workspace you just created.`
+            : 'Open the agents workspace so you can create or tune the first agent manually.'}
+          actionLabel={firstAgent ? 'Open Chat' : 'Open Agents'}
+          onClick={onOpenFirstAgent}
+          tone="primary"
+        />
+        <LaunchActionCard
+          title="Start Structured Session"
+          description="Open bounded collaboration runs for reviews, planning rounds, decision-making, or focused multi-agent work."
+          actionLabel="Open Protocols"
+          onClick={onOpenProtocols}
+        />
+        <LaunchActionCard
+          title="Open Workflow Builder"
+          description="Jump into the visual protocol builder if you want a reusable orchestration graph instead of a one-off run."
+          actionLabel="Open Builder"
+          onClick={onOpenBuilder}
+        />
+        <LaunchActionCard
+          title="Connect a Platform"
+          description="Bridge agents into Discord, Slack, Telegram, WhatsApp, or other runtime connectors."
+          actionLabel="Open Connectors"
+          onClick={onOpenConnectors}
+        />
+        <LaunchActionCard
+          title="Review Usage"
+          description="Inspect cost, provider health, and agent activity so the workspace stays observable from day one."
+          actionLabel="Open Usage"
+          onClick={onOpenUsage}
+        />
+        <LaunchActionCard
+          title="Go to Dashboard"
+          description="Land on the main home view. Fresh workspaces open in guided launch mode before switching to the normal ops dashboard."
+          actionLabel="Open Home"
+          onClick={onContinueToDashboard}
+        />
       </div>
 
       <button
+        type="button"
         onClick={onContinueToDashboard}
-        className="px-10 py-3.5 rounded-[14px] border-none bg-accent-bright text-white text-[15px] font-display font-600
-          cursor-pointer hover:brightness-110 active:scale-[0.97] transition-all duration-200
-          shadow-[0_6px_28px_rgba(99,102,241,0.3)]"
+        className="px-10 py-3.5 rounded-[14px] border-none bg-accent-bright text-white text-[15px] font-display font-600 cursor-pointer hover:brightness-110 active:scale-[0.97] transition-all duration-200 shadow-[0_6px_28px_rgba(99,102,241,0.3)]"
       >
         Continue to Dashboard
       </button>

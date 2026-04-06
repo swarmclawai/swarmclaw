@@ -360,6 +360,13 @@ export const ONBOARDING_PATHS: OnboardingPathOption[] = [
     badge: 'Fastest',
   },
   {
+    id: 'intent',
+    title: 'Goal-Driven Setup',
+    description: 'Choose a starter team around what you want to accomplish.',
+    detail: 'Best when you know the outcome you want but want SwarmClaw to start from a stronger template.',
+    badge: 'Guided',
+  },
+  {
     id: 'manual',
     title: 'Custom Setup',
     description: 'Configure providers first and choose whether to start blank or from a template.',
@@ -462,7 +469,7 @@ export const STARTER_KITS: StarterKit[] = [
     name: 'Research Copilot',
     description: 'A focused setup for investigation and synthesis.',
     detail: 'Useful for market scans, comparisons, technical investigation, and source-backed summaries.',
-    recommendedFor: ['intent', 'manual'],
+    recommendedFor: ['quick', 'intent', 'manual'],
     agents: [
       {
         id: 'researcher',
@@ -479,7 +486,7 @@ export const STARTER_KITS: StarterKit[] = [
     name: 'Builder Studio',
     description: 'Start with a builder and a reviewer.',
     detail: 'Good for coding, prototyping, product work, and technical iteration.',
-    recommendedFor: ['intent', 'manual'],
+    recommendedFor: ['quick', 'intent', 'manual'],
     agents: [
       {
         id: 'builder',
@@ -528,10 +535,10 @@ export const STARTER_KITS: StarterKit[] = [
   },
   {
     id: 'operator_swarm',
-    name: 'Operator Swarm',
-    description: 'A coordination-heavy setup for multi-agent work.',
-    detail: 'Closest to the current SwarmClaw operator workflow, with a delegating operator plus an execution agent.',
-    recommendedFor: ['manual'],
+    name: 'Delegate Team',
+    description: 'A coordinator plus an execution agent for multi-agent work.',
+    detail: 'Use this when you want one agent to plan and delegate while another handles focused execution.',
+    recommendedFor: ['intent', 'manual'],
     agents: [
       {
         id: 'operator',

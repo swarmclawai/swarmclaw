@@ -1,16 +1,20 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { AreaChart, Area, ResponsiveContainer, Tooltip } from 'recharts'
 import { useAppStore } from '@/stores/use-app-store'
 import { useChatStore } from '@/stores/use-chat-store'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
+import { HomeLaunchpad } from '@/components/home/home-launchpad'
 import { useMountedRef } from '@/hooks/use-mounted-ref'
 import { useNow } from '@/hooks/use-now'
 import { api } from '@/lib/app/api-client'
 import { useNavigate } from '@/lib/app/navigation'
+import { safeStorageGet, safeStorageRemove } from '@/lib/app/safe-storage'
 import { isLocalhostBrowser, isVisibleSessionForViewer } from '@/lib/observability/local-observability'
 import { getSessionLastMessage } from '@/lib/chat/session-summary'
+import { DEFAULT_BUILDER_ROUTE, deriveHomeMode, HOME_LAUNCHPAD_AFTER_SETUP_KEY } from '@/lib/home-launchpad'
 import { getNotificationActivityAt, getNotificationOccurrenceCount } from '@/lib/notifications/notification-utils'
 import { timeAgo, timeUntil } from '@/lib/time-format'
 import type { Agent, Session, BoardTask, AppNotification, ActivityEntry } from '@/types'
@@ -79,6 +83,7 @@ const PLATFORM_LABELS: Record<string, string> = {
 }
 
 export default function HomePage() {
+  const router = useRouter()
   const now = useNow()
   const agents = useAppStore((s) => s.agents)
   const sessions = useAppStore((s) => s.sessions)
@@ -103,14 +108,22 @@ export default function HomePage() {
   const [costTrend, setCostTrend] = useState<{ cost: number; bucket: string }[]>([])
   const [localhostBrowser, setLocalhostBrowser] = useState(false)
   const [pageReady, setPageReady] = useState(false)
+  const [launchpadFlag, setLaunchpadFlag] = useState(false)
   const mountedRef = useMountedRef()
 
   useEffect(() => {
     setLocalhostBrowser(isLocalhostBrowser())
   }, [])
 
+  useEffect(() => {
+    const hasFlag = safeStorageGet(HOME_LAUNCHPAD_AFTER_SETUP_KEY) === '1'
+    setLaunchpadFlag(hasFlag)
+    if (hasFlag) safeStorageRemove(HOME_LAUNCHPAD_AFTER_SETUP_KEY)
+  }, [])
+
   const allAgents = Object.values(agents).filter((a) => !a.trashedAt)
   const pinnedAgents = allAgents.filter((a) => a.pinned)
+  const firstAgent = allAgents[0] || null
 
   const recentChats = useMemo(
     () =>
@@ -123,10 +136,14 @@ export default function HomePage() {
 
   // Quick stats
   const agentCount = allAgents.length
+  const sessionCount = Object.keys(sessions).length
   const allTasks = Object.values(tasks)
+  const totalTaskCount = allTasks.length
   const activeTaskCount = allTasks.filter((t) => t.status === 'running' || t.status === 'queued').length
   const allConnectors = Object.values(connectors)
   const activeConnectorCount = allConnectors.filter((c) => c.status === 'running').length
+  const connectorCount = allConnectors.length
+  const scheduleCount = Object.keys(schedules).length
 
   // Agents with running tasks
   const runningAgentIds = useMemo(() => {
@@ -219,6 +236,51 @@ export default function HomePage() {
     return (
       <MainContent>
         <PageLoader label="Loading dashboard..." />
+      </MainContent>
+    )
+  }
+
+  const homeMode = deriveHomeMode({
+    hasLaunchpadFlag: launchpadFlag,
+    agentCount,
+    sessionCount,
+    taskCount: totalTaskCount,
+    scheduleCount,
+    connectorCount,
+    todayCost,
+  })
+
+  const openFirstAgent = () => {
+    if (firstAgent) {
+      navigateTo('agents', firstAgent.id)
+      return
+    }
+    navigateTo('agents')
+  }
+
+  const openBuilder = () => {
+    router.push(DEFAULT_BUILDER_ROUTE)
+  }
+
+  if (homeMode === 'launchpad') {
+    return (
+      <MainContent>
+        <div className="flex-1 overflow-y-auto">
+          <HomeLaunchpad
+            firstAgent={firstAgent}
+            agentCount={agentCount}
+            sessionCount={sessionCount}
+            taskCount={totalTaskCount}
+            scheduleCount={scheduleCount}
+            connectorCount={connectorCount}
+            todayCost={todayCost}
+            onOpenFirstAgent={openFirstAgent}
+            onOpenProtocols={() => navigateTo('protocols')}
+            onOpenBuilder={openBuilder}
+            onOpenConnectors={() => navigateTo('connectors')}
+            onOpenUsage={() => navigateTo('usage')}
+          />
+        </div>
       </MainContent>
     )
   }
