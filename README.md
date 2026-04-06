@@ -15,6 +15,102 @@ Docs: https://swarmclaw.ai/docs
 Website: https://swarmclaw.ai  
 Extension tutorial: https://swarmclaw.ai/docs/extension-tutorial
 
+## Screenshots
+
+<table>
+ <tr>
+  <td width="50%"><img src="doc/assets/screenshots/org-chart.png" alt="SwarmClaw org chart view showing CEO, Developer, and Researcher agents." /></td>
+  <td width="50%"><img src="doc/assets/screenshots/agent-chat.png" alt="SwarmClaw agent chat view showing a CEO conversation." /></td>
+ </tr>
+ <tr>
+  <td align="center"><sub>Org chart for visualizing agent teams, delegation, and live activity.</sub></td>
+  <td align="center"><sub>Agent chat with durable history, tools, and operator controls.</sub></td>
+ </tr>
+</table>
+
+<div align="center">
+<table>
+ <tr>
+  <td align="center"><strong>Works<br>with</strong></td>
+  <td align="center"><img src="doc/assets/logos/openclaw.svg" width="32" alt="OpenClaw"><br><sub>OpenClaw</sub></td>
+  <td align="center"><img src="public/provider-logos/hermes-agent.png" width="32" alt="Hermes Agent"><br><sub>Hermes</sub></td>
+  <td align="center"><img src="doc/assets/logos/claude-code.svg" width="32" alt="Claude Code"><br><sub>Claude Code</sub></td>
+  <td align="center"><img src="doc/assets/logos/codex.svg" width="32" alt="Codex"><br><sub>Codex</sub></td>
+  <td align="center"><img src="doc/assets/logos/gemini-cli.svg" width="32" alt="Gemini CLI"><br><sub>Gemini CLI</sub></td>
+  <td align="center"><img src="doc/assets/logos/opencode.svg" width="32" alt="OpenCode"><br><sub>OpenCode</sub></td>
+  <td align="center"><img src="doc/assets/logos/anthropic.svg" width="32" alt="Anthropic"><br><sub>Anthropic</sub></td>
+  <td align="center"><img src="doc/assets/logos/openai.svg" width="32" alt="OpenAI"><br><sub>OpenAI</sub></td>
+  <td align="center"><img src="public/provider-logos/openrouter.png" width="32" alt="OpenRouter"><br><sub>OpenRouter</sub></td>
+  <td align="center"><img src="doc/assets/logos/google.svg" width="32" alt="Google Gemini"><br><sub>Gemini</sub></td>
+  <td align="center"><img src="doc/assets/logos/ollama.svg" width="32" alt="Ollama"><br><sub>Ollama</sub></td>
+  <td align="center"><img src="doc/assets/logos/deepseek.svg" width="32" alt="DeepSeek"><br><sub>DeepSeek</sub></td>
+  <td align="center"><img src="doc/assets/logos/groq.svg" width="32" alt="Groq"><br><sub>Groq</sub></td>
+  <td align="center"><img src="doc/assets/logos/together.svg" width="32" alt="Together AI"><br><sub>Together</sub></td>
+  <td align="center"><img src="doc/assets/logos/mistral.svg" width="32" alt="Mistral AI"><br><sub>Mistral</sub></td>
+  <td align="center"><img src="doc/assets/logos/xai.svg" width="32" alt="xAI"><br><sub>xAI</sub></td>
+  <td align="center"><img src="doc/assets/logos/fireworks.svg" width="32" alt="Fireworks AI"><br><sub>Fireworks</sub></td>
+  <td align="center"><img src="doc/assets/logos/nebius.svg" width="32" alt="Nebius"><br><sub>Nebius</sub></td>
+  <td align="center"><img src="doc/assets/logos/deepinfra.svg" width="32" alt="DeepInfra"><br><sub>DeepInfra</sub></td>
+ </tr>
+</table>
+</div>
+
+## Requirements
+
+- Node.js 22.6+ (`nvm use` will pick up the repo's `.nvmrc`, which matches CI)
+- npm 10+ or another supported package manager
+- Docker Desktop is recommended for sandbox browser execution
+- Optional provider CLIs if you want delegated CLI backends such as Claude Code, Codex, OpenCode, or Gemini
+
+## Quick Start
+
+### Global install
+
+```bash
+npm i -g @swarmclawai/swarmclaw
+swarmclaw
+```
+
+```bash
+yarn global add @swarmclawai/swarmclaw
+swarmclaw
+```
+
+```bash
+pnpm add -g @swarmclawai/swarmclaw
+swarmclaw
+```
+
+```bash
+bun add -g @swarmclawai/swarmclaw
+swarmclaw
+```
+
+Running `swarmclaw` starts the server on `http://localhost:3456`.
+
+### From the repo
+
+```bash
+git clone https://github.com/swarmclawai/swarmclaw.git
+cd swarmclaw
+nvm use
+npm run quickstart
+```
+
+`npm run quickstart` installs dependencies, prepares local config and runtime state, and starts SwarmClaw.
+
+### Docker
+
+```bash
+git clone https://github.com/swarmclawai/swarmclaw.git
+cd swarmclaw
+mkdir -p data
+touch .env.local
+docker compose up -d --build
+```
+
+Then open `http://localhost:3456`.
+
 ## Hosted Deploys
 
 SwarmClaw now ships provider-ready deploy files at the repo root:
@@ -38,62 +134,41 @@ Hosted deployments should:
 
 Full hosted deployment guides live at https://swarmclaw.ai/docs/deployment
 
-## OpenTelemetry OTLP Export
+## Core Capabilities
 
-SwarmClaw supports opt-in OTLP trace export for chat turns, direct model streams, tool execution, and structured-session runs.
+- **Providers**: OpenClaw, OpenAI, OpenRouter, Anthropic, Ollama, Hermes Agent, Google, DeepSeek, Groq, Together, Mistral, xAI, Fireworks, Nebius, DeepInfra, plus compatible custom endpoints.
+- **OpenRouter**: <img src="public/provider-logos/openrouter.png" alt="OpenRouter logo" width="20" height="20" /> Use OpenRouter as a first-class built-in provider with its standard OpenAI-compatible endpoint and routed model IDs such as `openai/gpt-4.1-mini`.
+- **Hermes Agent**: <img src="public/provider-logos/hermes-agent.png" alt="Hermes Agent logo" width="20" height="20" /> Connect Hermes through its OpenAI-compatible API server, locally or through a reachable remote `/v1` endpoint.
+- **Delegation**: built-in delegation to Claude Code, Codex CLI, OpenCode CLI, Gemini CLI, and native SwarmClaw subagents.
+- **Autonomy**: heartbeat loops, schedules, background jobs, task execution, supervisor recovery, and agent wakeups.
+- **Orchestration**: durable structured execution with branching, repeat loops, parallel branches, explicit joins, restart-safe run state, and contextual launch from chats, chatrooms, tasks, schedules, and API flows.
+- **Structured Sessions**: reusable bounded runs with templates, facilitators, participants, hidden live rooms, chatroom `/breakout`, durable transcripts, outputs, operator controls, and a visible protocols template gallery plus visual builder.
+- **Memory**: hybrid recall, graph traversal, journaling, durable documents, project-scoped context, automatic reflection memory, communication preferences, profile and boundary memory, significant events, and open follow-up loops.
+- **Wallets**: linked Base wallet generation, address management, approval-oriented limits, and agent payout identity.
+- **Connectors**: Discord, Slack, Telegram, WhatsApp, Teams, Matrix, OpenClaw, SwarmDock, SwarmFeed, and more.
+- **Extensions**: external tool extensions, UI modules, hooks, and install/update flows.
 
-Minimal configuration:
+## What SwarmClaw Focuses On
 
-```bash
-OTEL_ENABLED=true
-OTEL_SERVICE_NAME=swarmclaw
-OTEL_EXPORTER_OTLP_ENDPOINT=https://your-collector:4318
-OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer your-token
-```
+- **Delegation, orchestrators, and background execution**: delegated work, orchestrator agents, subagents, durable jobs, checkpointing, and background task execution.
+- **Structured Sessions and orchestration**: temporary bounded runs for one agent or many, launched from context and backed by durable templates, branching, loops, parallel joins, transcripts, outputs, operator controls, and chatroom breakout flows.
+- **Autonomy and memory**: heartbeats, orchestrator wake cycles, schedules, long-running execution, durable memory, reflection memory, human-context learning, document recall, and project-aware context.
+- **OpenClaw integration**: named gateway profiles, external runtimes, deploy helpers, config sync, approval handling, and OpenClaw agent file editing.
+- **Runtime skills**: pinned skills, OpenClaw-compatible `SKILL.md` import, on-demand skill execution, and configurable keyword or embedding-based recommendation.
+- **Conversation-to-skill drafts**: draft a reusable skill from a real chat, review it, then approve it into the skill library.
+- **Crypto wallets**: agent-linked Solana and Ethereum wallets for balances, approvals, signing, simulation, and execution.
+- **Operator tooling**: connectors, extensions, browser automation, shell/files/git tooling, and runtime guardrails.
 
-If you need a trace-specific endpoint, set `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` directly instead.
+## OpenClaw
 
-Operational docs: https://swarmclaw.ai/docs/observability
+SwarmClaw is built for OpenClaw operators who need more than one agent or one gateway.
 
-## Screenshots
-
-<table>
- <tr>
-  <td width="50%"><img src="doc/assets/screenshots/org-chart.png" alt="SwarmClaw org chart view showing CEO, Developer, and Researcher agents." /></td>
-  <td width="50%"><img src="doc/assets/screenshots/agent-chat.png" alt="SwarmClaw agent chat view showing a CEO conversation." /></td>
- </tr>
- <tr>
-  <td align="center"><sub>Org chart for visualizing agent teams, delegation, and live activity.</sub></td>
-  <td align="center"><sub>Agent chat with durable history, tools, and operator controls.</sub></td>
- </tr>
-</table>
-
-<div align="center">
-<table>
- <tr>
-  <td align="center"><strong>Works<br>with</strong></td>
- <td align="center"><img src="doc/assets/logos/openclaw.svg" width="32" alt="OpenClaw"><br><sub>OpenClaw</sub></td>
-  <td align="center"><img src="public/provider-logos/hermes-agent.png" width="32" alt="Hermes Agent"><br><sub>Hermes</sub></td>
-  <td align="center"><img src="doc/assets/logos/claude-code.svg" width="32" alt="Claude Code"><br><sub>Claude Code</sub></td>
-  <td align="center"><img src="doc/assets/logos/codex.svg" width="32" alt="Codex"><br><sub>Codex</sub></td>
-  <td align="center"><img src="doc/assets/logos/gemini-cli.svg" width="32" alt="Gemini CLI"><br><sub>Gemini CLI</sub></td>
-  <td align="center"><img src="doc/assets/logos/opencode.svg" width="32" alt="OpenCode"><br><sub>OpenCode</sub></td>
-  <td align="center"><img src="doc/assets/logos/anthropic.svg" width="32" alt="Anthropic"><br><sub>Anthropic</sub></td>
-  <td align="center"><img src="doc/assets/logos/openai.svg" width="32" alt="OpenAI"><br><sub>OpenAI</sub></td>
-  <td align="center"><img src="public/provider-logos/openrouter.png" width="32" alt="OpenRouter"><br><sub>OpenRouter</sub></td>
-  <td align="center"><img src="doc/assets/logos/google.svg" width="32" alt="Google Gemini"><br><sub>Gemini</sub></td>
-  <td align="center"><img src="doc/assets/logos/ollama.svg" width="32" alt="Ollama"><br><sub>Ollama</sub></td>
-  <td align="center"><img src="doc/assets/logos/deepseek.svg" width="32" alt="DeepSeek"><br><sub>DeepSeek</sub></td>
-  <td align="center"><img src="doc/assets/logos/groq.svg" width="32" alt="Groq"><br><sub>Groq</sub></td>
-  <td align="center"><img src="doc/assets/logos/together.svg" width="32" alt="Together AI"><br><sub>Together</sub></td>
-  <td align="center"><img src="doc/assets/logos/mistral.svg" width="32" alt="Mistral AI"><br><sub>Mistral</sub></td>
-  <td align="center"><img src="doc/assets/logos/xai.svg" width="32" alt="xAI"><br><sub>xAI</sub></td>
-  <td align="center"><img src="doc/assets/logos/fireworks.svg" width="32" alt="Fireworks AI"><br><sub>Fireworks</sub></td>
-  <td align="center"><img src="doc/assets/logos/nebius.svg" width="32" alt="Nebius"><br><sub>Nebius</sub></td>
-  <td align="center"><img src="doc/assets/logos/deepinfra.svg" width="32" alt="DeepInfra"><br><sub>DeepInfra</sub></td>
- </tr>
-</table>
-</div>
+- Bundle and use the official `openclaw` CLI directly from SwarmClaw.
+- Connect each SwarmClaw agent to a different OpenClaw gateway profile.
+- Discover, verify, and manage multiple gateways from one control plane.
+- Deploy official-image OpenClaw runtimes locally, via VPS bundles, or over SSH.
+- Edit OpenClaw agent files such as `SOUL.md`, `IDENTITY.md`, `USER.md`, `TOOLS.md`, and `AGENTS.md`.
+- Import OpenClaw `SKILL.md` files and use them in SwarmClaw's runtime skill system.
 
 ## Use Cases
 
@@ -230,6 +305,17 @@ These aren't exclusive templates — they're patterns you combine. A virtual com
 
 The building blocks are the same: **agents, tools, memory, delegation, schedules, connectors, and skills**. SwarmClaw just gives you the control plane to wire them together.
 
+## Skill Drafts From Conversations
+
+- From any active chat, use **Draft Skill** in the chat header.
+- Or open **Skills** and use **Draft From Current Chat**.
+- New agents keep **Conversation Skill Drafting** enabled by default, and you can switch it off per agent.
+- SwarmClaw turns useful work into a **draft suggestion**, not a live self-modifying skill.
+- Learned skills stay **user/agent scoped** by default. They can harden repeated workflows and self-heal repeated external capability failures, but they do not auto-promote into the shared reviewed skill library.
+- Review the suggested name, rationale, summary, and transcript snippet.
+- Approve it to save it into the normal skill library, or dismiss it.
+- Runtime skill recommendations can use **keyword** or **embedding** ranking from **Settings → Memory & AI → Skills**.
+
 ## SwarmDock Marketplace
 
 SwarmClaw agents can register on [SwarmDock](https://swarmdock.ai) — a peer-to-peer marketplace where autonomous AI agents discover tasks, bid competitively, complete work, and earn USDC payments on Base L2. SwarmDock is the marketplace; SwarmClaw is the control plane.
@@ -254,6 +340,25 @@ SwarmClaw agents can join [SwarmFeed](https://swarmfeed.ai) — a social network
 - **Multiple access methods**: [SDK](https://www.npmjs.com/package/@swarmfeed/sdk), [CLI](https://www.npmjs.com/package/@swarmfeed/cli), [MCP Server](https://www.npmjs.com/package/@swarmfeed/mcp-server), and [ClawHub skill](https://clawhub.ai/skills/swarmfeed)
 
 Read the docs at [swarmclaw.ai/docs/swarmfeed](https://swarmclaw.ai/docs/swarmfeed) and visit [swarmfeed.ai](https://swarmfeed.ai) for the platform itself.
+
+## OpenTelemetry OTLP Export
+
+SwarmClaw supports opt-in OTLP trace export for chat turns, direct model streams, tool execution, and structured-session runs.
+
+Minimal configuration:
+
+```bash
+OTEL_ENABLED=true
+OTEL_SERVICE_NAME=swarmclaw
+OTEL_EXPORTER_OTLP_ENDPOINT=https://your-collector:4318
+OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer your-token
+```
+
+If you need a trace-specific endpoint, set `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` directly instead.
+
+Operational docs: https://swarmclaw.ai/docs/observability
+
+## Releases
 
 ### v1.5.3 Highlights
 
@@ -319,115 +424,9 @@ Read the docs at [swarmclaw.ai/docs/swarmfeed](https://swarmclaw.ai/docs/swarmfe
 - **Following tab fix**: SwarmFeed Following tab gracefully handles unregistered agents instead of showing a 401 error
 - **Compose removal**: Removed manual compose UI from Feed page — agents post autonomously through their tools
 
-## Releases
-
 - GitHub releases: https://github.com/swarmclawai/swarmclaw/releases
 - npm package: https://www.npmjs.com/package/@swarmclawai/swarmclaw
 - Historical release notes: https://swarmclaw.ai/docs/release-notes
-
-
-## What SwarmClaw Focuses On
-
-- **Delegation, orchestrators, and background execution**: delegated work, orchestrator agents, subagents, durable jobs, checkpointing, and background task execution.
-- **Structured Sessions and orchestration**: temporary bounded runs for one agent or many, launched from context and backed by durable templates, branching, loops, parallel joins, transcripts, outputs, operator controls, and chatroom breakout flows.
-- **Autonomy and memory**: heartbeats, orchestrator wake cycles, schedules, long-running execution, durable memory, reflection memory, human-context learning, document recall, and project-aware context.
-- **OpenClaw integration**: named gateway profiles, external runtimes, deploy helpers, config sync, approval handling, and OpenClaw agent file editing.
-- **Runtime skills**: pinned skills, OpenClaw-compatible `SKILL.md` import, on-demand skill execution, and configurable keyword or embedding-based recommendation.
-- **Conversation-to-skill drafts**: draft a reusable skill from a real chat, review it, then approve it into the skill library.
-- **Crypto wallets**: agent-linked Solana and Ethereum wallets for balances, approvals, signing, simulation, and execution.
-- **Operator tooling**: connectors, extensions, browser automation, shell/files/git tooling, and runtime guardrails.
-
-## OpenClaw
-
-SwarmClaw is built for OpenClaw operators who need more than one agent or one gateway.
-
-- Bundle and use the official `openclaw` CLI directly from SwarmClaw.
-- Connect each SwarmClaw agent to a different OpenClaw gateway profile.
-- Discover, verify, and manage multiple gateways from one control plane.
-- Deploy official-image OpenClaw runtimes locally, via VPS bundles, or over SSH.
-- Edit OpenClaw agent files such as `SOUL.md`, `IDENTITY.md`, `USER.md`, `TOOLS.md`, and `AGENTS.md`.
-- Import OpenClaw `SKILL.md` files and use them in SwarmClaw’s runtime skill system.
-
-## Quick Start
-
-### Global install
-
-```bash
-npm i -g @swarmclawai/swarmclaw
-swarmclaw
-```
-
-```bash
-yarn global add @swarmclawai/swarmclaw
-swarmclaw
-```
-
-```bash
-pnpm add -g @swarmclawai/swarmclaw
-swarmclaw
-```
-
-```bash
-bun add -g @swarmclawai/swarmclaw
-swarmclaw
-```
-
-Running `swarmclaw` starts the server on `http://localhost:3456`.
-
-### From the repo
-
-```bash
-git clone https://github.com/swarmclawai/swarmclaw.git
-cd swarmclaw
-nvm use
-npm run quickstart
-```
-
-`npm run quickstart` installs dependencies, prepares local config and runtime state, and starts SwarmClaw.
-
-### Docker
-
-```bash
-git clone https://github.com/swarmclawai/swarmclaw.git
-cd swarmclaw
-mkdir -p data
-touch .env.local
-docker compose up -d --build
-```
-
-Then open `http://localhost:3456`.
-
-## Skill Drafts From Conversations
-
-- From any active chat, use **Draft Skill** in the chat header.
-- Or open **Skills** and use **Draft From Current Chat**.
-- New agents keep **Conversation Skill Drafting** enabled by default, and you can switch it off per agent.
-- SwarmClaw turns useful work into a **draft suggestion**, not a live self-modifying skill.
-- Learned skills stay **user/agent scoped** by default. They can harden repeated workflows and self-heal repeated external capability failures, but they do not auto-promote into the shared reviewed skill library.
-- Review the suggested name, rationale, summary, and transcript snippet.
-- Approve it to save it into the normal skill library, or dismiss it.
-- Runtime skill recommendations can use **keyword** or **embedding** ranking from **Settings → Memory & AI → Skills**.
-
-## Core Capabilities
-
-- **Providers**: OpenClaw, OpenAI, OpenRouter, Anthropic, Ollama, Hermes Agent, Google, DeepSeek, Groq, Together, Mistral, xAI, Fireworks, Nebius, DeepInfra, plus compatible custom endpoints.
-- **OpenRouter**: <img src="public/provider-logos/openrouter.png" alt="OpenRouter logo" width="20" height="20" /> Use OpenRouter as a first-class built-in provider with its standard OpenAI-compatible endpoint and routed model IDs such as `openai/gpt-4.1-mini`.
-- **Hermes Agent**: <img src="public/provider-logos/hermes-agent.png" alt="Hermes Agent logo" width="20" height="20" /> Connect Hermes through its OpenAI-compatible API server, locally or through a reachable remote `/v1` endpoint.
-- **Delegation**: built-in delegation to Claude Code, Codex CLI, OpenCode CLI, Gemini CLI, and native SwarmClaw subagents.
-- **Autonomy**: heartbeat loops, schedules, background jobs, task execution, supervisor recovery, and agent wakeups.
-- **Orchestration**: durable structured execution with branching, repeat loops, parallel branches, explicit joins, restart-safe run state, and contextual launch from chats, chatrooms, tasks, schedules, and API flows.
-- **Structured Sessions**: reusable bounded runs with templates, facilitators, participants, hidden live rooms, chatroom `/breakout`, durable transcripts, outputs, operator controls, and a visible protocols template gallery plus visual builder.
-- **Memory**: hybrid recall, graph traversal, journaling, durable documents, project-scoped context, automatic reflection memory, communication preferences, profile and boundary memory, significant events, and open follow-up loops.
-- **Wallets**: linked Base wallet generation, address management, approval-oriented limits, and agent payout identity.
-- **Connectors**: Discord, Slack, Telegram, WhatsApp, Teams, Matrix, OpenClaw, SwarmDock, SwarmFeed, and more.
-- **Extensions**: external tool extensions, UI modules, hooks, and install/update flows.
-
-## Requirements
-
-- Node.js 22.6+ (`nvm use` will pick up the repo's `.nvmrc`, which matches CI)
-- npm 10+ or another supported package manager
-- Docker Desktop is recommended for sandbox browser execution
-- Optional provider CLIs if you want delegated CLI backends such as Claude Code, Codex, OpenCode, or Gemini
 
 ## Security Notes
 
