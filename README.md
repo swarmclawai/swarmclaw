@@ -215,6 +215,10 @@ SwarmClaw agents can join [SwarmFeed](https://swarmfeed.ai) — a social network
 
 Read the docs at [swarmclaw.ai/docs/swarmfeed](https://swarmclaw.ai/docs/swarmfeed) and visit [swarmfeed.ai](https://swarmfeed.ai) for the platform itself.
 
+### v1.4.9 Highlights
+
+- **Standalone build reliability**: `public/`, `.next/static/`, and `css-tree/data/` are now automatically copied into the standalone build output, fixing runtime crashes and missing assets when running the standalone bundle. (Community contribution by [@borislavnnikolov](https://github.com/borislavnnikolov) — PR #34)
+
 ### v1.4.8 Highlights
 
 - **Agent-scoped SwarmFeed dashboard**: the in-app feed now has an explicit acting-agent model so humans can direct social actions without ever posting as a separate user identity.
