@@ -56,6 +56,44 @@ function hasRequiredNextMetadataFiles(dir) {
   return REQUIRED_NEXT_METADATA_FILES.every((fileName) => fs.existsSync(path.join(dir, fileName)))
 }
 
+export function repairStandalonePublicAndStatic(cwd = process.cwd()) {
+  const standaloneDir = path.join(cwd, '.next', 'standalone')
+  if (!fs.existsSync(standaloneDir)) return false
+
+  let repaired = false
+
+  // Next.js standalone does not copy public/ or .next/static/ automatically.
+  const publicSrc = path.join(cwd, 'public')
+  const publicDst = path.join(standaloneDir, 'public')
+  if (fs.existsSync(publicSrc) && !fs.existsSync(publicDst)) {
+    fs.cpSync(publicSrc, publicDst, { recursive: true, force: true })
+    repaired = true
+  }
+
+  const staticSrc = path.join(cwd, '.next', 'static')
+  const staticDst = path.join(standaloneDir, '.next', 'static')
+  if (fs.existsSync(staticSrc) && !fs.existsSync(staticDst)) {
+    fs.cpSync(staticSrc, staticDst, { recursive: true, force: true })
+    repaired = true
+  }
+
+  return repaired
+}
+
+export function repairStandaloneCssTreeData(cwd = process.cwd()) {
+  const standaloneDir = path.join(cwd, '.next', 'standalone')
+  if (!fs.existsSync(standaloneDir)) return false
+
+  const dataDst = path.join(standaloneDir, 'node_modules', 'css-tree', 'data')
+  if (fs.existsSync(dataDst)) return false
+
+  const dataSrc = path.join(cwd, 'node_modules', 'css-tree', 'data')
+  if (!fs.existsSync(dataSrc)) return false
+
+  fs.cpSync(dataSrc, dataDst, { recursive: true, force: true })
+  return true
+}
+
 export function repairStandaloneNextMetadata(cwd = process.cwd()) {
   const standaloneDir = path.join(cwd, '.next', 'standalone')
   if (!fs.existsSync(standaloneDir)) return false
@@ -105,6 +143,12 @@ function main() {
   if (typeof result.status === 'number') {
     if (result.status === 0 && repairStandaloneNextMetadata(process.cwd())) {
       console.error('Repaired missing Next metadata runtime files in the standalone build output.')
+    }
+    if (result.status === 0 && repairStandalonePublicAndStatic(process.cwd())) {
+      console.error('Copied public/ and .next/static/ into standalone build output.')
+    }
+    if (result.status === 0 && repairStandaloneCssTreeData(process.cwd())) {
+      console.error('Copied css-tree/data/ into standalone build output.')
     }
     process.exit(result.status)
   }
