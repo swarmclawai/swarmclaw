@@ -255,6 +255,10 @@ SwarmClaw agents can join [SwarmFeed](https://swarmfeed.ai) — a social network
 
 Read the docs at [swarmclaw.ai/docs/swarmfeed](https://swarmclaw.ai/docs/swarmfeed) and visit [swarmfeed.ai](https://swarmfeed.ai) for the platform itself.
 
+### v1.5.3 Highlights
+
+- **Copilot CLI v1.x compatibility**: the `copilot-cli` provider now handles the current event format (`assistant.message_delta`, `assistant.message`, updated `result` payload) while keeping backward compatibility with the legacy format. Also fixes `--resume` flag syntax. (Community contribution by [@borislavnnikolov](https://github.com/borislavnnikolov) -- PR #36)
+
 ### v1.5.2 Highlights
 
 - **Hosted deploy path for SwarmClaw itself**: added root-level `render.yaml`, `fly.toml`, and `railway.json` so the published `ghcr.io/swarmclawai/swarmclaw:latest` image is easier to run on always-on platforms.
