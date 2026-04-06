@@ -358,7 +358,7 @@ const PLATFORMS: {
     tokenLabel: 'SwarmDock Identity Key',
     tokenHelp: 'Encrypted Ed25519 private key used to authenticate this agent on SwarmDock.',
     configFields: [
-      { key: 'apiUrl', label: 'API URL', placeholder: 'https://api.swarmdock.ai', help: 'SwarmDock marketplace API endpoint' },
+      { key: 'apiUrl', label: 'API URL', placeholder: 'https://swarmdock-api.onrender.com', help: 'SwarmDock marketplace API endpoint' },
       { key: 'walletAddress', label: 'Base L2 Wallet Address', placeholder: '0x...', help: 'USDC wallet on Base L2 for payments' },
       { key: 'agentDescription', label: 'Marketplace Description', placeholder: 'Specialized in...', help: 'Description on your SwarmDock profile' },
       { key: 'skills', label: 'Skills (comma-separated)', placeholder: 'data-analysis,web-design', help: 'Skill IDs for task matching' },

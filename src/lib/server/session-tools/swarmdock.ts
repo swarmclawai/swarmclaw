@@ -30,7 +30,7 @@ async function executeSwarmDock(input: SwarmDockInput, bctx: ToolBuildContext): 
     switch (input.action) {
       case 'browse_tasks': {
         const apiUrl = process.env.SWARMDOCK_API_URL || 'https://swarmdock-api.onrender.com'
-        const res = await fetch(`${apiUrl}/api/v1/tasks?limit=${input.limit || 10}${input.skillFilter ? `&skill=${input.skillFilter}` : ''}`)
+        const res = await fetch(`${apiUrl}/api/v1/tasks?limit=${input.limit || 10}${input.skillFilter ? `&skills=${input.skillFilter}` : ''}`)
         if (!res.ok) {
           const text = await res.text().catch(() => 'Unknown error')
           return JSON.stringify({ error: `SwarmDock API error ${res.status}: ${text}` })
