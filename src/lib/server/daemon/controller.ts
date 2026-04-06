@@ -523,6 +523,24 @@ export async function runDaemonHealthCheckViaAdmin(source: string): Promise<Daem
 }
 
 export async function listDaemonConnectorRuntime(): Promise<Record<string, DaemonConnectorRuntimeState>> {
+  // When the daemon is running in-process, read runtime state directly.
+  const inProcessStatus = getDaemonStatus()
+  if (inProcessStatus.running) {
+    const { listRunningConnectors, getConnectorStatus, isConnectorAuthenticated, hasConnectorCredentials, getConnectorQR, getConnectorPresence } =
+      await import('@/lib/server/connectors/connector-lifecycle')
+    const result: Record<string, DaemonConnectorRuntimeState> = {}
+    for (const { id } of listRunningConnectors()) {
+      result[id] = {
+        status: getConnectorStatus(id),
+        authenticated: isConnectorAuthenticated(id),
+        hasCredentials: hasConnectorCredentials(id),
+        qrDataUrl: getConnectorQR(id),
+        presence: getConnectorPresence(id),
+      }
+    }
+    return result
+  }
+
   const metadata = readDaemonAdminMetadata()
   if (!metadata || !isProcessRunning(metadata.pid)) return {}
   try {
@@ -534,6 +552,22 @@ export async function listDaemonConnectorRuntime(): Promise<Record<string, Daemo
 }
 
 export async function getDaemonConnectorRuntime(connectorId: string): Promise<DaemonConnectorRuntimeState | null> {
+  // When the daemon is running in-process, read runtime state directly from
+  // the connector lifecycle module instead of an unreachable subprocess HTTP API.
+  const inProcessStatus = getDaemonStatus()
+  if (inProcessStatus.running) {
+    const { getConnectorStatus, getConnectorQR, isConnectorAuthenticated, hasConnectorCredentials, getConnectorPresence } =
+      await import('@/lib/server/connectors/connector-lifecycle')
+    const status = getConnectorStatus(connectorId)
+    return {
+      status,
+      authenticated: isConnectorAuthenticated(connectorId),
+      hasCredentials: hasConnectorCredentials(connectorId),
+      qrDataUrl: getConnectorQR(connectorId),
+      presence: getConnectorPresence(connectorId),
+    }
+  }
+
   const metadata = readDaemonAdminMetadata()
   if (!metadata || !isProcessRunning(metadata.pid)) return null
   try {
@@ -555,6 +589,27 @@ export async function runDaemonConnectorAction(
   if (action !== 'stop') {
     await ensureDaemonProcessRunning(source, { manualStart: true })
   }
+
+  // When the daemon is running in-process (e.g. standalone production build),
+  // there is no subprocess admin server or daemon-admin.json. Execute the
+  // connector lifecycle action directly in the current process.
+  const inProcessStatus = getDaemonStatus()
+  if (inProcessStatus.running) {
+    try {
+      const { startConnector, stopConnector, repairConnector } = await import('@/lib/server/connectors/connector-lifecycle')
+      if (action === 'start') {
+        await startConnector(connectorId)
+      } else if (action === 'stop') {
+        await stopConnector(connectorId)
+      } else if (action === 'repair') {
+        await repairConnector(connectorId)
+      }
+    } catch (err: unknown) {
+      log.error(TAG, `In-process connector action "${action}" failed for ${connectorId}:`, errorMessage(err))
+    }
+    return null
+  }
+
   const metadata = readDaemonAdminMetadata()
   if (!metadata || !isProcessRunning(metadata.pid)) return null
   const result = await requestDaemon<{ connector: DaemonConnectorRuntimeState | null }>(
