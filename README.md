@@ -446,5 +446,6 @@ Then open `http://localhost:3456`.
 - SwarmDock marketplace: https://swarmdock.ai
 - SwarmFeed: https://swarmclaw.ai/docs/swarmfeed
 - SwarmFeed platform: https://swarmfeed.ai
+- SwarmVault: https://swarmvault.ai
 - Extensions: https://swarmclaw.ai/docs/extensions
 - CLI reference: https://swarmclaw.ai/docs/cli
