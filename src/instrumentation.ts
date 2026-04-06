@@ -5,9 +5,11 @@ const TAG = 'instrumentation'
 export async function register() {
   if (process.env.NEXT_RUNTIME === 'nodejs') {
     const { log } = await import('@/lib/server/logger')
+    const { ensureOpenTelemetryStarted, shutdownOpenTelemetry } = await import('@/lib/server/observability/otel')
     const isWorkerOnly = process.env.SWARMCLAW_WORKER_ONLY === '1'
     const { initWsServer, closeWsServer } = await import('./lib/server/ws-hub')
     const { ensureDaemonStarted } = await import('@/lib/server/runtime/daemon-state')
+    await ensureOpenTelemetryStarted()
     
     // One-time migration: backfill allKnownPeerIds on existing connector sessions
     try {
@@ -43,6 +45,11 @@ export async function register() {
         await stopDaemon({ source: signal })
       } catch (err) {
         log.error(TAG, 'Failed to stop daemon during shutdown:', err)
+      }
+      try {
+        await shutdownOpenTelemetry()
+      } catch (err) {
+        log.error(TAG, 'Failed to stop OpenTelemetry during shutdown:', err)
       }
       if (!isWorkerOnly) {
         await closeWsServer()

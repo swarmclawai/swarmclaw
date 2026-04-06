@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: swarmclaw
+    runtime: image
+    image:
+      url: ghcr.io/swarmclawai/swarmclaw:latest
+    plan: starter
+    region: oregon
+    healthCheckPath: /api/healthz
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "3456"
+      - key: ACCESS_KEY
+        sync: false
+      - key: CREDENTIAL_SECRET
+        sync: false
+      - key: OTEL_ENABLED
+        value: "false"
+      - key: OTEL_SERVICE_NAME
+        value: swarmclaw
+      - key: OTEL_EXPORTER_OTLP_ENDPOINT
+        sync: false
+      - key: OTEL_EXPORTER_OTLP_HEADERS
+        sync: false
+    disk:
+      name: swarmclaw-data
+      mountPath: /app/data
+      sizeGB: 10

@@ -15,6 +15,46 @@ Docs: https://swarmclaw.ai/docs
 Website: https://swarmclaw.ai  
 Extension tutorial: https://swarmclaw.ai/docs/extension-tutorial
 
+## Hosted Deploys
+
+SwarmClaw now ships provider-ready deploy files at the repo root:
+
+- `render.yaml` for Render Blueprint deploys from the public GHCR image
+- `fly.toml` for Fly.io image-backed deploys
+- `railway.json` for Railway-aligned health and restart defaults
+
+The published image is:
+
+```text
+ghcr.io/swarmclawai/swarmclaw:latest
+```
+
+Hosted deployments should:
+
+- mount persistent storage at `/app/data`
+- manage secrets through the provider dashboard
+- set `ACCESS_KEY` and `CREDENTIAL_SECRET`
+- point health checks at `/api/healthz`
+
+Full hosted deployment guides live at https://swarmclaw.ai/docs/deployment
+
+## OpenTelemetry OTLP Export
+
+SwarmClaw supports opt-in OTLP trace export for chat turns, direct model streams, tool execution, and structured-session runs.
+
+Minimal configuration:
+
+```bash
+OTEL_ENABLED=true
+OTEL_SERVICE_NAME=swarmclaw
+OTEL_EXPORTER_OTLP_ENDPOINT=https://your-collector:4318
+OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer your-token
+```
+
+If you need a trace-specific endpoint, set `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` directly instead.
+
+Operational docs: https://swarmclaw.ai/docs/observability
+
 ## Screenshots
 
 <table>
@@ -214,6 +254,13 @@ SwarmClaw agents can join [SwarmFeed](https://swarmfeed.ai) — a social network
 - **Multiple access methods**: [SDK](https://www.npmjs.com/package/@swarmfeed/sdk), [CLI](https://www.npmjs.com/package/@swarmfeed/cli), [MCP Server](https://www.npmjs.com/package/@swarmfeed/mcp-server), and [ClawHub skill](https://clawhub.ai/skills/swarmfeed)
 
 Read the docs at [swarmclaw.ai/docs/swarmfeed](https://swarmclaw.ai/docs/swarmfeed) and visit [swarmfeed.ai](https://swarmfeed.ai) for the platform itself.
+
+### v1.5.2 Highlights
+
+- **Hosted deploy path for SwarmClaw itself**: added root-level `render.yaml`, `fly.toml`, and `railway.json` so the published `ghcr.io/swarmclawai/swarmclaw:latest` image is easier to run on always-on platforms.
+- **Public health endpoint for hosted platforms**: added `/api/healthz` and exempted it from access-key auth so Render, Fly.io, and Railway can perform liveness checks without weakening the rest of the API surface.
+- **OTLP/OpenTelemetry foundation**: SwarmClaw can now export traces for chat turns, direct model streams, protocol runs, and tool execution to any OTLP-compatible backend using environment variables only.
+- **Docs and landing-page deploy refresh**: `swarmclaw.ai` now exposes the hosted deploy path and a dedicated observability guide instead of burying those operator workflows in general setup docs.
 
 ### v1.5.1 Highlights
 
