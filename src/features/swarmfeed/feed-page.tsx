@@ -1,6 +1,6 @@
 'use client'
 
-import { useDeferredValue, useEffect, useState } from 'react'
+import { useDeferredValue, useState } from 'react'
 import { Bell, Hash, Search, Sparkles, TrendingUp, Users } from 'lucide-react'
 import { toast } from 'sonner'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
@@ -77,30 +77,23 @@ export function FeedPage() {
   const [profileAgentId, setProfileAgentId] = useState<string | null>(null)
 
   const deferredSearchQuery = useDeferredValue(searchQuery.trim())
-  const selectedAgent = selectedAgentId ? agents[selectedAgentId] : null
+  const resolvedSelectedAgentId = selectedAgentId && feedAgents.some((agent) => agent.id === selectedAgentId)
+    ? selectedAgentId
+    : (feedAgents[0]?.id || '')
+  const selectedAgent = resolvedSelectedAgentId ? agents[resolvedSelectedAgentId] : null
   const isSearching = deferredSearchQuery.length >= 2
   const currentFeedType = isFeedTab(activeTab) ? activeTab : 'for_you'
   const requiresActor = activeTab === 'following' || activeTab === 'bookmarks' || activeTab === 'notifications'
 
-  useEffect(() => {
-    if (feedAgents.length === 0) {
-      setSelectedAgentId('')
-      return
-    }
-    if (!selectedAgentId || !feedAgents.some((agent) => agent.id === selectedAgentId)) {
-      setSelectedAgentId(feedAgents[0].id)
-    }
-  }, [feedAgents, selectedAgentId])
-
   const channelsQuery = useSwarmFeedChannelsQuery()
   const feedQuery = useSwarmFeedFeedQuery({
     type: currentFeedType,
-    agentId: activeTab === 'following' ? selectedAgentId : undefined,
-    enabled: !isSearching && isFeedTab(activeTab) && (activeTab !== 'following' || !!selectedAgentId),
+    agentId: activeTab === 'following' ? resolvedSelectedAgentId : undefined,
+    enabled: !isSearching && isFeedTab(activeTab) && (activeTab !== 'following' || !!resolvedSelectedAgentId),
   })
-  const bookmarksQuery = useSwarmFeedBookmarksQuery(selectedAgentId, !isSearching && activeTab === 'bookmarks')
-  const notificationsQuery = useSwarmFeedNotificationsQuery(selectedAgentId, !isSearching && activeTab === 'notifications')
-  const suggestedQuery = useSwarmFeedSuggestedQuery(selectedAgentId || undefined, true)
+  const bookmarksQuery = useSwarmFeedBookmarksQuery(resolvedSelectedAgentId, !isSearching && activeTab === 'bookmarks')
+  const notificationsQuery = useSwarmFeedNotificationsQuery(resolvedSelectedAgentId, !isSearching && activeTab === 'notifications')
+  const suggestedQuery = useSwarmFeedSuggestedQuery(resolvedSelectedAgentId || undefined, true)
   const searchResultsQuery = useSwarmFeedSearchQuery({
     query: deferredSearchQuery,
     type: searchType,
@@ -114,13 +107,13 @@ export function FeedPage() {
   )
 
   async function handlePostAction(action: PostCardAction, post: SwarmFeedPost) {
-    if (!selectedAgentId) {
+    if (!resolvedSelectedAgentId) {
       throw new Error('Select an acting agent before interacting with SwarmFeed.')
     }
     try {
       await actionMutation.mutateAsync({
         action,
-        agentId: selectedAgentId,
+        agentId: resolvedSelectedAgentId,
         postId: post.id,
       })
     } catch (err: unknown) {
@@ -131,14 +124,14 @@ export function FeedPage() {
   }
 
   async function handleFollow(targetAgentId: string) {
-    if (!selectedAgentId) {
+    if (!resolvedSelectedAgentId) {
       toast.error('Select an acting agent before following other agents.')
       return
     }
     try {
       await actionMutation.mutateAsync({
         action: 'follow',
-        agentId: selectedAgentId,
+        agentId: resolvedSelectedAgentId,
         targetAgentId,
       })
       toast.success('Agent followed')
@@ -164,7 +157,7 @@ export function FeedPage() {
             key={post.id}
             post={post}
             channelLabel={post.channelId ? channelLabels[post.channelId] : null}
-            canInteract={!!selectedAgentId}
+            canInteract={!!resolvedSelectedAgentId}
             onAction={handlePostAction}
             onProfileOpen={setProfileAgentId}
             onThreadOpen={(postId, mode = 'reply') => setThreadState({ postId, mode })}
@@ -274,7 +267,7 @@ export function FeedPage() {
       )
     }
 
-    if (requiresActor && !selectedAgentId) {
+    if (requiresActor && !resolvedSelectedAgentId) {
       return (
         <EmptyState
           title="Choose an acting agent"
@@ -365,7 +358,7 @@ export function FeedPage() {
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1.7fr)_360px]">
             <aside className="order-1 space-y-5 lg:order-2">
               <ComposePost
-                selectedAgentId={selectedAgentId}
+                selectedAgentId={resolvedSelectedAgentId}
                 onSelectAgent={setSelectedAgentId}
               />
 
@@ -425,7 +418,7 @@ export function FeedPage() {
                       <SuggestedAgentRow
                         key={agent.id}
                         agent={agent}
-                        canFollow={!!selectedAgentId}
+                        canFollow={!!resolvedSelectedAgentId}
                         busy={actionMutation.isPending}
                         onFollow={handleFollow}
                         onOpenProfile={setProfileAgentId}
@@ -487,7 +480,7 @@ export function FeedPage() {
       <PostThreadSheet
         open={!!threadState}
         postId={threadState?.postId || null}
-        actingAgentId={selectedAgentId || undefined}
+        actingAgentId={resolvedSelectedAgentId || undefined}
         channelLabels={channelLabels}
         initialMode={threadState?.mode || 'reply'}
         onClose={() => setThreadState(null)}
@@ -497,7 +490,7 @@ export function FeedPage() {
       <SwarmFeedProfileSheet
         open={!!profileAgentId}
         agentId={profileAgentId}
-        viewerAgentId={selectedAgentId || undefined}
+        viewerAgentId={resolvedSelectedAgentId || undefined}
         channelLabels={channelLabels}
         onClose={() => setProfileAgentId(null)}
         onOpenThread={(postId, mode = 'reply') => setThreadState({ postId, mode })}
