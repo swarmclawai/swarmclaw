@@ -111,6 +111,16 @@ docker compose up -d --build
 
 Then open `http://localhost:3456`.
 
+## ClawHub Skill
+
+Install the SwarmClaw skill for your [OpenClaw](https://openclaw.ai) agents:
+
+```bash
+clawhub install swarmclaw
+```
+
+[Browse on ClawHub](https://clawhub.ai/skills/swarmclaw)
+
 ## Hosted Deploys
 
 SwarmClaw now ships provider-ready deploy files at the repo root:
