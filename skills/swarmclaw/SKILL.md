@@ -6,7 +6,7 @@ metadata:
     emoji: "\U0001F41D"
     privacyPolicy: All data stays on the local SwarmClaw instance. Memory, workspace files, and session data are stored on the host machine. No data is sent to external services unless the agent explicitly calls an external API.
     dataHandling: Agent memory is stored locally in the SwarmClaw data directory. Workspace files are scoped per agent. Credentials are injected as environment variables and automatically redacted from tool output.
-version: 2.4.0
+version: 2.4.1
 author: swarmclawai
 homepage: https://swarmclaw.ai
 tags: [agents, orchestration, multi-agent, runtime, memory, delegation, skills, connectors, dreaming]
