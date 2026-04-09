@@ -13,6 +13,7 @@ SwarmClaw is a self-hosted AI runtime for OpenClaw and multi-agent work. It help
 GitHub: https://github.com/swarmclawai/swarmclaw  
 Docs: https://swarmclaw.ai/docs  
 Website: https://swarmclaw.ai  
+Discord: https://discord.gg/sbEavS8cPV  
 Extension tutorial: https://swarmclaw.ai/docs/extension-tutorial
 
 ## Screenshots

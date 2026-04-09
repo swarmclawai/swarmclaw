@@ -16,6 +16,7 @@ import type { AppView } from '@/types'
 
 const RAIL_EXPANDED_KEY = 'sc_rail_expanded'
 const GITHUB_REPO_URL = 'https://github.com/swarmclawai/swarmclaw'
+const DISCORD_URL = 'https://discord.gg/sbEavS8cPV'
 const NETWORK_LINKS = [
   { href: 'https://www.swarmdock.ai', label: 'SwarmDock', abbr: 'DO' },
   { href: 'https://swarmrecall.ai', label: 'SwarmRecall', abbr: 'RE' },
@@ -483,6 +484,34 @@ export function SidebarRail({
               <a href={GITHUB_REPO_URL} target="_blank" rel="noopener noreferrer" className="rail-btn">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                   <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                </svg>
+              </a>
+            </RailTooltip>
+          )}
+          {railExpanded ? (
+            <a
+              href={DISCORD_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-[10px] text-[13px] font-500 cursor-pointer transition-all
+                bg-transparent text-text-3 hover:text-text hover:bg-white/[0.04] no-underline"
+              style={{ fontFamily: 'inherit' }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="shrink-0">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                <path d="M8 10h.01M12 10h.01M16 10h.01" />
+              </svg>
+              Join Discord
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="ml-auto opacity-40">
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" />
+              </svg>
+            </a>
+          ) : (
+            <RailTooltip label="Join Discord" description="Open the SwarmClaw community">
+              <a href={DISCORD_URL} target="_blank" rel="noopener noreferrer" className="rail-btn">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                  <path d="M8 10h.01M12 10h.01M16 10h.01" />
                 </svg>
               </a>
             </RailTooltip>
