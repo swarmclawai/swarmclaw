@@ -9,6 +9,9 @@ import {
   loadCredentials,
   saveCredential,
 } from '@/lib/server/credentials/credential-repository'
+import { log } from '@/lib/server/logger'
+
+const TAG = 'credential-service'
 
 export type CredentialSummary = Pick<Credential, 'id' | 'provider' | 'name' | 'createdAt'>
 
@@ -55,7 +58,12 @@ export function resolveCredentialSecret(credentialId: string | null | undefined)
   if (!credential?.encryptedKey) return null
   try {
     return decryptKey(credential.encryptedKey)
-  } catch {
+  } catch (err) {
+    log.warn(TAG, `Failed to decrypt credential "${id}" — CREDENTIAL_SECRET may have changed since this key was stored. Re-add the API key to fix.`, {
+      credentialId: id,
+      provider: credential.provider,
+      error: err instanceof Error ? err.message : String(err),
+    })
     return null
   }
 }

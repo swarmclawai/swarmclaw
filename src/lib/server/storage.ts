@@ -94,6 +94,21 @@ if (!IS_BUILD_BOOTSTRAP) {
 }
 db.pragma('foreign_keys = ON')
 
+// Graceful shutdown: checkpoint WAL and close the database to prevent
+// corruption when the process is killed (e.g. during npm run update:easy).
+if (!IS_BUILD_BOOTSTRAP) {
+  const shutdownDb = () => {
+    try {
+      db.pragma('wal_checkpoint(TRUNCATE)')
+      db.close()
+    } catch {
+      // Best-effort — process is exiting.
+    }
+  }
+  process.on('SIGTERM', shutdownDb)
+  process.on('SIGINT', shutdownDb)
+}
+
 /** Run a function inside an immediate SQLite transaction for atomicity. */
 export function withTransaction<T>(fn: () => T): T {
   const wrapped = db.transaction(fn)

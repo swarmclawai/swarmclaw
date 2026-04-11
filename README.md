@@ -375,6 +375,14 @@ Operational docs: https://swarmclaw.ai/docs/observability
 
 ## Releases
 
+### v1.5.35 Highlights
+
+- **Update safety: prevent DB corruption on Linux**: `npm run update:easy`, `swarmclaw update`, and the in-app update endpoint now stop the running server (or checkpoint the SQLite WAL) before rebuilding native modules, preventing the WAL journal corruption that forced some Linux users back to the setup wizard.
+- **SQLite graceful shutdown**: the server now checkpoints and closes the database on SIGTERM/SIGINT, eliminating stale WAL state after any clean stop.
+- **Doctor: detect dangling gateway credentials**: the setup doctor now flags gateway profiles that reference deleted or missing credentials, explaining the "gateway token missing" connection errors.
+- **Gateway credential resolution logging**: when a gateway credential can't be resolved, the server now logs a clear warning identifying the missing credential ID.
+- **Credential decryption error logging**: when a stored credential can't be decrypted (e.g. after `CREDENTIAL_SECRET` changes), the server now logs the credential ID and provider so users know which key to re-add.
+
 ### v1.5.34 Highlights
 
 - **Ollama Cloud auth fix**: SwarmClaw now normalizes `api.ollama.com` and `www.ollama.com` to `ollama.com` before making authenticated requests, avoiding the redirect that was dropping authorization headers and causing false provider-health/runtime failures.

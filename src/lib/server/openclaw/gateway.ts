@@ -81,7 +81,14 @@ function normalizeWsUrl(raw: string): string {
 }
 
 function resolveTokenForCredential(credentialId?: string | null): string | undefined {
-  return resolveCredentialSecret(credentialId) || undefined
+  if (!credentialId) return undefined
+  const secret = resolveCredentialSecret(credentialId)
+  if (!secret) {
+    log.warn(TAG, `Credential "${credentialId}" is referenced but could not be resolved — gateway connection will lack a token`, {
+      credentialId,
+    })
+  }
+  return secret || undefined
 }
 
 export function resolveGatewayConfig(target?: {

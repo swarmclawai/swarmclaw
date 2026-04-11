@@ -1,10 +1,24 @@
 import { NextResponse } from 'next/server'
 import { execSync } from 'child_process'
+import { getDb } from '@/lib/server/storage'
 
 const RELEASE_TAG_RE = /^v\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/
 
 function run(cmd: string): string {
   return execSync(cmd, { encoding: 'utf-8', cwd: process.cwd(), timeout: 60_000 }).trim()
+}
+
+/**
+ * Checkpoint the SQLite WAL before operations that replace native modules
+ * (npm install rebuilds better-sqlite3). Without this, an unclean WAL state
+ * combined with a replaced native binary can corrupt the database on Linux.
+ */
+function checkpointDatabase(): void {
+  try {
+    getDb().pragma('wal_checkpoint(TRUNCATE)')
+  } catch {
+    // Best-effort — the database may already be in a good state.
+  }
 }
 
 function getLatestStableTag(): string | null {
@@ -67,6 +81,9 @@ export async function POST() {
     try {
       const diff = run(`git diff --name-only ${beforeSha}..HEAD`)
       if (diff.includes('package-lock.json') || diff.includes('package.json')) {
+        // Checkpoint WAL before npm install — the postinstall hook rebuilds
+        // better-sqlite3's native module, which can corrupt an open WAL journal.
+        checkpointDatabase()
         run('npm install --omit=dev')
         installedDeps = true
       }

@@ -98,6 +98,29 @@ function runRegistrySelfUpdate(
   return 0
 }
 
+function stopRunningServer(logger = { log, logError }) {
+  // Stop the server gracefully before updating to prevent SQLite WAL corruption.
+  try {
+    const serverCmd = path.join(PKG_ROOT, 'bin', 'swarmclaw.js')
+    const status = execFileSync(process.execPath, [serverCmd, 'status'], {
+      encoding: 'utf-8',
+      cwd: PKG_ROOT,
+      timeout: 10_000,
+    }).trim()
+    if (status.toLowerCase().includes('running')) {
+      logger.log('Stopping running server before update...')
+      execFileSync(process.execPath, [serverCmd, 'stop'], {
+        encoding: 'utf-8',
+        cwd: PKG_ROOT,
+        timeout: 15_000,
+      })
+      logger.log('Server stopped.')
+    }
+  } catch {
+    // Server may not be running or status command unavailable — continue.
+  }
+}
+
 function main(args = process.argv.slice(3)) {
   if (args.includes('-h') || args.includes('--help')) {
     console.log(`
@@ -112,8 +135,11 @@ If running from a registry install, update the global package with its owning pa
   try {
     run('git rev-parse --git-dir')
   } catch {
+    stopRunningServer()
     process.exit(runRegistrySelfUpdate())
   }
+
+  stopRunningServer()
 
   const beforeRef = run('git rev-parse HEAD')
   const beforeSha = run('git rev-parse --short HEAD')

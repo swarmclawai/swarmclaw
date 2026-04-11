@@ -3,7 +3,7 @@ import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { NextResponse } from 'next/server'
 import { DATA_DIR } from '@/lib/server/data-dir'
-import { loadAgents, loadCredentials, loadSettings } from '@/lib/server/storage'
+import { loadAgents, loadCredentials, loadSettings, loadCollection } from '@/lib/server/storage'
 import { dedup, errorMessage } from '@/lib/shared-utils'
 import { detectDocker } from '@/lib/server/sandbox/docker-detect'
 
@@ -160,12 +160,42 @@ export async function GET(req: Request) {
   }
 
   const credentials = Object.values(loadCredentials() || {})
+  const credentialIds = new Set(credentials.map((c) => (c as Record<string, unknown>).id as string).filter(Boolean))
   if (credentials.length > 0) {
     pushCheck(checks, 'credentials', 'Credentials', 'pass', `${credentials.length} credential(s) saved.`)
   } else {
     pushCheck(checks, 'credentials', 'Credentials', 'warn', 'No API credentials saved (OK for local-only Ollama).')
     actions.push('If using cloud providers, add an API key in the setup wizard or Settings → Providers.')
   }
+
+  // Check for undecryptable credentials (CREDENTIAL_SECRET may have changed)
+  if (credentials.length > 0) {
+    try {
+      const { resolveCredentialSecret } = await import('@/lib/server/credentials/credential-service')
+      let undecryptable = 0
+      for (const cred of credentials) {
+        const c = cred as Record<string, unknown>
+        if (c.encryptedKey && !resolveCredentialSecret(c.id as string)) undecryptable++
+      }
+      if (undecryptable > 0) {
+        pushCheck(checks, 'credential-decrypt', 'Credential decryption', 'fail',
+          `${undecryptable} of ${credentials.length} credential(s) cannot be decrypted. CREDENTIAL_SECRET may have changed since these keys were stored.`, true)
+        actions.push('Your CREDENTIAL_SECRET changed (possibly from a container restart). Re-add your API keys in Settings → Providers.')
+      }
+    } catch { /* best-effort */ }
+  }
+
+  // Check for dangling credential references in gateway profiles
+  try {
+    const gateways = Object.values(loadCollection('gateway_profiles') || {}) as Array<Record<string, unknown>>
+    const dangling = gateways.filter((gw) => gw.credentialId && !credentialIds.has(gw.credentialId as string))
+    if (dangling.length > 0) {
+      const names = dangling.map((gw) => gw.name || gw.id).join(', ')
+      pushCheck(checks, 'gateway-credentials', 'Gateway credential references', 'warn',
+        `${dangling.length} gateway profile(s) reference missing credentials: ${names}. This causes "gateway token missing" errors.`)
+      actions.push('Re-add the missing API key in Settings → Gateways, or update the gateway profile to use an existing credential.')
+    }
+  } catch { /* best-effort */ }
 
   const optionalBinaries: Array<{ id: string; label: string; command: string }> = [
     { id: 'claude-cli', label: 'Claude Code CLI', command: 'claude' },

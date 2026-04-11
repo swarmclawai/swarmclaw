@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+import fs from 'node:fs'
+import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 
 const args = new Set(process.argv.slice(2))
@@ -68,11 +70,32 @@ function getLatestStableTag() {
   return tags.find((tag) => RELEASE_TAG_RE.test(tag)) || null
 }
 
+function stopRunningServer() {
+  // Try to stop the SwarmClaw server gracefully before updating.
+  // An unclean shutdown while npm rebuild replaces native modules
+  // can corrupt the SQLite WAL journal on Linux.
+  const cliPath = path.join(cwd, 'bin', 'swarmclaw.js')
+  if (!fs.existsSync(cliPath)) return
+
+  const status = run('node', [cliPath, 'status'])
+  if (!status.ok || !status.out.toLowerCase().includes('running')) return
+
+  log('Stopping running SwarmClaw server before update...')
+  const stop = run('node', [cliPath, 'stop'])
+  if (stop.ok) {
+    log('Server stopped.')
+  } else {
+    log('Could not stop the server automatically. Please stop it manually before updating.')
+  }
+}
+
 function main() {
   const gitCheck = run('git', ['rev-parse', '--is-inside-work-tree'])
   if (!gitCheck.ok) {
     fail('This folder is not a git repository. Automatic updates require git.')
   }
+
+  stopRunningServer()
 
   const dirty = run('git', ['status', '--porcelain'])
   const isDirty = !!dirty.out
