@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "generatedAt": "2026-04-03T19:48:04.212Z",
-  "totalIssues": 360,
-  "uniqueIssues": 124,
+  "generatedAt": "2026-04-11T14:13:08.813Z",
+  "totalIssues": 359,
+  "uniqueIssues": 123,
   "issues": [
     {
       "filePath": "bin/worker-cmd.js",
@@ -51,13 +51,6 @@
       "ruleId": "@typescript-eslint/no-unused-vars",
       "severity": 1,
       "message": "'_req' is defined but never used.",
-      "count": 1
-    },
-    {
-      "filePath": "src/app/api/secrets/[id]/route.ts",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'encryptedValue' is assigned a value but never used.",
       "count": 1
     },
     {

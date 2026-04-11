@@ -39,6 +39,10 @@ Extension tutorial: https://swarmclaw.ai/docs/extension-tutorial
   <td align="center"><img src="doc/assets/logos/codex.svg" width="32" alt="Codex"><br><sub>Codex</sub></td>
   <td align="center"><img src="doc/assets/logos/gemini-cli.svg" width="32" alt="Gemini CLI"><br><sub>Gemini CLI</sub></td>
   <td align="center"><img src="doc/assets/logos/opencode.svg" width="32" alt="OpenCode"><br><sub>OpenCode</sub></td>
+  <td align="center"><img src="doc/assets/logos/copilot-cli.svg" width="32" alt="Copilot CLI"><br><sub>Copilot</sub></td>
+  <td align="center"><img src="doc/assets/logos/cursor-cli.svg" width="32" alt="Cursor Agent CLI"><br><sub>Cursor</sub></td>
+  <td align="center"><img src="doc/assets/logos/qwen-code-cli.svg" width="32" alt="Qwen Code CLI"><br><sub>Qwen Code</sub></td>
+  <td align="center"><img src="doc/assets/logos/goose.svg" width="32" alt="Goose"><br><sub>Goose</sub></td>
   <td align="center"><img src="doc/assets/logos/anthropic.svg" width="32" alt="Anthropic"><br><sub>Anthropic</sub></td>
   <td align="center"><img src="doc/assets/logos/openai.svg" width="32" alt="OpenAI"><br><sub>OpenAI</sub></td>
   <td align="center"><img src="public/provider-logos/openrouter.png" width="32" alt="OpenRouter"><br><sub>OpenRouter</sub></td>
@@ -61,7 +65,7 @@ Extension tutorial: https://swarmclaw.ai/docs/extension-tutorial
 - Node.js 22.6+ (`nvm use` will pick up the repo's `.nvmrc`, which matches CI)
 - npm 10+ or another supported package manager
 - Docker Desktop is recommended for sandbox browser execution
-- Optional provider CLIs if you want delegated CLI backends such as Claude Code, Codex, OpenCode, or Gemini
+- Optional provider CLIs if you want delegated CLI backends such as Claude Code, Codex, OpenCode, Gemini, Copilot, Cursor Agent, Qwen Code, or Goose
 
 ## Quick Start
 
@@ -147,10 +151,10 @@ Full hosted deployment guides live at https://swarmclaw.ai/docs/deployment
 
 ## Core Capabilities
 
-- **Providers**: OpenClaw, OpenAI, OpenRouter, Anthropic, Ollama, Hermes Agent, Google, DeepSeek, Groq, Together, Mistral, xAI, Fireworks, Nebius, DeepInfra, plus compatible custom endpoints.
+- **Providers**: 23 built-in — Claude Code CLI, Codex CLI, OpenCode CLI, Gemini CLI, Copilot CLI, Cursor Agent CLI, Qwen Code CLI, Goose, Anthropic, OpenAI, OpenRouter, Google Gemini, DeepSeek, Groq, Together, Mistral, xAI, Fireworks, Nebius, DeepInfra, Ollama, OpenClaw, and Hermes Agent, plus compatible custom endpoints.
 - **OpenRouter**: <img src="public/provider-logos/openrouter.png" alt="OpenRouter logo" width="20" height="20" /> Use OpenRouter as a first-class built-in provider with its standard OpenAI-compatible endpoint and routed model IDs such as `openai/gpt-4.1-mini`.
 - **Hermes Agent**: <img src="public/provider-logos/hermes-agent.png" alt="Hermes Agent logo" width="20" height="20" /> Connect Hermes through its OpenAI-compatible API server, locally or through a reachable remote `/v1` endpoint.
-- **Delegation**: built-in delegation to Claude Code, Codex CLI, OpenCode CLI, Gemini CLI, and native SwarmClaw subagents.
+- **Delegation**: built-in delegation to Claude Code, Codex CLI, OpenCode CLI, Gemini CLI, Cursor Agent CLI, Qwen Code CLI, and native SwarmClaw subagents.
 - **Autonomy**: heartbeat loops, schedules, background jobs, task execution, supervisor recovery, and agent wakeups.
 - **Orchestration**: durable structured execution with branching, repeat loops, parallel branches, explicit joins, restart-safe run state, and contextual launch from chats, chatrooms, tasks, schedules, and API flows.
 - **Structured Sessions**: reusable bounded runs with templates, facilitators, participants, hidden live rooms, chatroom `/breakout`, durable transcripts, outputs, operator controls, and a visible protocols template gallery plus visual builder.
@@ -379,6 +383,13 @@ Operational docs: https://swarmclaw.ai/docs/observability
 ### v1.5.31 Highlights
 
 - **Fix Docker first-run crash**: resolved `EISDIR: illegal operation on a directory, read` error when running `docker compose up` without a pre-existing `.env.local` file. Docker was creating a directory mount instead of a file, which crashed Next.js on startup. Replaced the file bind mount with `env_file` directive using `required: false`.
+
+### v1.5.4 Highlights
+
+- **Cursor Agent CLI built-in provider**: Cursor Agent CLI is now a first-class worker provider with session continuity, headless execution, and delegation support.
+- **Qwen Code CLI built-in provider**: Qwen Code CLI is now available as a built-in worker provider and delegation backend with structured headless execution support.
+- **Goose built-in provider**: Goose is now supported as a runtime-managed worker provider, using its own local auth and provider configuration while preserving SwarmClaw session continuity.
+- **CLI setup and health parity**: setup flows, provider checks, setup doctor, and provider-facing UI now recognize Cursor, Qwen Code, and Goose alongside the existing CLI-backed providers.
 
 ### v1.5.3 Highlights
 

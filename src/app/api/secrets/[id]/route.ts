@@ -12,7 +12,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const secret = secrets[id]
   if (!secret) return notFound()
   // Never expose the encrypted value
-  const { encryptedValue, ...safe } = secret as Record<string, unknown>
+  const safe = { ...(secret as Record<string, unknown>) }
+  delete safe.encryptedValue
   return NextResponse.json(safe)
 }
 
@@ -36,6 +37,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     return secret
   })
   if (!result) return notFound()
-  const { encryptedValue, ...safe } = result as Record<string, unknown>
+  const safe = { ...(result as Record<string, unknown>) }
+  delete safe.encryptedValue
   return NextResponse.json(safe)
 }
