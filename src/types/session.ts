@@ -71,12 +71,17 @@ export interface Session {
   opencodeSessionId?: string | null
   geminiSessionId?: string | null
   copilotSessionId?: string | null
+  cursorSessionId?: string | null
+  qwenSessionId?: string | null
+  acpSessionId?: string | null
   delegateResumeIds?: {
     claudeCode?: string | null
     codex?: string | null
     opencode?: string | null
     gemini?: string | null
     copilot?: string | null
+    cursor?: string | null
+    qwen?: string | null
   }
   /** @deprecated Messages are stored in session_messages table. Use message-repository. */
   messages: Message[]
@@ -199,6 +204,10 @@ export type SessionTool =
   | 'claude_code'
   | 'codex_cli'
   | 'opencode_cli'
+  | 'gemini_cli'
+  | 'copilot_cli'
+  | 'cursor_cli'
+  | 'qwen_code_cli'
   | 'web_search'
   | 'web_fetch'
   | 'edit_file'

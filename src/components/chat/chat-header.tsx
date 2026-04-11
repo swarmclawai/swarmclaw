@@ -164,6 +164,12 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
     const fromSessionOpenCode = session.opencodeSessionId
       ? { label: 'OpenCode', id: session.opencodeSessionId, command: `opencode run \"<task>\" --session ${session.opencodeSessionId}` }
       : null
+    const fromSessionCursor = session.cursorSessionId
+      ? { label: 'Cursor', id: session.cursorSessionId, command: `cursor-agent --resume ${session.cursorSessionId} --print \"<task>\"` }
+      : null
+    const fromSessionQwen = session.qwenSessionId
+      ? { label: 'Qwen Code', id: session.qwenSessionId, command: `qwen --resume ${session.qwenSessionId} -p \"<task>\"` }
+      : null
     const fromDelegateClaude = session.delegateResumeIds?.claudeCode
       ? { label: 'Claude', id: session.delegateResumeIds.claudeCode, command: `claude --resume ${session.delegateResumeIds.claudeCode}` }
       : null
@@ -176,15 +182,25 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
     const fromDelegateGemini = session.delegateResumeIds?.gemini
       ? { label: 'Gemini', id: session.delegateResumeIds.gemini, command: `gemini --resume ${session.delegateResumeIds.gemini} --prompt \"<task>\"` }
       : null
+    const fromDelegateCursor = session.delegateResumeIds?.cursor
+      ? { label: 'Cursor', id: session.delegateResumeIds.cursor, command: `cursor-agent --resume ${session.delegateResumeIds.cursor} --print \"<task>\"` }
+      : null
+    const fromDelegateQwen = session.delegateResumeIds?.qwen
+      ? { label: 'Qwen Code', id: session.delegateResumeIds.qwen, command: `qwen --resume ${session.delegateResumeIds.qwen} -p \"<task>\"` }
+      : null
     return fromSessionClaude
       || fromSessionCodex
       || fromSessionOpenCode
+      || fromSessionCursor
+      || fromSessionQwen
       || fromDelegateClaude
       || fromDelegateCodex
       || fromDelegateOpenCode
       || fromDelegateGemini
+      || fromDelegateCursor
+      || fromDelegateQwen
       || null
-  }, [session.claudeSessionId, session.codexThreadId, session.opencodeSessionId, session.delegateResumeIds])
+  }, [session.claudeSessionId, session.codexThreadId, session.opencodeSessionId, session.cursorSessionId, session.qwenSessionId, session.delegateResumeIds])
 
   const handleCopySessionId = () => {
     if (!resumeHandle) return
@@ -202,7 +218,12 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
         claudeSessionId: null,
         codexThreadId: null,
         opencodeSessionId: null,
-        delegateResumeIds: { claudeCode: null, codex: null, opencode: null, gemini: null },
+        geminiSessionId: null,
+        copilotSessionId: null,
+        cursorSessionId: null,
+        qwenSessionId: null,
+        acpSessionId: null,
+        delegateResumeIds: { claudeCode: null, codex: null, opencode: null, gemini: null, copilot: null, cursor: null, qwen: null },
       })
       await refreshSession(session.id)
     } catch { /* best-effort */ }

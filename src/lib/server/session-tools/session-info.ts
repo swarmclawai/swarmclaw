@@ -49,6 +49,9 @@ function normalizeRuntimeExtensionId(extensionId: string): string {
   if (normalized === 'delegate_to_codex_cli' || normalized === 'codex_cli') return 'codex_cli'
   if (normalized === 'delegate_to_opencode_cli' || normalized === 'opencode_cli') return 'opencode_cli'
   if (normalized === 'delegate_to_gemini_cli' || normalized === 'gemini_cli') return 'gemini_cli'
+  if (normalized === 'delegate_to_copilot_cli' || normalized === 'copilot_cli') return 'copilot_cli'
+  if (normalized === 'delegate_to_cursor_cli' || normalized === 'cursor_cli') return 'cursor_cli'
+  if (normalized === 'delegate_to_qwen_code_cli' || normalized === 'qwen_code_cli') return 'qwen_code_cli'
   if (['session_info', 'sessions_tool', 'whoami_tool', 'search_history_tool'].includes(normalized)) return 'manage_sessions'
   return canonicalizeExtensionId(normalized)
 }
@@ -100,7 +103,7 @@ export function buildSessionIdentityPayload(params: {
   const activeProjectContext = params.activeProjectContext || null
   const enabledExtensions = Array.isArray(params.enabledExtensions) ? params.enabledExtensions : []
   const toolPolicy = params.toolPolicy || null
-  const delegationEnabled = enabledExtensions.some((extensionId) => ['delegate', 'spawn_subagent', 'claude_code', 'codex_cli', 'opencode_cli', 'gemini_cli'].includes(extensionId))
+  const delegationEnabled = enabledExtensions.some((extensionId) => ['delegate', 'spawn_subagent', 'claude_code', 'codex_cli', 'opencode_cli', 'gemini_cli', 'cursor_cli', 'qwen_code_cli'].includes(extensionId))
 
   return {
     sessionId: params.context.sessionId || undefined,

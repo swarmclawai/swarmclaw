@@ -6,13 +6,17 @@ import { describe, it } from 'node:test'
 
 import { BUILD_BOOTSTRAP_ROOT_NAME } from './build-bootstrap-env.mjs'
 import {
+  BUILD_MAX_OLD_SPACE_SIZE_ENV,
   DEFAULT_MAX_OLD_SPACE_SIZE_MB,
   NEXT_STANDALONE_METADATA_RELATIVE_DIR,
   REQUIRED_NEXT_METADATA_FILES,
   buildNextBuildEnv,
+  deriveMaxOldSpaceSizeMb,
   hasTraceCopyWarning,
   mergeNodeOptions,
+  readCgroupMemoryLimitBytes,
   repairStandaloneNextMetadata,
+  resolveNextBuildMaxOldSpaceSizeMb,
 } from './run-next-build.mjs'
 
 describe('run-next-build', () => {
@@ -34,6 +38,56 @@ describe('run-next-build', () => {
     assert.equal(
       mergeNodeOptions('--trace-warnings --max-old-space-size=4096'),
       '--trace-warnings --max-old-space-size=4096',
+    )
+  })
+
+  it('derives a lower heap cap for constrained Docker-style memory limits', () => {
+    assert.equal(
+      deriveMaxOldSpaceSizeMb(4 * 1024 * 1024 * 1024),
+      '3072',
+    )
+    assert.equal(
+      deriveMaxOldSpaceSizeMb(2 * 1024 * 1024 * 1024),
+      '1280',
+    )
+  })
+
+  it('reads cgroup memory limits and skips unbounded sentinels', () => {
+    const files = new Map([
+      ['/sys/fs/cgroup/memory.max', `${4n * 1024n * 1024n * 1024n}`],
+    ])
+    const existsSync = (filePath) => files.has(filePath)
+    const readFileSync = (filePath) => files.get(filePath)
+
+    assert.equal(
+      readCgroupMemoryLimitBytes(undefined, existsSync, readFileSync),
+      4 * 1024 * 1024 * 1024,
+    )
+
+    files.set('/sys/fs/cgroup/memory.max', `${(1n << 60n) + 1n}`)
+    assert.equal(
+      readCgroupMemoryLimitBytes(undefined, existsSync, readFileSync),
+      null,
+    )
+  })
+
+  it('prefers an explicit build heap override', () => {
+    assert.equal(
+      resolveNextBuildMaxOldSpaceSizeMb({ [BUILD_MAX_OLD_SPACE_SIZE_ENV]: '2048' }),
+      '2048',
+    )
+  })
+
+  it('falls back to detected memory when no build heap override is set', () => {
+    assert.equal(
+      resolveNextBuildMaxOldSpaceSizeMb(
+        {},
+        {
+          readCgroupMemoryLimitBytes: () => 4 * 1024 * 1024 * 1024,
+          totalMem: () => 16 * 1024 * 1024 * 1024,
+        },
+      ),
+      '3072',
     )
   })
 

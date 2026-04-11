@@ -371,6 +371,11 @@ Operational docs: https://swarmclaw.ai/docs/observability
 
 ## Releases
 
+### v1.5.33 Highlights
+
+- **CLI global flag compatibility**: legacy-routed commands now honor the documented `--access-key` and `--base-url` aliases even when they appear after the subcommand, so authenticated CLI automation works the same across binary entry points.
+- **Docker build memory hardening**: production Next.js builds now size `--max-old-space-size` from the detected container/cgroup memory limit, with `SWARMCLAW_BUILD_MAX_OLD_SPACE_SIZE_MB` available as an explicit override for constrained Docker Desktop and CI environments.
+
 ### v1.5.31 Highlights
 
 - **Fix Docker first-run crash**: resolved `EISDIR: illegal operation on a directory, read` error when running `docker compose up` without a pre-existing `.env.local` file. Docker was creating a directory mount instead of a file, which crashed Next.js on startup. Replaced the file bind mount with `env_file` directive using `required: false`.

@@ -44,7 +44,7 @@ type RepairSessionRunQueueFn = (
 
 type DrainExecutionFn = (executionKey: string) => Promise<void>
 
-const LONG_TOOL_NAMES: ReadonlySet<string> = new Set(['claude_code', 'codex_cli', 'opencode_cli'])
+const LONG_TOOL_NAMES: ReadonlySet<string> = new Set(['claude_code', 'codex_cli', 'opencode_cli', 'gemini_cli', 'cursor_cli', 'qwen_code_cli'])
 
 type SessionToolConfig = {
   tools?: string[] | null

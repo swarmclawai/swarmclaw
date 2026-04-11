@@ -46,6 +46,9 @@ function emptyDelegateResumeIds() {
     codex: null,
     opencode: null,
     gemini: null,
+    copilot: null,
+    cursor: null,
+    qwen: null,
   }
 }
 
@@ -124,6 +127,11 @@ export function createChatSession(input: Record<string, unknown>): ServiceResult
     claudeSessionId: null,
     codexThreadId: null,
     opencodeSessionId: null,
+    geminiSessionId: null,
+    copilotSessionId: null,
+    cursorSessionId: null,
+    qwenSessionId: null,
+    acpSessionId: null,
     delegateResumeIds: emptyDelegateResumeIds(),
     messages: Array.isArray(input.messages) ? input.messages : [],
     createdAt: now,
@@ -279,6 +287,11 @@ export function updateChatSession(sessionId: string, updates: Record<string, unk
   if (updates.claudeSessionId !== undefined) session.claudeSessionId = updates.claudeSessionId
   if (updates.codexThreadId !== undefined) session.codexThreadId = updates.codexThreadId
   if (updates.opencodeSessionId !== undefined) session.opencodeSessionId = updates.opencodeSessionId
+  if (updates.geminiSessionId !== undefined) session.geminiSessionId = updates.geminiSessionId
+  if (updates.copilotSessionId !== undefined) session.copilotSessionId = updates.copilotSessionId
+  if (updates.cursorSessionId !== undefined) session.cursorSessionId = updates.cursorSessionId
+  if (updates.qwenSessionId !== undefined) session.qwenSessionId = updates.qwenSessionId
+  if (updates.acpSessionId !== undefined) session.acpSessionId = updates.acpSessionId
   if (updates.delegateResumeIds !== undefined) session.delegateResumeIds = updates.delegateResumeIds
   if (!Array.isArray(session.messages)) session.messages = []
 
@@ -360,6 +373,11 @@ export function clearChatMessages(sessionId: string): boolean {
   session.claudeSessionId = null
   session.codexThreadId = null
   session.opencodeSessionId = null
+  session.geminiSessionId = null
+  session.copilotSessionId = null
+  session.cursorSessionId = null
+  session.qwenSessionId = null
+  session.acpSessionId = null
   session.delegateResumeIds = emptyDelegateResumeIds()
   saveSession(sessionId, session)
   notify('sessions')

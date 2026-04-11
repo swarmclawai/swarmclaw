@@ -13,6 +13,9 @@ function buildEmptyDelegateResumeIds(): NonNullable<Session['delegateResumeIds']
     codex: null,
     opencode: null,
     gemini: null,
+    copilot: null,
+    cursor: null,
+    qwen: null,
   }
 }
 
@@ -40,6 +43,11 @@ function buildThreadSession(agent: Agent, sessionId: string, user: string, creat
     claudeSessionId: existing?.claudeSessionId || null,
     codexThreadId: existing?.codexThreadId || null,
     opencodeSessionId: existing?.opencodeSessionId || null,
+    geminiSessionId: existing?.geminiSessionId || null,
+    copilotSessionId: existing?.copilotSessionId || null,
+    cursorSessionId: existing?.cursorSessionId || null,
+    qwenSessionId: existing?.qwenSessionId || null,
+    acpSessionId: existing?.acpSessionId || null,
     delegateResumeIds: existing?.delegateResumeIds || buildEmptyDelegateResumeIds(),
     messages: Array.isArray(existing?.messages) ? existing.messages : [],
     createdAt: existing?.createdAt || createdAt,

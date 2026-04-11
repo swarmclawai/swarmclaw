@@ -42,6 +42,12 @@ test('getDefaultModelForProvider returns non-empty for hermes', () => {
   assert.ok(model, 'hermes model should be truthy')
 })
 
+test('getDefaultModelForProvider returns expected defaults for cursor, qwen, and goose', () => {
+  assert.equal(getDefaultModelForProvider('cursor-cli'), 'auto')
+  assert.equal(getDefaultModelForProvider('qwen-code-cli'), 'default')
+  assert.equal(getDefaultModelForProvider('goose'), 'default')
+})
+
 test('getDefaultModelForProvider returns non-empty for ollama', () => {
   const model = getDefaultModelForProvider('ollama')
   assert.ok(model, 'ollama model should be truthy')

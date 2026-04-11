@@ -102,6 +102,22 @@ describe('session-reset-policy', () => {
       })
       assert.equal(policy.idleTimeoutSec, 1800)
     })
+
+    it('isolated mode is preserved and not replaced by fallback', () => {
+      const policy = mod.resolveSessionResetPolicy({
+        resetType: 'direct',
+        session: { sessionResetMode: 'isolated' } as never,
+      })
+      assert.equal(policy.mode, 'isolated')
+    })
+
+    it('isolated mode from agent config is preserved', () => {
+      const policy = mod.resolveSessionResetPolicy({
+        resetType: 'direct',
+        agent: { sessionResetMode: 'isolated' } as never,
+      })
+      assert.equal(policy.mode, 'isolated')
+    })
   })
 
   // ---- evaluateSessionFreshness ----

@@ -929,8 +929,13 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
       if (abortController.signal.aborted) iterationController.abort()
       else abortController.signal.addEventListener('abort', onParentAbort)
 
+      // Local models (e.g. Ollama) need extra time for prompt prefill before
+      // the first streaming token arrives. Use 2x the idle stall timeout for
+      // the initial prefill phase.
+      const isLocalModel = session.provider === 'ollama' && session.ollamaMode !== 'cloud'
       const timers = new IterationTimers(iterationController, {
         streamIdleStallMs: runtime.streamIdleStallMs,
+        initialPrefillStallMs: isLocalModel ? runtime.streamIdleStallMs * 2 : undefined,
         requiredToolKickoffMs: runtime.requiredToolKickoffMs,
         shouldEnforceEarlyRequiredToolKickoff,
       })

@@ -704,7 +704,7 @@ async function runProviderHealthChecks() {
     if (!agent?.id || typeof agent.id !== 'string') continue
     if (shouldSuppressSyntheticAgentHealthAlert(agent.id)) continue
     const provider = typeof agent.provider === 'string' ? agent.provider : ''
-    if (!provider || ['claude-cli', 'codex-cli', 'opencode-cli'].includes(provider)) continue
+    if (!provider || ['claude-cli', 'codex-cli', 'opencode-cli', 'gemini-cli', 'copilot-cli', 'cursor-cli', 'qwen-code-cli', 'goose'].includes(provider)) continue
 
     const credentialId = typeof agent.credentialId === 'string' ? agent.credentialId : ''
     const apiEndpoint = typeof agent.apiEndpoint === 'string' ? agent.apiEndpoint : ''
@@ -1508,7 +1508,7 @@ export function getDaemonHealthSummary(): {
   for (const agent of agentEntries) {
     if (!agent?.id || typeof agent.id !== 'string') continue
     const provider = typeof agent.provider === 'string' ? agent.provider : ''
-    if (!provider || ['claude-cli', 'codex-cli', 'opencode-cli'].includes(provider)) continue
+    if (!provider || ['claude-cli', 'codex-cli', 'opencode-cli', 'gemini-cli', 'copilot-cli', 'cursor-cli', 'qwen-code-cli', 'goose'].includes(provider)) continue
     const credentialId = typeof agent.credentialId === 'string' ? agent.credentialId : ''
     const apiEndpoint = typeof agent.apiEndpoint === 'string' ? agent.apiEndpoint : ''
     providerKeys.add(`${provider}:${credentialId || 'no-cred'}:${apiEndpoint}`)

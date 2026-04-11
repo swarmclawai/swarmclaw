@@ -3,6 +3,7 @@ import { perf } from '@/lib/server/runtime/perf'
 import { listAgentsForApi, createAgent } from '@/lib/server/agents/agent-service'
 import { AgentCreateSchema, formatZodError } from '@/lib/validation/schemas'
 import { ensureDaemonProcessRunning } from '@/lib/server/daemon/controller'
+import { getProvider } from '@/lib/providers'
 import { z } from 'zod'
 import { safeParseBody } from '@/lib/server/safe-parse-body'
 import { loadSettings } from '@/lib/server/storage'
@@ -39,6 +40,15 @@ export async function POST(req: Request) {
     return NextResponse.json(formatZodError(parsed.error as z.ZodError), { status: 400 })
   }
   const body = parsed.data as unknown as Record<string, unknown>
+
+  // Validate provider exists
+  const providerId = String(body.provider || '')
+  if (providerId && !getProvider(providerId)) {
+    return NextResponse.json(
+      { error: 'Validation failed', issues: [{ path: 'provider', message: `Unknown provider: "${providerId}"` }] },
+      { status: 400 },
+    )
+  }
 
   // Check approval policy — if enabled, create an approval request instead of the agent
   const settings = loadSettings()

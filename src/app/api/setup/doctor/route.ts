@@ -171,6 +171,11 @@ export async function GET(req: Request) {
     { id: 'claude-cli', label: 'Claude Code CLI', command: 'claude' },
     { id: 'codex-cli', label: 'OpenAI Codex CLI', command: 'codex' },
     { id: 'opencode-cli', label: 'OpenCode CLI', command: 'opencode' },
+    { id: 'gemini-cli', label: 'Gemini CLI', command: 'gemini' },
+    { id: 'copilot-cli', label: 'GitHub Copilot CLI', command: 'copilot' },
+    { id: 'cursor-cli', label: 'Cursor Agent CLI', command: 'cursor-agent' },
+    { id: 'qwen-code-cli', label: 'Qwen Code CLI', command: 'qwen' },
+    { id: 'goose', label: 'Goose CLI', command: 'goose' },
     { id: 'google-workspace-cli', label: 'Google Workspace CLI', command: 'gws' },
   ]
 

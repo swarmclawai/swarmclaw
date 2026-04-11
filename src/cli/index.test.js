@@ -453,7 +453,10 @@ test('client-side collection lookups fail cleanly when the entity is missing', a
   const stdout = makeWritable()
   const stderr = makeWritable()
 
-  const fetchImpl = async () => jsonResponse([{ id: 'agent-2', name: 'Other Agent' }])
+  const fetchImpl = async () => new Response(JSON.stringify({ error: 'Not found' }), {
+    status: 404,
+    headers: { 'content-type': 'application/json' },
+  })
 
   const exitCode = await runCli(
     ['agents', 'get', 'agent-1'],
@@ -468,7 +471,7 @@ test('client-side collection lookups fail cleanly when the entity is missing', a
 
   assert.equal(exitCode, 1)
   assert.equal(stdout.toString(), '')
-  assert.match(stderr.toString(), /entity not found for id: agent-1/i)
+  assert.match(stderr.toString(), /not found/i)
 })
 
 test('runCli loads request JSON from @file inputs', async () => {

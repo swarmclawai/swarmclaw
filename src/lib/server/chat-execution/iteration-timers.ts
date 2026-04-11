@@ -6,6 +6,12 @@
 export interface IterationTimerOpts {
   /** Milliseconds of idle streaming before aborting the iteration. */
   streamIdleStallMs: number
+  /**
+   * Milliseconds before aborting the initial model prefill phase (before any
+   * streaming token arrives). Defaults to `streamIdleStallMs * 2` when unset.
+   * Local models with large prompts may need extra time for the prefill pass.
+   */
+  initialPrefillStallMs?: number
   /** Milliseconds before forcing a required-tool kickoff reminder. */
   requiredToolKickoffMs: number
   /** Whether the early kickoff enforcement is enabled at all. */
@@ -17,6 +23,7 @@ export class IterationTimers {
   private requiredToolKickoffTimer: ReturnType<typeof setTimeout> | null = null
   private _idleTimedOut = false
   private _requiredToolKickoffTimedOut = false
+  private _receivedFirstStreamEvent = false
 
   constructor(
     private readonly iterationController: AbortController,
@@ -26,13 +33,23 @@ export class IterationTimers {
   get idleTimedOut(): boolean { return this._idleTimedOut }
   get requiredToolKickoffTimedOut(): boolean { return this._requiredToolKickoffTimedOut }
 
+  /**
+   * Arm the idle watchdog. On the first call (before any streaming tokens
+   * arrive), use the longer `initialPrefillStallMs` timeout to allow for
+   * model prefill on local providers. Subsequent re-arms use the standard
+   * `streamIdleStallMs` timeout.
+   */
   armIdleWatchdog(waitingForToolResult: boolean): void {
     this.clearIdleWatchdog()
     if (waitingForToolResult || this.iterationController.signal.aborted) return
+    const timeoutMs = this._receivedFirstStreamEvent
+      ? this.opts.streamIdleStallMs
+      : (this.opts.initialPrefillStallMs ?? this.opts.streamIdleStallMs * 2)
+    this._receivedFirstStreamEvent = true
     this.idleTimer = setTimeout(() => {
       this._idleTimedOut = true
       this.iterationController.abort()
-    }, this.opts.streamIdleStallMs)
+    }, timeoutMs)
   }
 
   clearIdleWatchdog(): void {

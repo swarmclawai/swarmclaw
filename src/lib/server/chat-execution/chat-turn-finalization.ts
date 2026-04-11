@@ -396,6 +396,11 @@ export async function finalizeChatTurn(params: {
     persistField('claudeSessionId', session.claudeSessionId)
     persistField('codexThreadId', session.codexThreadId)
     persistField('opencodeSessionId', session.opencodeSessionId)
+    persistField('geminiSessionId', session.geminiSessionId)
+    persistField('copilotSessionId', session.copilotSessionId)
+    persistField('cursorSessionId', session.cursorSessionId)
+    persistField('qwenSessionId', session.qwenSessionId)
+    persistField('acpSessionId', session.acpSessionId)
 
     const sourceResume = session.delegateResumeIds
     if (sourceResume && typeof sourceResume === 'object') {
@@ -409,6 +414,9 @@ export async function finalizeChatTurn(params: {
         codex: normalizeResumeId(sr.codex ?? cr.codex),
         opencode: normalizeResumeId(sr.opencode ?? cr.opencode),
         gemini: normalizeResumeId(sr.gemini ?? cr.gemini),
+        copilot: normalizeResumeId(sr.copilot ?? cr.copilot),
+        cursor: normalizeResumeId(sr.cursor ?? cr.cursor),
+        qwen: normalizeResumeId(sr.qwen ?? cr.qwen),
       }
       if (JSON.stringify(currentResume) !== JSON.stringify(nextResume)) {
         current.delegateResumeIds = nextResume

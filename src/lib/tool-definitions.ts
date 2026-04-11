@@ -20,7 +20,7 @@ export const AVAILABLE_TOOLS: ToolDefinition[] = [
   { id: 'files', label: 'Files', description: 'Complete file management: read, write, list, move, copy, delete, and send' },
   { id: 'edit_file', label: 'Edit File', description: 'Surgical search-and-replace within files' },
   { id: 'web', label: 'Web', description: 'Search the web, fetch content, and make HTTP API calls' },
-  { id: 'delegate', label: 'Delegate', description: 'Delegate complex tasks to specialized backends (Claude Code, Codex, OpenCode)' },
+  { id: 'delegate', label: 'Delegate', description: 'Delegate complex tasks to specialized backends (Claude Code, Codex, OpenCode, Gemini, Cursor, Qwen)' },
   { id: 'browser', label: 'Browser', description: 'Playwright — browse, scrape, interact with web pages' },
   { id: 'memory', label: 'Memory', description: 'Store and retrieve long-term memories across conversations' },
   { id: 'monitor', label: 'Monitor', description: 'Durable watch jobs: monitor files, endpoints, tasks, and resume agents on triggers' },

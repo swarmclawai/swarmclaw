@@ -5,7 +5,7 @@ import { log } from './logger'
 
 const TAG = 'provider-health'
 
-type DelegateTool = 'delegate_to_claude_code' | 'delegate_to_codex_cli' | 'delegate_to_opencode_cli' | 'delegate_to_gemini_cli'
+type DelegateTool = 'delegate_to_claude_code' | 'delegate_to_codex_cli' | 'delegate_to_opencode_cli' | 'delegate_to_gemini_cli' | 'delegate_to_copilot_cli' | 'delegate_to_cursor_cli' | 'delegate_to_qwen_code_cli'
 
 interface ProviderHealthState {
   failures: number
@@ -119,6 +119,9 @@ function delegateBinary(delegateTool: DelegateTool): string {
   if (delegateTool === 'delegate_to_claude_code') return 'claude'
   if (delegateTool === 'delegate_to_codex_cli') return 'codex'
   if (delegateTool === 'delegate_to_gemini_cli') return 'gemini'
+  if (delegateTool === 'delegate_to_copilot_cli') return 'copilot'
+  if (delegateTool === 'delegate_to_cursor_cli') return 'cursor-agent'
+  if (delegateTool === 'delegate_to_qwen_code_cli') return 'qwen'
   return 'opencode'
 }
 
@@ -146,6 +149,10 @@ function delegateToolReady(delegateTool: DelegateTool): boolean {
     const probe = spawnSync(binary, ['login', 'status'], { encoding: 'utf-8', timeout: 8000 })
     const probeText = `${probe.stdout || ''}\n${probe.stderr || ''}`.toLowerCase()
     ok = (probe.status ?? 1) === 0 && probeText.includes('logged in')
+  } else if (ok && delegateTool === 'delegate_to_cursor_cli') {
+    const probe = spawnSync(binary, ['status'], { encoding: 'utf-8', timeout: 8000 })
+    const probeText = `${probe.stdout || ''}\n${probe.stderr || ''}`.toLowerCase()
+    ok = (probe.status ?? 1) === 0 || probeText.includes('authenticated') || probeText.includes('logged in')
   }
 
   delegateReadyCache.set(delegateTool, { at: now, ok })
@@ -156,6 +163,9 @@ function delegateProviderId(delegateTool: DelegateTool): string {
   if (delegateTool === 'delegate_to_claude_code') return 'claude-cli'
   if (delegateTool === 'delegate_to_codex_cli') return 'codex-cli'
   if (delegateTool === 'delegate_to_gemini_cli') return 'gemini-cli'
+  if (delegateTool === 'delegate_to_copilot_cli') return 'copilot-cli'
+  if (delegateTool === 'delegate_to_cursor_cli') return 'cursor-cli'
+  if (delegateTool === 'delegate_to_qwen_code_cli') return 'qwen-code-cli'
   return 'opencode-cli'
 }
 
@@ -331,14 +341,14 @@ export async function pingOpenClaw(
 
 /**
  * Ping a provider to check reachability. Returns `{ ok, message }`.
- * Skips CLI-based providers (claude-cli, codex-cli, opencode-cli, gemini-cli) — returns ok.
+ * Skips CLI-based providers — returns ok.
  */
 export async function pingProvider(
   provider: string,
   apiKey: string | undefined,
   endpoint: string | undefined,
 ): Promise<{ ok: boolean; message: string }> {
-  const CLI_PROVIDERS = ['claude-cli', 'codex-cli', 'opencode-cli', 'gemini-cli', 'copilot-cli']
+  const CLI_PROVIDERS = ['claude-cli', 'codex-cli', 'opencode-cli', 'gemini-cli', 'copilot-cli', 'cursor-cli', 'qwen-code-cli', 'goose']
   const OPTIONAL_OPENAI_COMPATIBLE_KEY_PROVIDERS = new Set(['hermes'])
   if (CLI_PROVIDERS.includes(provider)) return { ok: true, message: 'CLI provider — skipped.' }
 

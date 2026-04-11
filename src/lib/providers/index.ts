@@ -3,6 +3,9 @@ import { streamCodexCliChat } from './codex-cli'
 import { streamOpenCodeCliChat } from './opencode-cli'
 import { streamGeminiCliChat } from './gemini-cli'
 import { streamCopilotCliChat } from './copilot-cli'
+import { streamCursorCliChat } from './cursor-cli'
+import { streamQwenCodeCliChat } from './qwen-code-cli'
+import { streamGooseChat } from './goose'
 import { streamOpenAiChat } from './openai'
 import { streamOllamaChat } from './ollama'
 import { streamAnthropicChat } from './anthropic'
@@ -147,6 +150,31 @@ export const PROVIDERS: Record<string, BuiltinProviderConfig> = {
     requiresApiKey: false,
     requiresEndpoint: false,
     handler: { streamChat: streamCopilotCliChat },
+  },
+  'cursor-cli': {
+    id: 'cursor-cli',
+    name: 'Cursor Agent CLI',
+    models: ['auto'],
+    requiresApiKey: false,
+    requiresEndpoint: false,
+    handler: { streamChat: streamCursorCliChat },
+  },
+  'qwen-code-cli': {
+    id: 'qwen-code-cli',
+    name: 'Qwen Code CLI',
+    models: ['default'],
+    requiresApiKey: false,
+    requiresEndpoint: false,
+    handler: { streamChat: streamQwenCodeCliChat },
+  },
+  goose: {
+    id: 'goose',
+    name: 'Goose',
+    models: ['default'],
+    requiresApiKey: false,
+    optionalApiKey: true,
+    requiresEndpoint: false,
+    handler: { streamChat: streamGooseChat },
   },
   google: {
     id: 'google',
@@ -355,7 +383,7 @@ export function getProviderList(): ProviderInfo[] {
         ...info,
         models: overrides[info.id] || info.models,
         defaultModels: info.models,
-        supportsModelDiscovery: !['claude-cli', 'codex-cli', 'opencode-cli', 'gemini-cli', 'copilot-cli', 'fireworks'].includes(info.id),
+        supportsModelDiscovery: !['claude-cli', 'codex-cli', 'opencode-cli', 'gemini-cli', 'copilot-cli', 'cursor-cli', 'qwen-code-cli', 'goose', 'fireworks'].includes(info.id),
       }
     })
   

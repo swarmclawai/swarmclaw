@@ -616,7 +616,11 @@ export async function prepareChatTurn(input: ExecuteChatTurnInput): Promise<Prep
   }
 
   const turnHistory = getMessages(sessionId)
-  const classification = !internal
+  // Skip message classification for local/CLI providers to avoid sending
+  // a blocking LLM call to the same single-request provider (e.g. Ollama)
+  const isLocalProvider = sessionForRun.provider === 'ollama' && sessionForRun.ollamaMode !== 'cloud'
+  const skipClassifier = internal || NON_LANGGRAPH_PROVIDER_IDS.has(sessionForRun.provider) || isLocalProvider
+  const classification = !skipClassifier
     ? await classifyMessage({
         sessionId,
         agentId: session.agentId || null,

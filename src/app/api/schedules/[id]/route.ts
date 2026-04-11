@@ -1,10 +1,18 @@
 import { NextResponse } from 'next/server'
 import { notFound } from '@/lib/server/collection-helpers'
 import { safeParseBody } from '@/lib/server/safe-parse-body'
+import { loadSchedule } from '@/lib/server/schedules/schedule-repository'
 import {
   deleteScheduleFromRoute,
   updateScheduleFromRoute,
 } from '@/lib/server/schedules/schedule-route-service'
+
+export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  const schedule = loadSchedule(id)
+  if (!schedule) return notFound()
+  return NextResponse.json(schedule)
+}
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params

@@ -25,7 +25,7 @@ import { markProviderFailure, markProviderSuccess } from '../provider-health'
 import { loadRuntimeSettings } from '../runtime/runtime-settings'
 import { getSessionDepth } from '../agents/subagent-runtime'
 
-const DELEGATE_BACKEND_ORDER: DelegateBackend[] = ['claude', 'codex', 'opencode', 'gemini']
+const DELEGATE_BACKEND_ORDER: DelegateBackend[] = ['claude', 'codex', 'opencode', 'gemini', 'copilot', 'cursor', 'qwen']
 
 interface DelegateContext {
   id?: string
@@ -34,8 +34,8 @@ interface DelegateContext {
   jobId?: string | null
   cwd?: string
   claudeTimeoutMs?: number
-  readStoredDelegateResumeId?: (key: 'claudeCode' | 'codex' | 'opencode' | 'gemini') => string | null
-  persistDelegateResumeId?: (key: 'claudeCode' | 'codex' | 'opencode' | 'gemini', id: string | null | undefined) => void
+  readStoredDelegateResumeId?: (key: 'claudeCode' | 'codex' | 'opencode' | 'gemini' | 'copilot' | 'cursor' | 'qwen') => string | null
+  persistDelegateResumeId?: (key: 'claudeCode' | 'codex' | 'opencode' | 'gemini' | 'copilot' | 'cursor' | 'qwen', id: string | null | undefined) => void
   ctx?: {
     delegationEnabled?: boolean
     delegationTargetMode?: 'all' | 'selected'
@@ -48,7 +48,7 @@ interface DelegateContext {
   hasTool?: (name: string) => boolean
 }
 
-type DelegateBackend = 'claude' | 'codex' | 'opencode' | 'gemini'
+type DelegateBackend = 'claude' | 'codex' | 'opencode' | 'gemini' | 'copilot' | 'cursor' | 'qwen'
 
 interface DelegateRuntimeState {
   child?: ChildProcess | null
@@ -128,8 +128,11 @@ function buildDelegateResumePatch(bctx: DelegateContext) {
     codex: bctx.readStoredDelegateResumeId?.('codex') || null,
     opencode: bctx.readStoredDelegateResumeId?.('opencode') || null,
     gemini: bctx.readStoredDelegateResumeId?.('gemini') || null,
+    copilot: bctx.readStoredDelegateResumeId?.('copilot') || null,
+    cursor: bctx.readStoredDelegateResumeId?.('cursor') || null,
+    qwen: bctx.readStoredDelegateResumeId?.('qwen') || null,
   }
-  const resumeId = resumeIds.claudeCode || resumeIds.codex || resumeIds.opencode || resumeIds.gemini || null
+  const resumeId = resumeIds.claudeCode || resumeIds.codex || resumeIds.opencode || resumeIds.gemini || resumeIds.copilot || resumeIds.cursor || resumeIds.qwen || null
   return { resumeIds, resumeId }
 }
 
@@ -140,6 +143,9 @@ function coerceDelegateBackend(value: unknown): DelegateBackend | null {
   if (['codex', 'codex cli', 'codex-cli', 'codex_cli'].includes(normalized)) return 'codex'
   if (['opencode', 'open code', 'open-code', 'open_code'].includes(normalized)) return 'opencode'
   if (['gemini', 'gemini cli', 'gemini-cli', 'gemini_cli'].includes(normalized)) return 'gemini'
+  if (['copilot', 'copilot cli', 'copilot-cli', 'copilot_cli', 'github copilot'].includes(normalized)) return 'copilot'
+  if (['cursor', 'cursor cli', 'cursor-cli', 'cursor_cli', 'cursor-agent'].includes(normalized)) return 'cursor'
+  if (['qwen', 'qwen code', 'qwen-code', 'qwen_code', 'qwen-code-cli', 'qwen_code_cli'].includes(normalized)) return 'qwen'
   return null
 }
 
@@ -334,18 +340,21 @@ function coerceOptionalBool(value: unknown): boolean | null {
 }
 
 function resumeStorageKeyForBackend(
-  backend: 'claude' | 'codex' | 'opencode' | 'gemini',
-): 'claudeCode' | 'codex' | 'opencode' | 'gemini' {
+  backend: 'claude' | 'codex' | 'opencode' | 'gemini' | 'copilot' | 'cursor' | 'qwen',
+): 'claudeCode' | 'codex' | 'opencode' | 'gemini' | 'copilot' | 'cursor' | 'qwen' {
   if (backend === 'claude') return 'claudeCode'
   if (backend === 'codex') return 'codex'
   if (backend === 'opencode') return 'opencode'
-  return 'gemini'
+  if (backend === 'gemini') return 'gemini'
+  if (backend === 'copilot') return 'copilot'
+  if (backend === 'cursor') return 'cursor'
+  return 'qwen'
 }
 
 export function resolveDelegateResumeConfig(
   normalized: Record<string, unknown>,
-  backend: 'claude' | 'codex' | 'opencode' | 'gemini',
-  bctx: { readStoredDelegateResumeId?: (key: 'claudeCode' | 'codex' | 'opencode' | 'gemini') => string | null },
+  backend: 'claude' | 'codex' | 'opencode' | 'gemini' | 'copilot' | 'cursor' | 'qwen',
+  bctx: { readStoredDelegateResumeId?: (key: 'claudeCode' | 'codex' | 'opencode' | 'gemini' | 'copilot' | 'cursor' | 'qwen') => string | null },
 ): { resume: boolean; resumeId: string } {
   const explicitResumeId = typeof normalized.resumeId === 'string' ? normalized.resumeId.trim() : ''
   if (explicitResumeId) return { resume: true, resumeId: explicitResumeId }
@@ -415,6 +424,21 @@ const DELEGATE_BACKEND_ADAPTERS: Record<DelegateBackend, DelegateBackendAdapter>
     binaryName: 'gemini',
     run: runGeminiDelegate,
   },
+  copilot: {
+    backend: 'copilot',
+    binaryName: 'copilot',
+    run: runCopilotDelegate,
+  },
+  cursor: {
+    backend: 'cursor',
+    binaryName: 'cursor-agent',
+    run: runCursorDelegate,
+  },
+  qwen: {
+    backend: 'qwen',
+    binaryName: 'qwen',
+    run: runQwenDelegate,
+  },
 }
 
 async function runDelegateBackend(args: Record<string, unknown>, bctx: DelegateContext, runtime?: DelegateRuntimeState): Promise<DelegateBackendResult> {
@@ -433,7 +457,10 @@ function providerIdForBackend(backend: DelegateBackend): string {
   if (backend === 'claude') return 'claude-cli'
   if (backend === 'codex') return 'codex-cli'
   if (backend === 'opencode') return 'opencode-cli'
-  return 'gemini-cli'
+  if (backend === 'gemini') return 'gemini-cli'
+  if (backend === 'copilot') return 'copilot-cli'
+  if (backend === 'cursor') return 'cursor-cli'
+  return 'qwen-code-cli'
 }
 
 function fallbackOrderForBackend(requested: DelegateBackend): DelegateBackend[] {
@@ -661,6 +688,42 @@ function parseCodexOutputText(ev: Record<string, unknown>): string | null {
         if (joined) return joined
       }
     }
+  }
+  return null
+}
+
+function parseCursorOutputText(ev: Record<string, unknown>): string | null {
+  if (typeof ev.result === 'string' && ev.result.trim()) return ev.result
+  if (typeof ev.text === 'string' && ev.text.trim()) return ev.text
+  if (typeof ev.message === 'string' && ev.message.trim()) return ev.message
+  const message = ev.message
+  if (message && typeof message === 'object') {
+    const record = message as Record<string, unknown>
+    if (typeof record.text === 'string' && record.text.trim()) return record.text
+    if (typeof record.content === 'string' && record.content.trim()) return record.content
+  }
+  if (ev.type === 'delta') {
+    const delta = ev.delta as Record<string, unknown> | undefined
+    if (typeof delta?.text === 'string' && delta.text.trim()) return delta.text
+  }
+  return null
+}
+
+function parseQwenOutputText(ev: Record<string, unknown>): string | null {
+  if (typeof ev.result === 'string' && ev.result.trim()) return ev.result
+  if (ev.type === 'content_block_delta') {
+    const delta = ev.delta as Record<string, unknown> | undefined
+    if (typeof delta?.text === 'string' && delta.text.trim()) return delta.text
+  }
+  if (ev.type === 'assistant') {
+    const message = ev.message as Record<string, unknown> | undefined
+    const content = Array.isArray(message?.content) ? message.content : []
+    const text = content
+      .filter((entry): entry is Record<string, unknown> => !!entry && typeof entry === 'object')
+      .map((entry) => typeof entry.text === 'string' ? entry.text : '')
+      .join('')
+      .trim()
+    if (text) return text
   }
   return null
 }
@@ -920,6 +983,263 @@ async function runGeminiDelegate(binary: string, task: string, resume: boolean, 
   }
 }
 
+async function runCopilotDelegate(binary: string, task: string, resume: boolean, resumeId: string, bctx: DelegateContext, runtime?: DelegateRuntimeState): Promise<DelegateBackendResult> {
+  try {
+    const env = buildCliEnv()
+    const auth = probeCliAuth(binary, 'copilot', env, bctx.cwd)
+    if (!auth.authenticated) {
+      return buildDelegateFailure('copilot', auth.errorMessage || 'Copilot CLI is not authenticated.', 'auth')
+    }
+
+    const storedResumeId = bctx.readStoredDelegateResumeId?.('copilot')
+    const resumeIdToUse = resumeId?.trim() || (resume ? storedResumeId : null)
+
+    return await new Promise<DelegateBackendResult>((resolve) => {
+      const args = ['-p', task, '--output-format=json', '-s', '--yolo']
+      if (resumeIdToUse) args.push(`--resume=${resumeIdToUse}`)
+
+      const child = spawn(binary, args, { cwd: bctx.cwd, env, stdio: ['ignore', 'pipe', 'pipe'] })
+      bindDelegateRuntime(runtime, child)
+      let stdoutBuf = ''
+      let stderrBuf = ''
+      let responseText = ''
+      let discoveredId: string | null = null
+      let settled = false
+
+      const finish = (result: DelegateBackendResult) => {
+        if (settled) return
+        settled = true
+        resolve(result)
+      }
+
+      const timeoutHandle = setTimeout(() => {
+        try { child.kill('SIGTERM') } catch { /* ignore */ }
+      }, bctx.claudeTimeoutMs || 300000)
+
+      child.stdout?.on('data', (chunk) => {
+        stdoutBuf += chunk.toString()
+        const lines = stdoutBuf.split('\n')
+        stdoutBuf = lines.pop() || ''
+        for (const line of lines) {
+          const trimmed = line.trim()
+          if (!trimmed) continue
+          try {
+            const ev = JSON.parse(trimmed) as Record<string, unknown>
+            const sid = typeof ev.session_id === 'string'
+              ? ev.session_id
+              : typeof ev.sessionId === 'string'
+                ? ev.sessionId
+                : null
+            if (sid) discoveredId = sid
+            const text = parseCursorOutputText(ev)
+            if (text) {
+              if (String(ev.type || '').includes('result') || String(ev.type || '').includes('completed')) responseText = text
+              else responseText += text
+            }
+          } catch {
+            responseText += `${line}\n`
+          }
+        }
+      })
+
+      child.stderr?.on('data', (chunk) => {
+        stderrBuf += chunk.toString()
+        if (stderrBuf.length > 16_000) stderrBuf = stderrBuf.slice(-16_000)
+      })
+
+      child.on('close', (code, signal) => {
+        clearTimeout(timeoutHandle)
+        if (discoveredId) bctx.persistDelegateResumeId?.('copilot', discoveredId)
+        const output = responseText.trim()
+        if (output) return finish(buildDelegateSuccess('copilot', output))
+        const stderr = stderrBuf.trim()
+        if (stderr) return finish(buildDelegateFailure('copilot', stderr))
+        return finish(buildDelegateFailure('copilot', `Copilot exited with code ${code ?? 'unknown'}${signal ? ` (${signal})` : ''}.`, 'runtime'))
+      })
+
+      child.on('error', (err) => {
+        clearTimeout(timeoutHandle)
+        finish(buildDelegateFailure('copilot', err.message, 'spawn'))
+      })
+    })
+  } catch (err: unknown) {
+    return buildDelegateFailure('copilot', errorMessage(err), 'runtime')
+  }
+}
+
+async function runCursorDelegate(binary: string, task: string, resume: boolean, resumeId: string, bctx: DelegateContext, runtime?: DelegateRuntimeState): Promise<DelegateBackendResult> {
+  try {
+    const env = buildCliEnv()
+    const auth = probeCliAuth(binary, 'cursor', env, bctx.cwd)
+    if (!auth.authenticated) {
+      return buildDelegateFailure('cursor', auth.errorMessage || 'Cursor Agent CLI is not authenticated.', 'auth')
+    }
+
+    const storedResumeId = bctx.readStoredDelegateResumeId?.('cursor')
+    const resumeIdToUse = resumeId?.trim() || (resume ? storedResumeId : null)
+
+    return await new Promise<DelegateBackendResult>((resolve) => {
+      const args = ['--print', '--output-format', 'stream-json']
+      if (resumeIdToUse) args.push('--resume', resumeIdToUse)
+      args.push(task)
+
+      const child = spawn(binary, args, { cwd: bctx.cwd, env, stdio: ['ignore', 'pipe', 'pipe'] })
+      bindDelegateRuntime(runtime, child)
+      let stdoutBuf = ''
+      let stderrBuf = ''
+      let responseText = ''
+      let discoveredId: string | null = null
+      let settled = false
+
+      const finish = (result: DelegateBackendResult) => {
+        if (settled) return
+        settled = true
+        resolve(result)
+      }
+
+      const timeoutHandle = setTimeout(() => {
+        try { child.kill('SIGTERM') } catch { /* ignore */ }
+      }, bctx.claudeTimeoutMs || 300000)
+
+      child.stdout?.on('data', (chunk) => {
+        stdoutBuf += chunk.toString()
+        const lines = stdoutBuf.split('\n')
+        stdoutBuf = lines.pop() || ''
+        for (const line of lines) {
+          const trimmed = line.trim()
+          if (!trimmed) continue
+          try {
+            const ev = JSON.parse(trimmed) as Record<string, unknown>
+            const sid = typeof ev.session_id === 'string'
+              ? ev.session_id
+              : typeof ev.sessionId === 'string'
+                ? ev.sessionId
+                : typeof ev.thread_id === 'string'
+                  ? ev.thread_id
+                  : null
+            if (sid) discoveredId = sid
+            const text = parseCursorOutputText(ev)
+            if (text) {
+              if (String(ev.type || '').includes('result') || String(ev.type || '').includes('completed')) responseText = text
+              else responseText += text
+            }
+          } catch {
+            responseText += `${line}\n`
+          }
+        }
+      })
+
+      child.stderr?.on('data', (chunk) => {
+        stderrBuf += chunk.toString()
+        if (stderrBuf.length > 16_000) stderrBuf = stderrBuf.slice(-16_000)
+      })
+
+      child.on('close', (code, signal) => {
+        clearTimeout(timeoutHandle)
+        if (discoveredId) bctx.persistDelegateResumeId?.('cursor', discoveredId)
+        const output = responseText.trim()
+        if (output) return finish(buildDelegateSuccess('cursor', output))
+        const stderr = stderrBuf.trim()
+        if (stderr) return finish(buildDelegateFailure('cursor', stderr))
+        return finish(buildDelegateFailure('cursor', `Cursor exited with code ${code ?? 'unknown'}${signal ? ` (${signal})` : ''}.`, 'runtime'))
+      })
+
+      child.on('error', (err) => {
+        clearTimeout(timeoutHandle)
+        finish(buildDelegateFailure('cursor', err.message, 'spawn'))
+      })
+    })
+  } catch (err: unknown) {
+    return buildDelegateFailure('cursor', errorMessage(err), 'runtime')
+  }
+}
+
+async function runQwenDelegate(binary: string, task: string, resume: boolean, resumeId: string, bctx: DelegateContext, runtime?: DelegateRuntimeState): Promise<DelegateBackendResult> {
+  try {
+    const env = buildCliEnv()
+    const auth = probeCliAuth(binary, 'qwen', env, bctx.cwd)
+    if (!auth.authenticated) {
+      return buildDelegateFailure('qwen', auth.errorMessage || 'Qwen Code CLI is not configured.', 'auth')
+    }
+
+    const storedResumeId = bctx.readStoredDelegateResumeId?.('qwen')
+    const resumeIdToUse = resumeId?.trim() || (resume ? storedResumeId : null)
+
+    return await new Promise<DelegateBackendResult>((resolve) => {
+      const args = ['-p', task, '--output-format', 'stream-json', '--include-partial-messages', '--yolo']
+      if (resumeIdToUse) args.push('--resume', resumeIdToUse)
+
+      const child = spawn(binary, args, { cwd: bctx.cwd, env, stdio: ['ignore', 'pipe', 'pipe'] })
+      bindDelegateRuntime(runtime, child)
+      let stdoutBuf = ''
+      let stderrBuf = ''
+      let responseText = ''
+      let discoveredId: string | null = null
+      let settled = false
+
+      const finish = (result: DelegateBackendResult) => {
+        if (settled) return
+        settled = true
+        resolve(result)
+      }
+
+      const timeoutHandle = setTimeout(() => {
+        try { child.kill('SIGTERM') } catch { /* ignore */ }
+      }, bctx.claudeTimeoutMs || 300000)
+
+      child.stdout?.on('data', (chunk) => {
+        stdoutBuf += chunk.toString()
+        const lines = stdoutBuf.split('\n')
+        stdoutBuf = lines.pop() || ''
+        for (const line of lines) {
+          const trimmed = line.trim()
+          if (!trimmed) continue
+          try {
+            const ev = JSON.parse(trimmed) as Record<string, unknown>
+            const sid = typeof ev.session_id === 'string'
+              ? ev.session_id
+              : typeof ev.sessionId === 'string'
+                ? ev.sessionId
+                : null
+            if (sid) discoveredId = sid
+            const text = parseQwenOutputText(ev)
+            if (text) {
+              if (ev.type === 'assistant' || ev.type === 'result') responseText = text
+              else responseText += text
+            } else if (ev.type === 'result' && ev.subtype === 'error') {
+              stderrBuf += `${typeof ev.result === 'string' ? ev.result : 'Qwen Code error'}\n`
+            }
+          } catch {
+            responseText += `${line}\n`
+          }
+        }
+      })
+
+      child.stderr?.on('data', (chunk) => {
+        stderrBuf += chunk.toString()
+        if (stderrBuf.length > 16_000) stderrBuf = stderrBuf.slice(-16_000)
+      })
+
+      child.on('close', (code, signal) => {
+        clearTimeout(timeoutHandle)
+        if (discoveredId) bctx.persistDelegateResumeId?.('qwen', discoveredId)
+        const output = responseText.trim()
+        if (output) return finish(buildDelegateSuccess('qwen', output))
+        const stderr = stderrBuf.trim()
+        if (stderr) return finish(buildDelegateFailure('qwen', stderr))
+        return finish(buildDelegateFailure('qwen', `Qwen Code exited with code ${code ?? 'unknown'}${signal ? ` (${signal})` : ''}.`, 'runtime'))
+      })
+
+      child.on('error', (err) => {
+        clearTimeout(timeoutHandle)
+        finish(buildDelegateFailure('qwen', err.message, 'spawn'))
+      })
+    })
+  } catch (err: unknown) {
+    return buildDelegateFailure('qwen', errorMessage(err), 'runtime')
+  }
+}
+
 async function runClaudeDelegate(binary: string, task: string, resume: boolean, resumeId: string, bctx: DelegateContext, runtime?: DelegateRuntimeState): Promise<DelegateBackendResult> {
   try {
     const env = buildCliEnv()
@@ -984,19 +1304,19 @@ const DelegateExtension: Extension = {
   name: 'Core Delegate',
   description: 'Delegate complex multi-file tasks to specialized CLI backends or other agents.',
   hooks: {
-    getCapabilityDescription: () => 'I can hand off coding work to Claude Code, Codex, OpenCode, or Gemini CLI (`delegate`) for file creation, refactoring, debugging, code generation, and multi-file edits. Resume IDs may come back via `[delegate_meta]`.',
+    getCapabilityDescription: () => 'I can hand off coding work to Claude Code, Codex, OpenCode, Gemini CLI, Cursor CLI, or Qwen Code CLI (`delegate`) for file creation, refactoring, debugging, code generation, and multi-file edits. Resume IDs may come back via `[delegate_meta]`.',
     getOperatingGuidance: () => ['CRITICAL: `execute_command` (not delegation) for running servers, installs, scripts. Delegation sessions end and kill processes.', 'Delegate for code tasks: writing/creating files, refactors, debugging, generation, test suites, data exports to files.'],
   } as ExtensionHooks,
   tools: [
     {
       name: 'delegate',
-      description: 'Delegate to a specialized backend (Claude, Codex, OpenCode, Gemini) for code tasks: writing files, refactoring, debugging, code generation, and multi-file edits. Supports background jobs with action=status|list|wait|cancel.',
+      description: 'Delegate to a specialized backend (Claude, Codex, OpenCode, Gemini, Cursor, Qwen) for code tasks: writing files, refactoring, debugging, code generation, and multi-file edits. Supports background jobs with action=status|list|wait|cancel.',
       parameters: {
         type: 'object',
         properties: {
           action: { type: 'string', enum: ['start', 'status', 'list', 'wait', 'cancel'] },
           task: { type: 'string' },
-          backend: { type: 'string', enum: ['claude', 'codex', 'opencode', 'gemini'] },
+          backend: { type: 'string', enum: ['claude', 'codex', 'opencode', 'gemini', 'copilot', 'cursor', 'qwen'] },
           resume: { type: 'boolean' },
           resumeId: { type: 'string', description: 'Optional explicit session/thread ID to resume' },
           jobId: { type: 'string' },

@@ -55,7 +55,7 @@ function toOpenAiCompatibleEndpoint(raw: string | null | undefined, fallback: st
 }
 
 function supportsBuiltInModelDiscovery(providerId: string): boolean {
-  return !['claude-cli', 'codex-cli', 'opencode-cli'].includes(providerId)
+  return !['claude-cli', 'codex-cli', 'opencode-cli', 'gemini-cli', 'copilot-cli', 'cursor-cli', 'qwen-code-cli', 'goose'].includes(providerId)
 }
 
 function normalizeGoogleModelsEndpoint(raw: string | null | undefined): string {

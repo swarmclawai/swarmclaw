@@ -281,6 +281,9 @@ function buildEmptyDelegateResumeIds(): NonNullable<Session['delegateResumeIds']
     codex: null,
     opencode: null,
     gemini: null,
+    copilot: null,
+    cursor: null,
+    qwen: null,
   }
 }
 
@@ -302,6 +305,11 @@ export function buildSyntheticSession(agent: Agent, chatroomId: string): Session
     claudeSessionId: null,
     codexThreadId: null,
     opencodeSessionId: null,
+    geminiSessionId: null,
+    copilotSessionId: null,
+    cursorSessionId: null,
+    qwenSessionId: null,
+    acpSessionId: null,
     delegateResumeIds: buildEmptyDelegateResumeIds(),
     messages: [],
     createdAt: now,
@@ -352,6 +360,11 @@ export function ensureSyntheticSession(agent: Agent, chatroomId: string): Sessio
   }
   if (session.codexThreadId === undefined) session.codexThreadId = null
   if (session.opencodeSessionId === undefined) session.opencodeSessionId = null
+  if (session.geminiSessionId === undefined) session.geminiSessionId = null
+  if (session.copilotSessionId === undefined) session.copilotSessionId = null
+  if (session.cursorSessionId === undefined) session.cursorSessionId = null
+  if (session.qwenSessionId === undefined) session.qwenSessionId = null
+  if (session.acpSessionId === undefined) session.acpSessionId = null
   saveSession(sessionId, session)
   return session
 }

@@ -5,6 +5,8 @@ export interface TaskResumeState {
   claudeSessionId: string | null
   codexThreadId: string | null
   opencodeSessionId: string | null
+  cursorSessionId?: string | null
+  qwenSessionId?: string | null
   delegateResumeIds: NonNullable<Session['delegateResumeIds']>
 }
 
@@ -26,6 +28,9 @@ function buildEmptyDelegateResumeIds(): NonNullable<Session['delegateResumeIds']
     codex: null,
     opencode: null,
     gemini: null,
+    copilot: null,
+    cursor: null,
+    qwen: null,
   }
 }
 
@@ -43,6 +48,8 @@ function hasResumeState(state: TaskResumeState | null | undefined): state is Tas
     || state.delegateResumeIds.codex
     || state.delegateResumeIds.opencode
     || state.delegateResumeIds.gemini
+    || state.delegateResumeIds.cursor
+    || state.delegateResumeIds.qwen
   )
 }
 
@@ -59,16 +66,22 @@ export function extractTaskResumeState(task: Partial<BoardTask> | null | undefin
     || (legacyProvider === 'opencode-cli' ? legacyResumeId : null)
   const geminiSessionId = normalizeResumeHandle(task.geminiResumeId)
     || (legacyProvider === 'gemini-cli' ? legacyResumeId : null)
+  const cursorSessionId = legacyProvider === 'cursor-cli' ? legacyResumeId : null
+  const qwenSessionId = legacyProvider === 'qwen-code-cli' ? legacyResumeId : null
 
   const resume = {
     claudeSessionId,
     codexThreadId,
     opencodeSessionId,
+    cursorSessionId,
+    qwenSessionId,
     delegateResumeIds: {
       claudeCode: claudeSessionId,
       codex: codexThreadId,
       opencode: opencodeSessionId,
       gemini: geminiSessionId,
+      cursor: cursorSessionId,
+      qwen: qwenSessionId,
     },
   } satisfies TaskResumeState
 
@@ -81,6 +94,8 @@ export function extractSessionResumeState(session: Partial<Session> | null | und
   const claudeSessionId = normalizeResumeHandle(session.claudeSessionId)
   const codexThreadId = normalizeResumeHandle(session.codexThreadId)
   const opencodeSessionId = normalizeResumeHandle(session.opencodeSessionId)
+  const cursorSessionId = normalizeResumeHandle(session.cursorSessionId)
+  const qwenSessionId = normalizeResumeHandle(session.qwenSessionId)
   const delegateResumeIds = session.delegateResumeIds && typeof session.delegateResumeIds === 'object'
     ? { ...buildEmptyDelegateResumeIds(), ...session.delegateResumeIds }
     : buildEmptyDelegateResumeIds()
@@ -89,11 +104,16 @@ export function extractSessionResumeState(session: Partial<Session> | null | und
     claudeSessionId,
     codexThreadId,
     opencodeSessionId,
+    cursorSessionId,
+    qwenSessionId,
     delegateResumeIds: {
       claudeCode: normalizeResumeHandle(delegateResumeIds.claudeCode) || claudeSessionId,
       codex: normalizeResumeHandle(delegateResumeIds.codex) || codexThreadId,
       opencode: normalizeResumeHandle(delegateResumeIds.opencode) || opencodeSessionId,
       gemini: normalizeResumeHandle(delegateResumeIds.gemini),
+      cursor: normalizeResumeHandle(delegateResumeIds.cursor) || cursorSessionId,
+      qwen: normalizeResumeHandle(delegateResumeIds.qwen) || qwenSessionId,
+      copilot: normalizeResumeHandle(delegateResumeIds.copilot),
     },
   } satisfies TaskResumeState
 
@@ -140,10 +160,12 @@ export function applyTaskResumeStateToSession(session: Session, resume: TaskResu
   if (!hasResumeState(resume)) return false
 
   let changed = false
-  const directFields: Array<['claudeSessionId' | 'codexThreadId' | 'opencodeSessionId', string | null]> = [
+  const directFields: Array<['claudeSessionId' | 'codexThreadId' | 'opencodeSessionId' | 'cursorSessionId' | 'qwenSessionId', string | null]> = [
     ['claudeSessionId', resume.claudeSessionId],
     ['codexThreadId', resume.codexThreadId],
     ['opencodeSessionId', resume.opencodeSessionId],
+    ['cursorSessionId', resume.cursorSessionId ?? null],
+    ['qwenSessionId', resume.qwenSessionId ?? null],
   ]
   for (const [key, value] of directFields) {
     if (!value || session[key] === value) continue

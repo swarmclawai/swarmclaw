@@ -479,7 +479,7 @@ export function buildProgram(): Command {
     .description('SwarmClaw CLI')
     .option('-u, --url <url>', 'SwarmClaw base URL', DEFAULT_BASE_URL)
     .option('-k, --key <key>', 'SwarmClaw access key', DEFAULT_ACCESS_KEY)
-    .option('--raw', 'Print compact JSON output')
+    .option('--raw, --json', 'Print compact JSON output')
     .showHelpAfterError()
 
   const agents = program.command('agents').description('Manage agents')

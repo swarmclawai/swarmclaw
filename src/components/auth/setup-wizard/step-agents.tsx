@@ -12,6 +12,24 @@ import { AVAILABLE_TOOLS, PLATFORM_TOOLS } from '@/lib/tool-definitions'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
 import { isOrchestratorProviderEligible } from '@/lib/orchestrator-config'
 
+const SETUP_PROVIDERS_WITH_MODEL_DISCOVERY = new Set([
+  'openai',
+  'openrouter',
+  'anthropic',
+  'google',
+  'deepseek',
+  'groq',
+  'together',
+  'mistral',
+  'xai',
+  'fireworks',
+  'nebius',
+  'deepinfra',
+  'ollama',
+  'openclaw',
+  'hermes',
+])
+
 /* ── Model combobox: search discovered models or type a custom one ── */
 
 function ModelCombobox({
@@ -36,7 +54,7 @@ function ModelCombobox({
   const fetched = useRef<string | null>(null)
 
   const effectiveEndpoint = endpointOverride || provider?.endpoint || null
-  const supportsModelDiscovery = Boolean(provider && provider.setupProvider !== 'custom')
+  const supportsModelDiscovery = Boolean(provider && SETUP_PROVIDERS_WITH_MODEL_DISCOVERY.has(provider.setupProvider))
 
   const fetchModels = useCallback(async (force?: boolean) => {
     if (!provider || !supportsModelDiscovery) return

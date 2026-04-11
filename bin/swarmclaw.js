@@ -19,6 +19,11 @@ const TS_CLI_ACTIONS = Object.freeze({
   webhooks: new Set(['list', 'get', 'create', 'update', 'delete', 'trigger']),
 })
 
+const LEGACY_TS_CLI_ALIAS_MAP = Object.freeze({
+  '--base-url': '--url',
+  '--access-key': '--key',
+})
+
 function shouldUseLegacyTsCli(argv) {
   const group = argv[0]
   const action = argv[1]
@@ -62,9 +67,37 @@ function buildLegacyTsCliArgs(cliPath, argv, options = {}) {
   return null
 }
 
+function normalizeLegacyTsCliArgv(argv) {
+  const normalized = []
+
+  for (const token of argv) {
+    if (!token.startsWith('--')) {
+      normalized.push(token)
+      continue
+    }
+
+    const eqIndex = token.indexOf('=')
+    const flag = eqIndex > -1 ? token.slice(0, eqIndex) : token
+    const mappedFlag = LEGACY_TS_CLI_ALIAS_MAP[flag]
+
+    if (!mappedFlag) {
+      normalized.push(token)
+      continue
+    }
+
+    if (eqIndex > -1) {
+      normalized.push(`${mappedFlag}=${token.slice(eqIndex + 1)}`)
+    } else {
+      normalized.push(mappedFlag)
+    }
+  }
+
+  return normalized
+}
+
 function runLegacyTsCli(argv) {
   const cliPath = path.join(__dirname, '..', 'src', 'cli', 'index.ts')
-  const args = buildLegacyTsCliArgs(cliPath, argv)
+  const args = buildLegacyTsCliArgs(cliPath, normalizeLegacyTsCliArgv(argv))
   const env = normalizeLegacyCliEnv(process.env)
   if (!args) {
     process.stderr.write('Legacy CLI commands require Node 22.6+ or an available local tsx runtime.\n')
@@ -237,6 +270,7 @@ if (require.main === module) {
 module.exports = {
   buildLegacyTsCliArgs,
   hasTsxRuntime,
+  normalizeLegacyTsCliArgv,
   TS_CLI_ACTIONS,
   normalizeLegacyCliEnv,
   printPackageVersion,

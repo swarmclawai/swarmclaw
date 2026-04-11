@@ -2,8 +2,10 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { resolveSetupDone } from './setup-done-detection'
 
-test('resolveSetupDone returns true when both fetches failed', () => {
-  assert.equal(resolveSetupDone({}, {}, true), true)
+test('resolveSetupDone returns false when both fetches failed so the wizard is shown', () => {
+  // When both API calls fail we cannot determine setup state — default to
+  // showing the wizard so the user doesn't land in a broken app.
+  assert.equal(resolveSetupDone({}, {}, true), false)
 })
 
 test('resolveSetupDone returns true when setupCompleted is true', () => {

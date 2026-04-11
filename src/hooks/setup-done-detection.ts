@@ -7,7 +7,7 @@ export function resolveSetupDone(
   creds: Record<string, unknown>,
   bothFailed: boolean,
 ): boolean {
-  if (bothFailed) return true
+  if (bothFailed) return false
   const hasCreds = Object.keys(creds).length > 0
   return settings.setupCompleted === true || hasCreds
 }

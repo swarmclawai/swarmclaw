@@ -503,6 +503,9 @@ const FORCED_DELEGATION_TOOLS: DelegateTool[] = [
   'delegate_to_codex_cli',
   'delegate_to_opencode_cli',
   'delegate_to_gemini_cli',
+  'delegate_to_copilot_cli',
+  'delegate_to_cursor_cli',
+  'delegate_to_qwen_code_cli',
 ]
 
 export async function runPostLlmToolRouting(

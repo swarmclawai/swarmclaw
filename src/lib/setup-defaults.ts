@@ -4,6 +4,14 @@
  */
 
 export type SetupProvider =
+  | 'claude-cli'
+  | 'codex-cli'
+  | 'opencode-cli'
+  | 'gemini-cli'
+  | 'copilot-cli'
+  | 'cursor-cli'
+  | 'qwen-code-cli'
+  | 'goose'
   | 'anthropic'
   | 'openai'
   | 'openrouter'
@@ -41,6 +49,82 @@ export interface SetupProviderOption {
 }
 
 export const SETUP_PROVIDERS: SetupProviderOption[] = [
+  {
+    id: 'claude-cli',
+    name: 'Claude Code CLI',
+    description: 'Anthropic’s coding agent with native tools, strong edits, and first-class CLI workflows.',
+    requiresKey: false,
+    supportsEndpoint: false,
+    badge: 'CLI',
+    icon: 'C',
+    modelLibraryUrl: 'https://docs.anthropic.com/en/docs/about-claude/models',
+  },
+  {
+    id: 'codex-cli',
+    name: 'OpenAI Codex CLI',
+    description: 'OpenAI’s terminal coding agent with resume support and structured headless output.',
+    requiresKey: false,
+    supportsEndpoint: false,
+    badge: 'CLI',
+    icon: 'O',
+    modelLibraryUrl: 'https://platform.openai.com/docs/models',
+  },
+  {
+    id: 'opencode-cli',
+    name: 'OpenCode CLI',
+    description: 'A flexible coding CLI that can route across multiple model backends.',
+    requiresKey: false,
+    supportsEndpoint: false,
+    badge: 'CLI',
+    icon: 'O',
+  },
+  {
+    id: 'gemini-cli',
+    name: 'Gemini CLI',
+    description: 'Google’s terminal coding agent with project-aware headless mode and resume support.',
+    requiresKey: false,
+    supportsEndpoint: false,
+    badge: 'CLI',
+    icon: 'G',
+    modelLibraryUrl: 'https://ai.google.dev/gemini-api/docs/models',
+  },
+  {
+    id: 'copilot-cli',
+    name: 'GitHub Copilot CLI',
+    description: 'GitHub’s multi-model terminal agent for coding and automation.',
+    requiresKey: false,
+    supportsEndpoint: false,
+    badge: 'CLI',
+    icon: 'P',
+  },
+  {
+    id: 'cursor-cli',
+    name: 'Cursor Agent CLI',
+    description: 'Cursor’s terminal agent with resume support, JSON output, and Cursor-native coding workflows.',
+    requiresKey: false,
+    supportsEndpoint: false,
+    badge: 'CLI',
+    icon: 'U',
+  },
+  {
+    id: 'qwen-code-cli',
+    name: 'Qwen Code CLI',
+    description: 'Qwen’s terminal coding agent with structured headless mode and multi-provider model config.',
+    requiresKey: false,
+    supportsEndpoint: false,
+    badge: 'CLI',
+    icon: 'Q',
+  },
+  {
+    id: 'goose',
+    name: 'Goose',
+    description: 'A runtime-managed terminal agent with extensions, session history, and ACP support.',
+    requiresKey: false,
+    supportsEndpoint: false,
+    optionalKey: true,
+    badge: 'Runtime',
+    icon: 'G',
+  },
   {
     id: 'openai',
     name: 'OpenAI',
@@ -248,6 +332,9 @@ export const STARTER_AGENT_TOOLS = [
   'claude_code',
   'codex_cli',
   'opencode_cli',
+  'gemini_cli',
+  'cursor_cli',
+  'qwen_code_cli',
   'openclaw_workspace',
 ]
 
@@ -429,6 +516,9 @@ const BUILDER_AGENT_TOOLS = [
   'claude_code',
   'codex_cli',
   'opencode_cli',
+  'gemini_cli',
+  'cursor_cli',
+  'qwen_code_cli',
 ]
 
 const OPERATOR_AGENT_TOOLS = STARTER_AGENT_TOOLS
@@ -618,6 +708,62 @@ export interface DefaultAgentConfig {
 }
 
 export const DEFAULT_AGENTS: Record<SetupProvider, DefaultAgentConfig> = {
+  'claude-cli': {
+    name: 'Claude CLI',
+    description: 'A helpful assistant powered by Claude Code CLI.',
+    systemPrompt: SWARMCLAW_ASSISTANT_PROMPT,
+    model: 'claude-sonnet-4-6',
+    tools: STARTER_AGENT_TOOLS,
+  },
+  'codex-cli': {
+    name: 'Codex CLI',
+    description: 'A helpful assistant powered by OpenAI Codex CLI.',
+    systemPrompt: SWARMCLAW_ASSISTANT_PROMPT,
+    model: 'gpt-5.3-codex',
+    tools: STARTER_AGENT_TOOLS,
+  },
+  'opencode-cli': {
+    name: 'OpenCode',
+    description: 'A helpful assistant powered by OpenCode CLI.',
+    systemPrompt: SWARMCLAW_ASSISTANT_PROMPT,
+    model: 'claude-sonnet-4-6',
+    tools: STARTER_AGENT_TOOLS,
+  },
+  'gemini-cli': {
+    name: 'Gemini CLI',
+    description: 'A helpful assistant powered by Gemini CLI.',
+    systemPrompt: SWARMCLAW_ASSISTANT_PROMPT,
+    model: 'gemini-2.5-pro',
+    tools: STARTER_AGENT_TOOLS,
+  },
+  'copilot-cli': {
+    name: 'Copilot CLI',
+    description: 'A helpful assistant powered by GitHub Copilot CLI.',
+    systemPrompt: SWARMCLAW_ASSISTANT_PROMPT,
+    model: 'claude-sonnet-4-5',
+    tools: STARTER_AGENT_TOOLS,
+  },
+  'cursor-cli': {
+    name: 'Cursor CLI',
+    description: 'A helpful assistant powered by Cursor Agent CLI.',
+    systemPrompt: SWARMCLAW_ASSISTANT_PROMPT,
+    model: 'auto',
+    tools: STARTER_AGENT_TOOLS,
+  },
+  'qwen-code-cli': {
+    name: 'Qwen Code',
+    description: 'A helpful assistant powered by Qwen Code CLI.',
+    systemPrompt: SWARMCLAW_ASSISTANT_PROMPT,
+    model: 'default',
+    tools: STARTER_AGENT_TOOLS,
+  },
+  goose: {
+    name: 'Goose',
+    description: 'A helpful assistant powered by Goose.',
+    systemPrompt: SWARMCLAW_ASSISTANT_PROMPT,
+    model: 'default',
+    tools: STARTER_AGENT_TOOLS,
+  },
   anthropic: {
     name: 'Claude',
     description: 'A helpful Claude-powered assistant.',

@@ -113,6 +113,17 @@ test('legacy-routed binary commands fall back to platform-api-key.txt', () => {
   fs.rmSync(tmpDir, { recursive: true, force: true })
 })
 
+test('legacy-routed binary commands accept documented global aliases after the subcommand', () => {
+  const { result, capture } = runWithMockedFetch(
+    ['agents', 'list', '--access-key', 'alias-key', '--base-url', 'http://127.0.0.1:4567', '--json'],
+  )
+
+  assert.equal(result.status, 0, result.stderr)
+  assert.equal(result.stdout.trim(), '[]')
+  assert.equal(capture.headers['X-Access-Key'], 'alias-key')
+  assert.equal(capture.url, 'http://127.0.0.1:4567/api/agents')
+})
+
 test('binary server help exits successfully', () => {
   const result = runBinary(['server', '--help'])
   assert.equal(result.status, 0, result.stderr)

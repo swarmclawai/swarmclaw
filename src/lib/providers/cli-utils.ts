@@ -2,8 +2,7 @@
  * Shared CLI utility module for CLI-based providers and delegation backends.
  *
  * Consolidates environment building, binary discovery, auth probing,
- * abort handling, and config forwarding used by claude-cli, codex-cli,
- * opencode-cli, and gemini-cli providers.
+ * abort handling, and config forwarding used by CLI-backed providers.
  */
 
 import fs from 'fs'
@@ -45,6 +44,24 @@ const KNOWN_BINARY_PATHS: Record<string, string[]> = {
     '/usr/local/bin/copilot',
     '/opt/homebrew/bin/copilot',
     path.join(os.homedir(), '.npm-global/bin/copilot'),
+  ],
+  'cursor-agent': [
+    path.join(os.homedir(), '.local/bin/cursor-agent'),
+    '/usr/local/bin/cursor-agent',
+    '/opt/homebrew/bin/cursor-agent',
+    path.join(os.homedir(), '.npm-global/bin/cursor-agent'),
+  ],
+  qwen: [
+    path.join(os.homedir(), '.local/bin/qwen'),
+    '/usr/local/bin/qwen',
+    '/opt/homebrew/bin/qwen',
+    path.join(os.homedir(), '.npm-global/bin/qwen'),
+  ],
+  goose: [
+    path.join(os.homedir(), '.local/bin/goose'),
+    '/usr/local/bin/goose',
+    '/opt/homebrew/bin/goose',
+    path.join(os.homedir(), '.cargo/bin/goose'),
   ],
 }
 
@@ -145,11 +162,11 @@ export interface AuthProbeResult {
 }
 
 /**
- * Unified auth check for all 4 CLI tools.
+ * Unified auth check for supported CLI-backed providers.
  */
 export function probeCliAuth(
   binary: string,
-  backend: 'claude' | 'codex' | 'opencode' | 'gemini' | 'copilot',
+  backend: 'claude' | 'codex' | 'opencode' | 'gemini' | 'copilot' | 'cursor' | 'qwen' | 'goose',
   env: NodeJS.ProcessEnv,
   cwd?: string,
 ): AuthProbeResult {
@@ -260,6 +277,71 @@ export function probeCliAuth(
     return { authenticated: true }
   }
 
+  if (backend === 'cursor') {
+    try {
+      const probe = spawnSync(binary, ['status'], {
+        cwd, env, encoding: 'utf-8', timeout: 8_000,
+      })
+      const probeText = `${probe.stdout || ''}\n${probe.stderr || ''}`.toLowerCase()
+      if ((probe.status ?? 1) === 0 || probeText.includes('authenticated') || probeText.includes('logged in')) {
+        return { authenticated: true }
+      }
+    } catch { /* ignore */ }
+
+    const configPaths = [
+      path.join(os.homedir(), '.cursor', 'config.json'),
+      path.join(os.homedir(), '.config', 'cursor', 'config.json'),
+    ]
+    const hasConfig = configPaths.some((p) => fs.existsSync(p))
+    if (!hasConfig) {
+      return {
+        authenticated: false,
+        errorMessage: 'Cursor Agent CLI is not authenticated. Run `cursor-agent login` and try again.',
+      }
+    }
+    return { authenticated: true }
+  }
+
+  if (backend === 'qwen') {
+    const envKeys = ['QWEN_API_KEY', 'DASHSCOPE_API_KEY', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'GEMINI_API_KEY']
+    if (envKeys.some((key) => typeof env[key] === 'string' && env[key]?.trim())) {
+      return { authenticated: true }
+    }
+    const configPaths = [
+      path.join(os.homedir(), '.qwen', 'settings.json'),
+      path.join(os.homedir(), '.config', 'qwen', 'settings.json'),
+    ]
+    const hasConfig = configPaths.some((p) => fs.existsSync(p))
+    if (!hasConfig) {
+      return {
+        authenticated: false,
+        errorMessage: 'Qwen Code CLI is not configured. Run `qwen`, finish `/auth`, or configure ~/.qwen/settings.json and try again.',
+      }
+    }
+    return { authenticated: true }
+  }
+
+  if (backend === 'goose') {
+    const envKeys = ['GOOSE_API_KEY', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'GEMINI_API_KEY']
+    if (envKeys.some((key) => typeof env[key] === 'string' && env[key]?.trim())) {
+      return { authenticated: true }
+    }
+    const configPaths = [
+      path.join(os.homedir(), '.config', 'goose', 'config.yaml'),
+      path.join(os.homedir(), '.config', 'goose', 'config.yml'),
+      path.join(os.homedir(), '.goose', 'config.yaml'),
+      path.join(os.homedir(), '.goose', 'config.yml'),
+    ]
+    const hasConfig = configPaths.some((p) => fs.existsSync(p))
+    if (!hasConfig) {
+      return {
+        authenticated: false,
+        errorMessage: 'Goose CLI is not configured. Run `goose configure` and try again.',
+      }
+    }
+    return { authenticated: true }
+  }
+
   return { authenticated: true }
 }
 
@@ -345,6 +427,9 @@ export const CLI_PROVIDER_CAPABILITIES: Record<string, string> = {
   'opencode-cli': 'code analysis, generation across multiple LLM backends',
   'gemini-cli': 'code generation, analysis with Gemini models',
   'copilot-cli': 'code generation, analysis, multi-model support via GitHub Copilot',
+  'cursor-cli': 'full-agent coding workflows, multi-file edits, project-aware code changes',
+  'qwen-code-cli': 'terminal-native coding workflows, code generation, review, and automation',
+  goose: 'agentic coding workflows with extensions, tools, and runtime-managed execution',
 }
 
 /** Check if a provider ID is a CLI-based provider. */

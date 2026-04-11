@@ -2506,10 +2506,22 @@ export function AgentSheet() {
             {provider === 'claude-cli'
               ? 'Claude CLI uses its own built-in capabilities — no additional local tool/platform configuration is needed.'
               : provider === 'codex-cli'
-                ? 'OpenAI Codex CLI uses its own built-in tools (shell, files, etc.) — no additional local tool configuration needed.'
-                : provider === 'hermes'
-                  ? 'Hermes Agent runs behind its own API server and tool runtime. SwarmClaw sends prompts to Hermes directly instead of injecting local platform tools.'
-                  : 'OpenCode CLI uses its own built-in tools (shell, files, etc.) — no additional local tool configuration needed.'}
+                ? 'OpenAI Codex CLI uses its own built-in tools (shell, files, etc.) — no additional local tool configuration is needed.'
+                : provider === 'opencode-cli'
+                  ? 'OpenCode CLI uses its own built-in tools (shell, files, etc.) — no additional local tool configuration is needed.'
+                  : provider === 'gemini-cli'
+                    ? 'Gemini CLI uses its own built-in tools and runtime — SwarmClaw does not inject local platform tools for it.'
+                    : provider === 'copilot-cli'
+                      ? 'GitHub Copilot CLI uses its own built-in tools and runtime — SwarmClaw does not inject local platform tools for it.'
+                      : provider === 'cursor-cli'
+                        ? 'Cursor Agent CLI runs with its own native tool/runtime layer — SwarmClaw sends prompts directly without injecting local platform tools.'
+                        : provider === 'qwen-code-cli'
+                          ? 'Qwen Code CLI uses its own native tools and runtime — SwarmClaw does not inject local platform tools for it.'
+                          : provider === 'goose'
+                            ? 'Goose manages its own runtime, tools, and extensions — SwarmClaw sends prompts directly instead of injecting local platform tools.'
+                            : provider === 'hermes'
+                              ? 'Hermes Agent runs behind its own API server and tool runtime. SwarmClaw sends prompts to Hermes directly instead of injecting local platform tools.'
+                              : 'This provider manages its own native capabilities and runtime.'}
           </p>
         </div>
       )}

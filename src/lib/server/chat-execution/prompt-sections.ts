@@ -120,6 +120,8 @@ function normalizeRuntimeExtensionId(extensionId: string): string {
   if (normalized === 'delegate_to_codex_cli' || normalized === 'codex_cli') return 'codex_cli'
   if (normalized === 'delegate_to_opencode_cli' || normalized === 'opencode_cli') return 'opencode_cli'
   if (normalized === 'delegate_to_gemini_cli' || normalized === 'gemini_cli') return 'gemini_cli'
+  if (normalized === 'delegate_to_cursor_cli' || normalized === 'cursor_cli') return 'cursor_cli'
+  if (normalized === 'delegate_to_qwen_code_cli' || normalized === 'qwen_code_cli') return 'qwen_code_cli'
   if (['session_info', 'sessions_tool', 'whoami_tool', 'search_history_tool'].includes(normalized)) return 'manage_sessions'
   return canonicalizeExtensionId(normalized)
 }
@@ -189,7 +191,7 @@ export function buildRuntimeOrientationSection(params: {
   const enabledExtensions = canonicalizeEnabledExtensions(params.sessionExtensions)
   const workspaceMarkers = collectWorkspaceMarkers(session.cwd)
   const delegationEnabled = enabledExtensions.some((extensionId) =>
-    ['delegate', 'spawn_subagent', 'claude_code', 'codex_cli', 'opencode_cli', 'gemini_cli'].includes(extensionId),
+    ['delegate', 'spawn_subagent', 'claude_code', 'codex_cli', 'opencode_cli', 'gemini_cli', 'cursor_cli', 'qwen_code_cli'].includes(extensionId),
   )
 
   const lines = [

@@ -10,4 +10,10 @@ services:
     env_file:
       - path: ./.env.local
         required: false
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3456/api/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     restart: unless-stopped

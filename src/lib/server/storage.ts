@@ -655,6 +655,9 @@ if (!IS_BUILD_BOOTSTRAP) {
     'claude_code',
     'codex_cli',
     'opencode_cli',
+    'gemini_cli',
+    'cursor_cli',
+    'qwen_code_cli',
   ]
   const count = (db.prepare('SELECT COUNT(*) as c FROM agents').get() as { c: number }).c
   if (count === 0) {

@@ -77,6 +77,10 @@ const PROVIDER_DEFAULT_WINDOWS: Record<string, number> = {
   openai: 128_000,
   'codex-cli': 1_047_576,
   'opencode-cli': 200_000,
+  'gemini-cli': 1_048_576,
+  'copilot-cli': 200_000,
+  'cursor-cli': 200_000,
+  'qwen-code-cli': 1_048_576,
   google: 1_048_576,
   deepseek: 64_000,
   groq: 32_768,
@@ -85,6 +89,7 @@ const PROVIDER_DEFAULT_WINDOWS: Record<string, number> = {
   xai: 131_072,
   fireworks: 32_768,
   ollama: 32_768,
+  goose: 200_000,
   openclaw: 128_000,
 }
 

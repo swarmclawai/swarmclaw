@@ -6,6 +6,16 @@ import { safeParseBody } from '@/lib/server/safe-parse-body'
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const ops: CollectionOps<any> = { load: loadSecrets, save: saveSecrets }
 
+export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  const secrets = loadSecrets()
+  const secret = secrets[id]
+  if (!secret) return notFound()
+  // Never expose the encrypted value
+  const { encryptedValue, ...safe } = secret as Record<string, unknown>
+  return NextResponse.json(safe)
+}
+
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   if (!deleteItem(ops, id)) return notFound()

@@ -86,8 +86,8 @@ export interface ToolBuildContext {
   commandTimeoutMs: number
   claudeTimeoutMs: number
   cliProcessTimeoutMs: number
-  persistDelegateResumeId: (key: 'claudeCode' | 'codex' | 'opencode' | 'gemini', id: string | null | undefined) => void
-  readStoredDelegateResumeId: (key: 'claudeCode' | 'codex' | 'opencode' | 'gemini') => string | null
+  persistDelegateResumeId: (key: 'claudeCode' | 'codex' | 'opencode' | 'gemini' | 'copilot' | 'cursor' | 'qwen', id: string | null | undefined) => void
+  readStoredDelegateResumeId: (key: 'claudeCode' | 'codex' | 'opencode' | 'gemini' | 'copilot' | 'cursor' | 'qwen') => string | null
   resolveCurrentSession: () => any | null
   activeExtensions: string[]
   /** Agent's file access policy — passed to shell for command-level enforcement */

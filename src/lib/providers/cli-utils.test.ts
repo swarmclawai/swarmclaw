@@ -93,6 +93,10 @@ describe('isCliProvider', () => {
     assert.equal(isCliProvider('codex-cli'), true)
     assert.equal(isCliProvider('opencode-cli'), true)
     assert.equal(isCliProvider('gemini-cli'), true)
+    assert.equal(isCliProvider('copilot-cli'), true)
+    assert.equal(isCliProvider('cursor-cli'), true)
+    assert.equal(isCliProvider('qwen-code-cli'), true)
+    assert.equal(isCliProvider('goose'), true)
   })
 
   it('returns false for non-CLI providers', () => {
@@ -108,11 +112,15 @@ describe('isCliProvider', () => {
 // ---------------------------------------------------------------------------
 
 describe('CLI_PROVIDER_CAPABILITIES', () => {
-  it('has entries for all 4 CLI providers', () => {
+  it('has entries for all supported local CLI-backed providers', () => {
     assert.ok('claude-cli' in CLI_PROVIDER_CAPABILITIES)
     assert.ok('codex-cli' in CLI_PROVIDER_CAPABILITIES)
     assert.ok('opencode-cli' in CLI_PROVIDER_CAPABILITIES)
     assert.ok('gemini-cli' in CLI_PROVIDER_CAPABILITIES)
+    assert.ok('copilot-cli' in CLI_PROVIDER_CAPABILITIES)
+    assert.ok('cursor-cli' in CLI_PROVIDER_CAPABILITIES)
+    assert.ok('qwen-code-cli' in CLI_PROVIDER_CAPABILITIES)
+    assert.ok('goose' in CLI_PROVIDER_CAPABILITIES)
   })
 
   it('each entry is a non-empty string', () => {

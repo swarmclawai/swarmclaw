@@ -15,7 +15,7 @@ const COMMAND_GROUPS = [
     description: 'Manage agents',
     commands: [
       cmd('list', 'GET', '/agents', 'List agents'),
-      cmd('get', 'GET', '/agents/:id', 'Get an agent by id', { virtual: true, clientGetRoute: '/agents' }),
+      cmd('get', 'GET', '/agents/:id', 'Get an agent by id'),
       cmd('create', 'POST', '/agents', 'Create an agent', { expectsJsonBody: true }),
       cmd('update', 'PUT', '/agents/:id', 'Update an agent', { expectsJsonBody: true }),
       cmd('delete', 'DELETE', '/agents/:id', 'Delete an agent'),
@@ -142,7 +142,7 @@ const COMMAND_GROUPS = [
     description: 'Manage encrypted provider credentials',
     commands: [
       cmd('list', 'GET', '/credentials', 'List credentials'),
-      cmd('get', 'GET', '/credentials/:id', 'Get credential metadata by id', { virtual: true, clientGetRoute: '/credentials' }),
+      cmd('get', 'GET', '/credentials/:id', 'Get credential metadata by id'),
       cmd('create', 'POST', '/credentials', 'Create credential', { expectsJsonBody: true }),
       cmd('delete', 'DELETE', '/credentials/:id', 'Delete credential'),
     ],
@@ -541,7 +541,7 @@ const COMMAND_GROUPS = [
     description: 'Manage schedules',
     commands: [
       cmd('list', 'GET', '/schedules', 'List schedules'),
-      cmd('get', 'GET', '/schedules/:id', 'Get schedule by id', { virtual: true, clientGetRoute: '/schedules' }),
+      cmd('get', 'GET', '/schedules/:id', 'Get schedule by id'),
       cmd('create', 'POST', '/schedules', 'Create schedule', { expectsJsonBody: true }),
       cmd('update', 'PUT', '/schedules/:id', 'Update schedule', { expectsJsonBody: true }),
       cmd('delete', 'DELETE', '/schedules/:id', 'Delete schedule'),
@@ -553,7 +553,7 @@ const COMMAND_GROUPS = [
     description: 'Manage reusable encrypted secrets',
     commands: [
       cmd('list', 'GET', '/secrets', 'List secrets metadata'),
-      cmd('get', 'GET', '/secrets/:id', 'Get secret metadata by id', { virtual: true, clientGetRoute: '/secrets' }),
+      cmd('get', 'GET', '/secrets/:id', 'Get secret metadata by id'),
       cmd('create', 'POST', '/secrets', 'Create secret', { expectsJsonBody: true }),
       cmd('update', 'PUT', '/secrets/:id', 'Update secret metadata', { expectsJsonBody: true }),
       cmd('delete', 'DELETE', '/secrets/:id', 'Delete secret'),

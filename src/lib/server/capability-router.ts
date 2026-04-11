@@ -19,7 +19,7 @@ export interface CapabilityRoutingDecision {
   primaryUrl?: string
 }
 
-type DelegateTool = 'delegate_to_claude_code' | 'delegate_to_codex_cli' | 'delegate_to_opencode_cli' | 'delegate_to_gemini_cli'
+type DelegateTool = 'delegate_to_claude_code' | 'delegate_to_codex_cli' | 'delegate_to_opencode_cli' | 'delegate_to_gemini_cli' | 'delegate_to_copilot_cli' | 'delegate_to_cursor_cli' | 'delegate_to_qwen_code_cli'
 
 function findFirstUrl(text: string): string | undefined {
   const m = text.match(/https?:\/\/[^\s<>"')]+/i)
@@ -41,6 +41,9 @@ function normalizeDelegateOrder(value: unknown): DelegateTool[] {
     'delegate_to_codex_cli',
     'delegate_to_opencode_cli',
     'delegate_to_gemini_cli',
+    'delegate_to_copilot_cli',
+    'delegate_to_cursor_cli',
+    'delegate_to_qwen_code_cli',
   ]
   if (!Array.isArray(value) || !value.length) return fallback
 
@@ -50,6 +53,9 @@ function normalizeDelegateOrder(value: unknown): DelegateTool[] {
     else if (raw === 'codex') mapped.push('delegate_to_codex_cli')
     else if (raw === 'opencode') mapped.push('delegate_to_opencode_cli')
     else if (raw === 'gemini') mapped.push('delegate_to_gemini_cli')
+    else if (raw === 'copilot') mapped.push('delegate_to_copilot_cli')
+    else if (raw === 'cursor') mapped.push('delegate_to_cursor_cli')
+    else if (raw === 'qwen') mapped.push('delegate_to_qwen_code_cli')
   }
   if (!mapped.length) return fallback
   const deduped = dedup(mapped)
@@ -77,7 +83,7 @@ export function routeTaskIntent(
     return {
       intent: 'coding',
       confidence,
-      preferredTools: ['claude_code', 'codex_cli', 'opencode_cli', 'shell', 'files', 'edit_file'],
+      preferredTools: ['claude_code', 'codex_cli', 'opencode_cli', 'gemini_cli', 'cursor_cli', 'qwen_code_cli', 'shell', 'files', 'edit_file'],
       preferredDelegates: delegateOrder,
       primaryUrl: url,
     }

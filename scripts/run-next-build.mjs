@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { createRequire } from 'node:module'
@@ -11,6 +12,17 @@ import { ensureBuildBootstrapPaths } from './build-bootstrap-env.mjs'
 const require = createRequire(import.meta.url)
 
 export const DEFAULT_MAX_OLD_SPACE_SIZE_MB = '8192'
+export const MIN_MAX_OLD_SPACE_SIZE_MB = 1024
+export const FALLBACK_MIN_MAX_OLD_SPACE_SIZE_MB = 512
+export const RESERVED_BUILD_MEMORY_MB = 768
+export const MAX_OLD_SPACE_RATIO = 0.75
+export const LOW_MEMORY_RATIO = 0.6
+export const BUILD_MAX_OLD_SPACE_SIZE_ENV = 'SWARMCLAW_BUILD_MAX_OLD_SPACE_SIZE_MB'
+export const CGROUP_MEMORY_LIMIT_PATHS = [
+  '/sys/fs/cgroup/memory.max',
+  '/sys/fs/cgroup/memory/memory.limit_in_bytes',
+]
+export const UNBOUNDED_MEMORY_LIMIT_BYTES = 1n << 60n
 export const TRACE_COPY_WARNING = 'Failed to copy traced files'
 export const NEXT_STANDALONE_METADATA_RELATIVE_DIR = path.join(
   'node_modules',
@@ -23,6 +35,74 @@ export const REQUIRED_NEXT_METADATA_FILES = [
   'get-metadata-route.js',
   'is-metadata-route.js',
 ]
+
+function parsePositiveInteger(value) {
+  const parsed = Number.parseInt(String(value ?? '').trim(), 10)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null
+}
+
+export function readCgroupMemoryLimitBytes(
+  paths = CGROUP_MEMORY_LIMIT_PATHS,
+  existsSync = fs.existsSync,
+  readFileSync = fs.readFileSync,
+) {
+  for (const filePath of paths) {
+    if (!existsSync(filePath)) continue
+
+    let raw = ''
+    try {
+      raw = String(readFileSync(filePath, 'utf8')).trim()
+    } catch {
+      continue
+    }
+
+    if (!raw || raw === 'max') continue
+
+    try {
+      const bytes = BigInt(raw)
+      if (bytes <= 0n || bytes >= UNBOUNDED_MEMORY_LIMIT_BYTES) continue
+      return Number(bytes)
+    } catch {
+      continue
+    }
+  }
+
+  return null
+}
+
+export function deriveMaxOldSpaceSizeMb(memoryLimitBytes, defaultMaxOldSpaceSizeMb = DEFAULT_MAX_OLD_SPACE_SIZE_MB) {
+  const defaultMb = parsePositiveInteger(defaultMaxOldSpaceSizeMb) ?? Number.parseInt(DEFAULT_MAX_OLD_SPACE_SIZE_MB, 10)
+  const limitMb = Math.floor(Number(memoryLimitBytes) / (1024 * 1024))
+  if (!Number.isFinite(limitMb) || limitMb <= 0) return String(defaultMb)
+
+  const constrainedCandidate = Math.min(
+    defaultMb,
+    limitMb - RESERVED_BUILD_MEMORY_MB,
+    Math.floor(limitMb * MAX_OLD_SPACE_RATIO),
+  )
+  if (constrainedCandidate >= MIN_MAX_OLD_SPACE_SIZE_MB) {
+    return String(constrainedCandidate)
+  }
+
+  return String(Math.max(
+    FALLBACK_MIN_MAX_OLD_SPACE_SIZE_MB,
+    Math.min(defaultMb, Math.floor(limitMb * LOW_MEMORY_RATIO)),
+  ))
+}
+
+export function resolveNextBuildMaxOldSpaceSizeMb(
+  env = process.env,
+  options = {},
+) {
+  const explicit = parsePositiveInteger(env[BUILD_MAX_OLD_SPACE_SIZE_ENV])
+  if (explicit) return String(explicit)
+
+  const readLimitBytes = options.readCgroupMemoryLimitBytes ?? readCgroupMemoryLimitBytes
+  const totalMemFn = options.totalMem ?? os.totalmem
+  const memoryLimitBytes = readLimitBytes() ?? totalMemFn()
+
+  return deriveMaxOldSpaceSizeMb(memoryLimitBytes, DEFAULT_MAX_OLD_SPACE_SIZE_MB)
+}
 
 export function mergeNodeOptions(nodeOptions = '', maxOldSpaceSizeMb = DEFAULT_MAX_OLD_SPACE_SIZE_MB) {
   const trimmed = nodeOptions.trim()
@@ -120,12 +200,17 @@ export function repairStandaloneNextMetadata(cwd = process.cwd()) {
   return true
 }
 
-export function runNextBuild(args = process.argv.slice(2), env = process.env, cwd = process.cwd()) {
+export function runNextBuild(
+  args = process.argv.slice(2),
+  env = process.env,
+  cwd = process.cwd(),
+  maxOldSpaceSizeMb = resolveNextBuildMaxOldSpaceSizeMb(env),
+) {
   const nextBin = require.resolve('next/dist/bin/next')
   return spawnSync(process.execPath, [nextBin, 'build', '--webpack', ...args], {
     stdio: 'pipe',
     encoding: 'utf-8',
-    env: buildNextBuildEnv(env, DEFAULT_MAX_OLD_SPACE_SIZE_MB, cwd),
+    env: buildNextBuildEnv(env, maxOldSpaceSizeMb, cwd),
     cwd,
   })
 }

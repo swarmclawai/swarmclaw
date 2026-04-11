@@ -67,7 +67,7 @@ function parseIntBounded(value: unknown, min: number, max: number): number | nul
 
 function normalizeMode(raw: unknown, fallback: SessionResetMode): SessionResetMode {
   const value = typeof raw === 'string' ? raw.trim().toLowerCase() : ''
-  return value === 'daily' ? 'daily' : value === 'idle' ? 'idle' : fallback
+  return value === 'daily' ? 'daily' : value === 'idle' ? 'idle' : value === 'isolated' ? 'isolated' : fallback
 }
 
 function normalizeTimeHHMM(raw: unknown): string | null {
@@ -282,11 +282,19 @@ export function resetSessionRuntime(
   session.claudeSessionId = null
   session.codexThreadId = null
   session.opencodeSessionId = null
+  session.geminiSessionId = null
+  session.copilotSessionId = null
+  session.cursorSessionId = null
+  session.qwenSessionId = null
+  session.acpSessionId = null
   session.delegateResumeIds = {
     claudeCode: null,
     codex: null,
     opencode: null,
     gemini: null,
+    copilot: null,
+    cursor: null,
+    qwen: null,
   }
   session.createdAt = now
   session.lastActiveAt = now

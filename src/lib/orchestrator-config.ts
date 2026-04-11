@@ -4,6 +4,11 @@ export const NON_ORCHESTRATOR_PROVIDERS = new Set([
   'claude-cli',
   'codex-cli',
   'opencode-cli',
+  'gemini-cli',
+  'copilot-cli',
+  'cursor-cli',
+  'qwen-code-cli',
+  'goose',
   'openclaw',
   'hermes',
 ])
