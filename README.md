@@ -371,6 +371,10 @@ Operational docs: https://swarmclaw.ai/docs/observability
 
 ## Releases
 
+### v1.5.31 Highlights
+
+- **Fix Docker first-run crash**: resolved `EISDIR: illegal operation on a directory, read` error when running `docker compose up` without a pre-existing `.env.local` file. Docker was creating a directory mount instead of a file, which crashed Next.js on startup. Replaced the file bind mount with `env_file` directive using `required: false`.
+
 ### v1.5.3 Highlights
 
 - **Copilot CLI v1.x compatibility**: the `copilot-cli` provider now handles the current event format (`assistant.message_delta`, `assistant.message`, updated `result` payload) while keeping backward compatibility with the legacy format. Also fixes `--resume` flag syntax. (Community contribution by [@borislavnnikolov](https://github.com/borislavnnikolov) -- PR #36)

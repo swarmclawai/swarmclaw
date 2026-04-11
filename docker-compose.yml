@@ -7,5 +7,7 @@ services:
       - "3457:3457"
     volumes:
       - ./data:/app/data
-      - ./.env.local:/app/.env.local
+    env_file:
+      - path: ./.env.local
+        required: false
     restart: unless-stopped
