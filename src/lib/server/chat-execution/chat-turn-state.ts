@@ -19,6 +19,7 @@ export interface TurnStateSnapshot {
   toolFrequencyBlocked: string | false
   terminalToolBoundary: 'memory_write' | 'durable_wait' | 'context_compaction' | null
   memoryWriteTerminalAllowed: boolean | null
+  lastToolSummaryTextLen: number
 }
 
 export class ChatTurnState {
@@ -39,6 +40,7 @@ export class ChatTurnState {
   terminalToolBoundary: 'memory_write' | 'durable_wait' | 'context_compaction' | null = null
   terminalToolResponse = ''
   memoryWriteTerminalAllowed: boolean | null = null
+  lastToolSummaryTextLen = -1
 
   snapshot(): TurnStateSnapshot {
     return {
@@ -53,6 +55,7 @@ export class ChatTurnState {
       toolFrequencyBlocked: this.toolFrequencyBlocked,
       terminalToolBoundary: this.terminalToolBoundary,
       memoryWriteTerminalAllowed: this.memoryWriteTerminalAllowed,
+      lastToolSummaryTextLen: this.lastToolSummaryTextLen,
     }
   }
 
@@ -68,6 +71,7 @@ export class ChatTurnState {
     this.toolFrequencyBlocked = snap.toolFrequencyBlocked
     this.terminalToolBoundary = snap.terminalToolBoundary
     this.memoryWriteTerminalAllowed = snap.memoryWriteTerminalAllowed
+    this.lastToolSummaryTextLen = snap.lastToolSummaryTextLen
   }
 
   /**

@@ -1,6 +1,7 @@
 import fs from 'fs'
 import os from 'os'
 
+import { log } from '@/lib/server/logger'
 import { getProvider } from '@/lib/providers'
 import type { ExecutionBrief, Message, Session } from '@/types'
 import {
@@ -418,7 +419,17 @@ function buildAgentSystemPrompt(
     'You run on an autonomous heartbeat. If you receive a heartbeat poll and nothing needs attention, reply exactly: HEARTBEAT_OK',
   ].join('\n'))
 
-  return parts.join('\n\n')
+  const assembled = parts.join('\n\n')
+  if (process.env.SWARMCLAW_PROFILE_PROMPT === '1') {
+    // Dump per-section sizes once per turn to help size the context budget.
+    // Kept behind an env flag so production turns stay quiet.
+    const sectionSizes = parts.map((block, idx) => {
+      const firstLine = block.split('\n', 1)[0]
+      return `  [${idx}] ${firstLine.slice(0, 60)} — ${block.length} chars`
+    }).join('\n')
+    log.info('prompt-profile', `System prompt assembled (${assembled.length} chars, ${parts.length} blocks, ${enabledExtensions.length} extensions):\n${sectionSizes}`)
+  }
+  return assembled
 }
 
 function resolveApiKeyForSession(session: SessionWithCredentials, provider: ProviderApiKeyConfig): string | null {

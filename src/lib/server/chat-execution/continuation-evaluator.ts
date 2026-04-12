@@ -28,6 +28,7 @@ import {
 } from '@/lib/server/chat-execution/memory-mutation-tools'
 import { shouldForceAttachmentFollowthrough } from '@/lib/server/chat-execution/prompt-builder'
 import { shouldSkipToolSummaryForShortResponse } from '@/lib/server/chat-execution/chat-streaming-utils'
+import { toolSummaryHasMeaningfulProgress } from '@/lib/server/chat-execution/tool-summary-progress'
 import { logExecution, type LogCategory } from '@/lib/server/execution-log'
 
 // ---------------------------------------------------------------------------
@@ -378,6 +379,15 @@ function checkToolSummary(ctx: ContinuationContext): ContinuationDecision | null
     )
   )
   if (!textIsTrivial) return null
+  const currentLen = ctx.state.fullText.length
+  const priorLen = ctx.state.lastToolSummaryTextLen
+  if (!toolSummaryHasMeaningfulProgress(priorLen, currentLen)) {
+    logStatus(ctx, 'decision', `Tool summary retry skipped — no meaningful progress (delta=${currentLen - priorLen} chars)`, {
+      priorLen, currentLen, toolEventCount: ctx.state.streamedToolEvents.length,
+    })
+    return null
+  }
+  ctx.state.lastToolSummaryTextLen = currentLen
   const count = ctx.limits.increment('tool_summary')
   const summaryReason = !ctx.state.fullText.trim() ? 'empty_response_after_tools' : 'trivial_preamble_after_tools'
   logStatus(ctx, 'decision', `Tools called but response text is trivial (${ctx.state.fullText.trim().length} chars) — forcing summary continuation`, {

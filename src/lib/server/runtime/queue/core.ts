@@ -964,6 +964,7 @@ function scheduleRetryOrDeadLetter(task: BoardTask, reason: string): 'retry' | '
   if (isCancelledTask(task)) {
     task.retryScheduledAt = null
     task.deadLetteredAt = null
+    task.checkoutRunId = null
     task.updatedAt = Date.now()
     return 'dead_lettered'
   }
@@ -975,6 +976,10 @@ function scheduleRetryOrDeadLetter(task: BoardTask, reason: string): 'retry' | '
     const delayMs = jitteredBackoff((task.retryBackoffSec || 30) * 1000, Math.max(0, (task.attempts || 1) - 1), 6 * 3600_000)
     task.status = 'queued'
     task.retryScheduledAt = now + delayMs
+    // Release the prior checkout so the task can be checked out again on retry.
+    // Without this, checkoutTask() returns null every attempt and the orphan-
+    // recovery loop burns CPU re-queueing a task that can never run.
+    task.checkoutRunId = null
     task.updatedAt = now
     task.error = `Retry scheduled after failure: ${reason}`.slice(0, 500)
     if (!task.comments) task.comments = []
@@ -990,6 +995,7 @@ function scheduleRetryOrDeadLetter(task: BoardTask, reason: string): 'retry' | '
   task.status = 'failed'
   task.deadLetteredAt = now
   task.retryScheduledAt = null
+  task.checkoutRunId = null
   task.updatedAt = now
   task.error = `Dead-lettered after ${task.attempts}/${task.maxAttempts} attempts: ${reason}`.slice(0, 500)
   if (!task.comments) task.comments = []

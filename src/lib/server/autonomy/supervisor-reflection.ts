@@ -779,8 +779,20 @@ function writeReflectionMemories(params: {
     { kind: 'open_loop', notes: params.openLoops },
   ]
 
+  // Cross-kind dedup: skip notes whose normalized text we've already stored
+  // this run. The reflection classifier often produces near-identical notes
+  // under multiple kinds (e.g. "successfully completed a multi-step task…"
+  // appearing as both invariant and lesson), which floods memory with noise.
+  const seenNormalized = new Set<string>()
+  const normalizeNote = (note: string): string =>
+    note.toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 240)
+
   for (const group of groups) {
     for (const note of group.notes) {
+      const norm = normalizeNote(note)
+      if (!norm) continue
+      if (seenNormalized.has(norm)) continue
+      seenNormalized.add(norm)
       const metadata: Record<string, unknown> = {
         origin: 'autonomy-reflection',
         reflectionId: params.reflectionId,

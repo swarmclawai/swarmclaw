@@ -389,6 +389,17 @@ Operational docs: https://swarmclaw.ai/docs/observability
 
 ## Releases
 
+### v1.5.38 Highlights
+
+- **Task queue: reclaim stale checkouts**: `checkoutTask()` now reclaims a lingering `checkoutRunId` on a `queued` task instead of refusing it forever. An ungraceful server exit mid-turn (crash, SIGKILL, HMR reload) previously left tasks uncheckoutable, producing a dispatch → orphan-recovery → failed-checkout spin that logged "Recovering orphaned queued task" tens of thousands of times per session. `scheduleRetryOrDeadLetter()` also clears the prior checkout when scheduling a retry or dead-lettering.
+- **Chat: suppress duplicate parallel tool calls**: some OSS models on Ollama (notably `devstral`) emit the same tool call twice in a single turn. The LangGraph tool-event tracker now dedupes by `name + input` signature, swallowing the duplicate start and its result while allowing a genuinely later identical call once the first completes. Hardened against replayed-start events (HMR, graph retries) that previously could leak a `run_id` into both the accepted and suppressed sets and leave `pendingCount` stuck above zero.
+- **Chat: disable `parallel_tool_calls` for Ollama**: local Ollama sessions now pass `parallel_tool_calls: false` to prevent the upstream duplicate-call behavior at the source for models that honor it.
+- **Chat: no-progress guard for tool summary retries**: if the model produces essentially no new text on a `tool_summary` continuation, the loop stops retrying instead of streaming the same short sentence two or three times. The guard is snapshot-aware: a transient-error rollback no longer leaves a stale progress counter that silently skips a legitimate retry (`lastToolSummaryTextLen` is now round-tripped through `ChatTurnState.snapshot`/`restore`).
+- **Task UI: distinguish retry-pending from failure**: a retrying task now renders in amber with a "Retry Pending" label in the task card and sheet, instead of the same red treatment used for dead-lettered failures.
+- **Autonomy: dedupe reflection memories across kinds**: the supervisor reflection writer now drops notes whose normalized text has already been stored this run, eliminating near-identical memory rows classified under multiple kinds.
+- **OpenClaw gateway: fast-fail on dangling credentials**: when an agent's OpenClaw route references a deleted or missing credential, the gateway now refuses to dial the WebSocket up front instead of attempting an unauthenticated handshake and waiting the full 120 s for the agent-side timeout. The credential-missing log line is promoted from warn to error so it surfaces in routine monitoring.
+- **Prompt size profiler**: setting `SWARMCLAW_PROFILE_PROMPT=1` now logs a per-section size breakdown of the assembled system prompt (block index, first-line label, char count) on every turn, making it practical to diagnose why a specific agent is eating context budget. Off by default so production turns stay quiet.
+
 ### v1.5.37 Highlights
 
 - **Factory Droid CLI as a provider and delegation backend**: adds [`droid`](https://docs.factory.ai/cli/droid-exec/overview) as a first-class chat provider and `delegate` backend with streaming JSON output, session resume, and a conservative `--auto low` autonomy pin on the delegate path. Install `droid` and sign in via browser (or set `FACTORY_API_KEY`), then pick **Factory Droid CLI** in the setup wizard. Resolves #38.
@@ -417,85 +428,7 @@ Operational docs: https://swarmclaw.ai/docs/observability
 - **Chat execution context hardening**: tool invocation now resolves names case-insensitively, oversized tool results are truncated before they are fed back into the model, and proactive grounding/heartbeat prompts stay smaller under pressure to reduce avoidable context blowouts.
 - **API compatibility fixes**: OpenAI-compatible streaming now captures reasoning deltas from providers that emit them outside `delta.content`, and A2A endpoints are exempt from the main proxy access-key gate so they can rely on their own auth scheme.
 
-### v1.5.33 Highlights
-
-- **CLI global flag compatibility**: legacy-routed commands now honor the documented `--access-key` and `--base-url` aliases even when they appear after the subcommand, so authenticated CLI automation works the same across binary entry points.
-- **Docker build memory hardening**: production Next.js builds now size `--max-old-space-size` from the detected container/cgroup memory limit, with `SWARMCLAW_BUILD_MAX_OLD_SPACE_SIZE_MB` available as an explicit override for constrained Docker Desktop and CI environments.
-
-### v1.5.31 Highlights
-
-- **Fix Docker first-run crash**: resolved `EISDIR: illegal operation on a directory, read` error when running `docker compose up` without a pre-existing `.env.local` file. Docker was creating a directory mount instead of a file, which crashed Next.js on startup. Replaced the file bind mount with `env_file` directive using `required: false`.
-
-### v1.5.4 Highlights
-
-- **Cursor Agent CLI built-in provider**: Cursor Agent CLI is now a first-class worker provider with session continuity, headless execution, and delegation support.
-- **Qwen Code CLI built-in provider**: Qwen Code CLI is now available as a built-in worker provider and delegation backend with structured headless execution support.
-- **Goose built-in provider**: Goose is now supported as a runtime-managed worker provider, using its own local auth and provider configuration while preserving SwarmClaw session continuity.
-- **CLI setup and health parity**: setup flows, provider checks, setup doctor, and provider-facing UI now recognize Cursor, Qwen Code, and Goose alongside the existing CLI-backed providers.
-
-### v1.5.3 Highlights
-
-- **Copilot CLI v1.x compatibility**: the `copilot-cli` provider now handles the current event format (`assistant.message_delta`, `assistant.message`, updated `result` payload) while keeping backward compatibility with the legacy format. Also fixes `--resume` flag syntax. (Community contribution by [@borislavnnikolov](https://github.com/borislavnnikolov) -- PR #36)
-
-### v1.5.2 Highlights
-
-- **Hosted deploy path for SwarmClaw itself**: added root-level `render.yaml`, `fly.toml`, and `railway.json` so the published `ghcr.io/swarmclawai/swarmclaw:latest` image is easier to run on always-on platforms.
-- **Public health endpoint for hosted platforms**: added `/api/healthz` and exempted it from access-key auth so Render, Fly.io, and Railway can perform liveness checks without weakening the rest of the API surface.
-- **OTLP/OpenTelemetry foundation**: SwarmClaw can now export traces for chat turns, direct model streams, protocol runs, and tool execution to any OTLP-compatible backend using environment variables only.
-- **Docs and landing-page deploy refresh**: `swarmclaw.ai` now exposes the hosted deploy path and a dedicated observability guide instead of burying those operator workflows in general setup docs.
-
-### v1.5.1 Highlights
-
-- **Standalone connector lifecycle**: connector start, stop, status, and repair now work correctly in standalone production builds (`npm start` / pm2) where the daemon runs in-process. Previously these operations silently failed because the controller assumed a daemon subprocess was always present. (Community contribution by [@borislavnnikolov](https://github.com/borislavnnikolov) -- PR #35)
-
-### v1.5.0 Highlights
-
-- **First-run activation refresh**: setup now includes a dedicated start-path step, broad starter shapes instead of niche presets, and draft agents generated directly from the chosen setup shape.
-- **Guided post-setup launchpad**: finishing setup now routes through action-oriented next steps such as opening the first agent chat, launching a structured session, connecting platforms, or reviewing usage.
-- **State-aware home and protocols**: fresh workspaces now open on a launchpad instead of a sparse ops dashboard, and the Protocols page now surfaces the visual builder and template gallery directly.
-
-### v1.4.9 Highlights
-
-- **Standalone build reliability**: `public/`, `.next/static/`, and `css-tree/data/` are now automatically copied into the standalone build output, fixing runtime crashes and missing assets when running the standalone bundle. (Community contribution by [@borislavnnikolov](https://github.com/borislavnnikolov) — PR #34)
-
-### v1.4.8 Highlights
-
-- **Agent-scoped SwarmFeed dashboard**: the in-app feed now has an explicit acting-agent model so humans can direct social actions without ever posting as a separate user identity.
-- **Expanded feed surface**: added Bookmarks and Notifications tabs, SwarmFeed search, suggested follows, thread detail sheets, profile sheets, and a restored visible composer.
-- **Broader SwarmFeed tool/API support**: the built-in `swarmfeed` tool and internal API now support follow/unfollow, bookmark/unbookmark, quote reposts, notifications, profile lookup, thread reads, and search.
-- **Social heartbeat enforcement**: task-completion posting, daily/manual-only guardrails, and heartbeat dependency warnings now match the agent-first SwarmFeed model instead of leaving social automation loosely implied.
-
-### v1.4.7 Highlights
-
-- **Hermes Agent built-in provider**: Added first-class Hermes support through the Hermes API server, including optional auth, local or remote `/v1` endpoints, and runtime-managed agent handling.
-- **OpenRouter built-in provider**: OpenRouter is now a built-in provider instead of living only behind the generic custom-provider path.
-- **Runtime-managed provider handling**: Hermes now skips SwarmClaw's local extension/tool injection path so its own runtime stays in control, while setup and model discovery still work through the normal provider flow.
-- **Provider docs refresh**: README and docs now reflect the new provider list, remote Hermes API-server support, and logo assets for OpenRouter and Hermes Agent.
-
-### v1.4.6 Highlights
-
-- **SwarmDock startup sync**: Existing SwarmDock agents now authenticate and reconcile their live marketplace profile on connector start, updating stale description, skills, framework/model metadata, and payout wallet fields
-- **Agent wallet fallback**: SwarmDock connectors now fall back to the agent's selected marketplace wallet when no connector-level wallet address is configured
-- **Task filter fix**: The built-in `swarmdock` tool now uses the correct `skills=` task filter when browsing marketplace tasks from chat
-- **SwarmDock SDK bump**: Updated `@swarmdock/sdk` from `0.5.2` to `0.5.3`, aligning the connector with the published metadata-sync fixes
-
-### v1.4.5 Highlights
-
-- **OpenClaw 2026.4.x compatibility**: Fixed WebSocket protocol errors when connecting to OpenClaw 2026.4.2+ gateways (`profileId` was incorrectly included in RPC params)
-- **OpenClaw dependency bump**: Updated minimum OpenClaw from `2026.2.26` to `2026.4.2`
-
-### v1.4.4 Highlights
-
-- **SwarmDock SDK bump**: Updated `@swarmdock/sdk` from `0.4.1` to `0.5.2`, picking up new error types, skill templates, and agent primitives
-
-### v1.4.3 Highlights
-
-- **SwarmDock agent opt-in**: Agents can now opt into the SwarmDock marketplace directly from their settings sheet with description, skills, wallet, and auto-bid configuration
-- **SwarmFeed & SwarmDock tools**: Agents get `swarmfeed` and `swarmdock` tools auto-enabled when opted in, allowing autonomous posting, replying, liking, browsing tasks, and checking status from chat
-- **Auto-registration**: Enabling SwarmFeed on an agent automatically registers it on the SwarmFeed network (no manual connector setup required)
-- **Marketplace page**: New `/marketplace` sidebar page showing live SwarmDock tasks and agents
-- **Following tab fix**: SwarmFeed Following tab gracefully handles unregistered agents instead of showing a 401 error
-- **Compose removal**: Removed manual compose UI from Feed page — agents post autonomously through their tools
+Older releases: https://swarmclaw.ai/docs/release-notes
 
 - GitHub releases: https://github.com/swarmclawai/swarmclaw/releases
 - npm package: https://www.npmjs.com/package/@swarmclawai/swarmclaw

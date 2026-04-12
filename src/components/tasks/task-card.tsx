@@ -343,9 +343,17 @@ export function TaskCard({
         )}
       </div>
 
-      {task.error && (
-        <p className="mt-2 text-[11px] text-red-400/80 line-clamp-2">{task.error}</p>
-      )}
+      {task.error && (() => {
+        const retryPending =
+          task.status !== 'failed' &&
+          !task.deadLetteredAt &&
+          (task.retryScheduledAt != null || /^Retry scheduled after failure/i.test(task.error))
+        return (
+          <p className={`mt-2 text-[11px] line-clamp-2 ${retryPending ? 'text-amber-400/80' : 'text-red-400/80'}`}>
+            {task.error}
+          </p>
+        )
+      })()}
 
       {/* Inline comments — show latest 2 */}
       {task.comments && task.comments.length > 0 && (

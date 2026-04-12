@@ -38,6 +38,7 @@ type OpenAiReasoningEffort = 'low' | 'medium' | 'high'
 type ChatOpenAiConfig = ConstructorParameters<typeof ChatOpenAI>[0] & {
   modelKwargs?: {
     reasoning_effort?: OpenAiReasoningEffort
+    parallel_tool_calls?: boolean
   }
   configuration?: {
     baseURL?: string
@@ -104,6 +105,7 @@ export function buildChatModel(opts: {
       timeout: OPENAI_COMPAT_MODEL_TIMEOUT_MS,
       maxRetries: OPENAI_COMPAT_MODEL_MAX_RETRIES,
       configuration: { baseURL },
+      modelKwargs: { parallel_tool_calls: false },
     })
   }
 

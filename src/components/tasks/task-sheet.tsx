@@ -549,15 +549,26 @@ export function TaskSheet() {
           </div>
         )}
 
-        {/* Error */}
-        {editing.error && (
-          <div className="mb-8">
-            <label className="block font-display text-[12px] font-600 text-red-400 uppercase tracking-[0.08em] mb-3">Error</label>
-            <div className="p-4 rounded-[14px] border border-red-500/10 bg-red-500/[0.03] text-[13px] text-red-400/80 whitespace-pre-wrap">
-              {editing.error}
+        {/* Error / Retry notice */}
+        {editing.error && (() => {
+          const retryPending =
+            editing.status !== 'failed' &&
+            !editing.deadLetteredAt &&
+            (editing.retryScheduledAt != null || /^Retry scheduled after failure/i.test(editing.error))
+          const label = retryPending ? 'Retry Pending' : 'Error'
+          const tone = retryPending
+            ? 'border-amber-500/15 bg-amber-500/[0.04] text-amber-300/80'
+            : 'border-red-500/10 bg-red-500/[0.03] text-red-400/80'
+          const labelTone = retryPending ? 'text-amber-400' : 'text-red-400'
+          return (
+            <div className="mb-8">
+              <label className={`block font-display text-[12px] font-600 uppercase tracking-[0.08em] mb-3 ${labelTone}`}>{label}</label>
+              <div className={`p-4 rounded-[14px] border text-[13px] whitespace-pre-wrap ${tone}`}>
+                {editing.error}
+              </div>
             </div>
-          </div>
-        )}
+          )
+        })()}
 
         {/* Comments (with input — adding comments from view mode is useful) */}
         <div className="mb-8">

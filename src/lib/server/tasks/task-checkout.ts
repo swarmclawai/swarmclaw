@@ -19,7 +19,13 @@ export function checkoutTask(
     const tasks = loadTasks() as Record<string, BoardTask>
     const task = tasks[taskId]
     if (!task || task.status !== 'queued') return null
-    if (task.checkoutRunId) return null // already checked out
+    // A stale checkoutRunId can survive an ungraceful server exit (crash,
+    // SIGKILL, HMR reload mid-turn). If status is 'queued', the runId cannot
+    // reference a live checkout — only running tasks hold active checkouts —
+    // so treat the lingering id as stale and reclaim it. Previously this
+    // returned null forever, so the dispatch → orphan-recovery → failed-
+    // checkout cycle spammed "Recovering orphaned queued task" every ~2 ms
+    // (21 k log lines in a single session).
 
     const now = Date.now()
     task.status = 'running'

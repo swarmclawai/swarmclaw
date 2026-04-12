@@ -51,6 +51,9 @@ function buildGatewayConfigFromAgent(agent: Agent, options?: { allowDisabled?: b
   const route = resolvePrimaryAgentRoute(agent)
   if (route?.provider !== 'openclaw') return null
 
+  const credential = resolveTokenForCredential(route.credentialId)
+  if (credential.dangling) return null
+
   const routeProfile = route.gatewayProfileId ? getGatewayProfile(route.gatewayProfileId) : null
   return {
     key: route.gatewayProfileId ? `profile:${route.gatewayProfileId}` : `agent:${agent.id}`,
@@ -60,7 +63,7 @@ function buildGatewayConfigFromAgent(agent: Agent, options?: { allowDisabled?: b
       : route.apiEndpoint
         ? deriveOpenClawWsUrl(route.apiEndpoint)
         : DEFAULT_OPENCLAW_WS_URL,
-    token: resolveTokenForCredential(route.credentialId),
+    token: credential.token,
   }
 }
 
@@ -80,15 +83,28 @@ function normalizeWsUrl(raw: string): string {
   return url.replace(/^http:/i, 'ws:').replace(/^https:/i, 'wss:')
 }
 
-function resolveTokenForCredential(credentialId?: string | null): string | undefined {
-  if (!credentialId) return undefined
+/**
+ * Resolves an OpenClaw gateway credential.
+ *
+ * - `credentialId` null/undefined: the caller wants an unauthenticated
+ *   connection. Returns `{ token: undefined, dangling: false }`.
+ * - `credentialId` set and resolvable: returns `{ token, dangling: false }`.
+ * - `credentialId` set but missing/deleted: returns `{ token: undefined,
+ *   dangling: true }`. Callers should treat this as a hard configuration
+ *   error and refuse to dial — otherwise the WS handshake fails as
+ *   `unauthorized: gateway token missing` and the agent-side timeout waits
+ *   the full 120 s before surfacing the error to the user.
+ */
+function resolveTokenForCredential(credentialId?: string | null): { token: string | undefined; dangling: boolean } {
+  if (!credentialId) return { token: undefined, dangling: false }
   const secret = resolveCredentialSecret(credentialId)
   if (!secret) {
-    log.warn(TAG, `Credential "${credentialId}" is referenced but could not be resolved — gateway connection will lack a token`, {
+    log.error(TAG, `Credential "${credentialId}" is referenced but missing from the credential store — refusing gateway connection`, {
       credentialId,
     })
+    return { token: undefined, dangling: true }
   }
-  return secret || undefined
+  return { token: secret, dangling: false }
 }
 
 export function resolveGatewayConfig(target?: {
@@ -99,11 +115,13 @@ export function resolveGatewayConfig(target?: {
   if (profileId) {
     const profile = getGatewayProfile(profileId)
     if (!profile) return null
+    const credential = resolveTokenForCredential(profile.credentialId)
+    if (credential.dangling) return null
     return {
       key: `profile:${profile.id}`,
       profileId: profile.id,
       wsUrl: profile.wsUrl ? normalizeWsUrl(profile.wsUrl) : deriveOpenClawWsUrl(profile.endpoint),
-      token: resolveTokenForCredential(profile.credentialId),
+      token: credential.token,
     }
   }
 
@@ -123,11 +141,13 @@ export function resolveGatewayConfig(target?: {
   const gatewayProfiles = getGatewayProfiles('openclaw')
   if (gatewayProfiles[0]) {
     const profile = gatewayProfiles[0]
+    const credential = resolveTokenForCredential(profile.credentialId)
+    if (credential.dangling) return null
     return {
       key: `profile:${profile.id}`,
       profileId: profile.id,
       wsUrl: profile.wsUrl ? normalizeWsUrl(profile.wsUrl) : deriveOpenClawWsUrl(profile.endpoint),
-      token: resolveTokenForCredential(profile.credentialId),
+      token: credential.token,
     }
   }
   return null

@@ -238,6 +238,18 @@ test('buildChatModel keeps local Ollama local even when a credential and :cloud 
   assert.equal(llm.clientConfig?.baseURL, 'http://localhost:11434/v1')
 })
 
+test('buildChatModel disables parallel_tool_calls for Ollama local to avoid duplicate tool emissions from some OSS models', () => {
+  const llm = buildChatModel({
+    provider: 'ollama',
+    model: 'devstral',
+    ollamaMode: 'local',
+    apiKey: null,
+  }) as ChatOpenAI & { modelKwargs?: Record<string, unknown> }
+
+  assert.equal(llm.modelKwargs?.parallel_tool_calls, false)
+  assert.equal(llm.clientConfig?.baseURL, 'http://localhost:11434/v1')
+})
+
 test('buildChatModel uses Ollama Cloud only when explicit cloud mode is selected', () => {
   saveCredentials({
     'cred-1': {
