@@ -15,7 +15,7 @@ import { loadSettings } from '@/lib/server/settings/settings-repository'
 import { loadSkills } from '@/lib/server/skills/skill-repository'
 import { resolveImagePath } from '@/lib/server/resolve-image'
 import { resolveSessionToolPolicy } from '@/lib/server/tool-capability-policy'
-import { listUniversalToolAccessExtensionIds } from '@/lib/server/universal-tool-access'
+import { listUniversalToolAccessExtensionIds, listScopedToolAccessExtensionIds } from '@/lib/server/universal-tool-access'
 import {
   buildAgentDisabledMessage,
   isAgentDisabled,
@@ -332,9 +332,17 @@ function buildAgentSystemPrompt(
   const allowSilentReplies = isDirectConnectorSession(session)
   const lightweightDirectChat = options?.lightweightDirectChat === true
   const parts: string[] = []
-  const enabledExtensions = listUniversalToolAccessExtensionIds(
-    getEnabledCapabilityIds(session).length > 0 ? getEnabledCapabilityIds(session) : getEnabledCapabilityIds(agent),
-  )
+  const capabilityIds = getEnabledCapabilityIds(session).length > 0
+    ? getEnabledCapabilityIds(session)
+    : getEnabledCapabilityIds(agent)
+  // Scoped tool access is the new default: if the agent declares a non-empty
+  // `tools` list, the system prompt only describes those tools. Explicit
+  // `toolAccessMode: 'universal'` opts into the full firehose (for coordinators
+  // or debugging). Agents with no declared tools fall back to universal so
+  // empty-config agents aren't crippled.
+  const enabledExtensions = agent.toolAccessMode !== 'universal' && Array.isArray(agent.tools) && agent.tools.length > 0
+    ? listScopedToolAccessExtensionIds(agent.tools, capabilityIds)
+    : listUniversalToolAccessExtensionIds(capabilityIds)
 
   const identityLines = ['## My Identity']
   identityLines.push(`Name: ${agent.name}`)
@@ -547,8 +555,16 @@ export async function prepareChatTurn(input: ExecuteChatTurnInput): Promise<Prep
   const runtimeCapabilityIds = filterRuntimeCapabilityIds(getEnabledCapabilityIds(session), {
     delegationEnabled: agentForSession?.delegationEnabled === true,
   })
+  // Match the resolver in buildAgentSystemPrompt: default to scoped whenever
+  // the agent declares a non-empty tools list, unless explicitly set to
+  // 'universal'. Agents with no declared tools stay universal.
+  const scopedAccess = agentForSession?.toolAccessMode !== 'universal'
+    && Array.isArray(agentForSession?.tools)
+    && (agentForSession!.tools!.length > 0)
   const requestedCapabilityIds = runtimeCapabilityIds.length > 0
-    ? listUniversalToolAccessExtensionIds(runtimeCapabilityIds)
+    ? (scopedAccess
+      ? listScopedToolAccessExtensionIds(agentForSession!.tools!, runtimeCapabilityIds)
+      : listUniversalToolAccessExtensionIds(runtimeCapabilityIds))
     : []
   const toolPolicy = resolveSessionToolPolicy(requestedCapabilityIds, appSettings)
   const isHeartbeatRun = input.internal === true && source === 'heartbeat'

@@ -68,6 +68,13 @@ export interface Agent {
   delegationTargetMode?: DelegationTargetMode
   delegationTargetAgentIds?: string[]
   tools?: string[]
+  // When 'scoped', the chat turn restricts enabled extensions to the
+  // intersection of the universal core list and agent.tools (plus a small
+  // non-negotiable baseline for memory + context management). Default
+  // 'universal' preserves existing behavior. Opt in to cut per-turn tool
+  // guidance dramatically — a focused agent with 5 tools drops ~15 k chars
+  // of tool-related prompt text vs. the full 33-tool universe.
+  toolAccessMode?: 'universal' | 'scoped'
   extensions?: string[]
   skills?: string[]             // e.g. ['frontend-design'] — pinned Claude Code skills to mention explicitly
   skillIds?: string[]           // IDs of pinned managed skills to keep always-on for this agent

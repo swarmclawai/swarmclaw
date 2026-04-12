@@ -210,6 +210,11 @@ export function AgentSheet() {
   const [delegationTargetMode, setDelegationTargetMode] = useState<'all' | 'selected'>('all')
   const [delegationTargetAgentIds, setDelegationTargetAgentIds] = useState<string[]>([])
   const [tools, setTools] = useState<string[]>([])
+  // Scoped tool access is the default for new agents (cuts ~3 k input tokens
+  // per turn). Existing agents with no toolAccessMode field persisted stay
+  // universal server-side for backward compat; the new-agent setup path
+  // below also explicitly writes 'scoped' so it persists on save.
+  const [toolAccessMode, setToolAccessMode] = useState<'universal' | 'scoped'>('scoped')
   const [extensions, setExtensions] = useState<string[]>([])
   const [enabledExtensionIds, setEnabledExtensionIds] = useState<Set<string> | null>(null)
   const [skills, setSkills] = useState<string[]>([])
@@ -415,6 +420,7 @@ export function AgentSheet() {
         setDelegationTargetMode(editing.delegationTargetMode === 'selected' ? 'selected' : 'all')
         setDelegationTargetAgentIds(editing.delegationTargetAgentIds || [])
         setTools(getEnabledToolIds(editing))
+        setToolAccessMode(editing.toolAccessMode === 'scoped' ? 'scoped' : 'universal')
         setExtensions(getEnabledExtensionIds(editing))
         setSkills(editing.skills || [])
         setSkillIds(editing.skillIds || [])
@@ -497,6 +503,7 @@ export function AgentSheet() {
         setDelegationTargetMode(src.delegationTargetMode === 'selected' ? 'selected' : 'all')
         setDelegationTargetAgentIds(src.delegationTargetAgentIds || [])
         setTools(getEnabledToolIds(src))
+        setToolAccessMode(src.toolAccessMode === 'scoped' ? 'scoped' : 'universal')
         setExtensions(getEnabledExtensionIds(src))
         setSkills(src.skills || [])
         setSkillIds(src.skillIds || [])
@@ -576,6 +583,7 @@ export function AgentSheet() {
         setDelegationTargetMode('all')
         setDelegationTargetAgentIds([])
         setTools(getDefaultAgentToolIds())
+        setToolAccessMode('scoped')
         setExtensions([])
         setSkills([])
         setSkillIds([])
@@ -783,6 +791,7 @@ export function AgentSheet() {
       delegationTargetMode: delegationEnabled || role === 'coordinator' ? delegationTargetMode : 'all',
       delegationTargetAgentIds: (delegationEnabled || role === 'coordinator') && delegationTargetMode === 'selected' ? delegationTargetAgentIds : [],
       tools,
+      toolAccessMode,
       extensions,
       skills,
       skillIds,
@@ -2005,6 +2014,30 @@ export function AgentSheet() {
         summary={advancedSummary}
         badges={agentAdvancedBadges}
       >
+      <SectionCard
+        title="Context & Tool Access"
+        description="Control how many tools are described in this agent's system prompt. Scoped (default) keeps the agent focused and saves ~3 k input tokens per turn; Universal gives it visibility into every built-in tool."
+        className="mb-6 border-white/[0.05] bg-white/[0.01]"
+      >
+      <div className="space-y-3">
+        <label className="flex items-center gap-3 cursor-pointer">
+          <div
+            onClick={() => setToolAccessMode((current) => current === 'universal' ? 'scoped' : 'universal')}
+            className={`w-11 h-6 rounded-full transition-all duration-200 relative cursor-pointer shrink-0 ${toolAccessMode === 'universal' ? 'bg-accent-bright' : 'bg-white/[0.08]'}`}
+          >
+            <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all duration-200 ${toolAccessMode === 'universal' ? 'left-[22px]' : 'left-0.5'}`} />
+          </div>
+          <span className="text-[13px] text-text-2">Universal tool access</span>
+          <HintTip text="Off (default, recommended): the agent only sees tools enabled in its Tools list. On: every built-in tool is described in the system prompt. Turn on only for coordinator agents that need visibility across every possible downstream tool, or temporarily for debugging." />
+        </label>
+        <p className="text-[12px] text-text-3/70 pl-[56px] -mt-1">
+          {toolAccessMode === 'universal'
+            ? 'Full tool universe is injected into the prompt. Costs ~3 k more input tokens per turn.'
+            : 'Only the tools enabled above are visible to the agent — this is the focused default.'}
+        </p>
+      </div>
+      </SectionCard>
+
       <SectionCard
         title="Voice & Autonomy"
         description="Tune voice and the detailed heartbeat behavior for this agent."

@@ -34,7 +34,11 @@ const perfState = hmrSingleton('__swarmclaw_perf__', () => ({
   recentEntries: [] as PerfEntry[],
 }))
 
-const MAX_RECENT = 200
+// Keep a generous ring buffer so perf entries from a chat turn survive the
+// flurry of repository/queue events that fire between them. 200 was too small
+// — queue.get/tasks.list fire ~20/s during task processing and would evict
+// chat-execution/prompt entries before they could be read.
+const MAX_RECENT = 2000
 
 function emitEntry(entry: PerfEntry): void {
   perfState.recentEntries.push(entry)

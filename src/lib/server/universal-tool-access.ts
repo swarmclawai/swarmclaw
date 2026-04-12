@@ -57,3 +57,26 @@ export function listUniversalToolAccessExtensionIds(extraExtensions?: string[] |
     ...normalizeExtensionList(extraExtensions),
   ])
 }
+
+// Minimum extensions that a 'scoped' agent always gets regardless of its
+// declared tool list. Memory + context management are required for the agent
+// to function (remembering things, noticing when it's out of context), and
+// ask_human lets it escalate to the user when stuck. Everything else is
+// filterable through agent.tools.
+const SCOPED_TOOL_BASELINE = ['memory', 'context_mgmt', 'ask_human'] as const
+
+/**
+ * Returns the set of enabled extension IDs for a scoped-access agent: the
+ * intersection of `listUniversalToolAccessExtensionIds()` with the agent's
+ * declared tools, plus the non-negotiable baseline. Use this when an agent
+ * has opted into `toolAccessMode: 'scoped'` to shrink per-turn context.
+ */
+export function listScopedToolAccessExtensionIds(
+  declaredTools: string[] | null | undefined,
+  extraExtensions?: string[] | null,
+): string[] {
+  const universe = new Set(listUniversalToolAccessExtensionIds(extraExtensions))
+  const declared = normalizeExtensionList(declaredTools)
+  const scoped = declared.filter((tool) => universe.has(tool))
+  return dedup([...SCOPED_TOOL_BASELINE, ...scoped])
+}

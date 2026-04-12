@@ -654,6 +654,16 @@ export function resolveRuntimeSkills(options: ResolveRuntimeSkillsOptions = {}):
   }
 }
 
+// Dedicated sub-budget for auto-attached learned skills. buildSeedFromLearned
+// marks every learned skill as `attached`, which means a single coordinator
+// agent with 100+ historical learnings could flood the whole 30 k pinned-skill
+// block every turn (observed: 178 learned skills / 176 k chars candidate pool
+// → 24 k-char Pinned Skills section on every CEO turn). We cap learned-skill
+// injection well below the full budget so explicitly-pinned/always-on skills
+// still fit afterward.
+const MAX_LEARNED_SKILLS_PROMPT_CHARS = 8000
+const MAX_LEARNED_SKILLS_IN_PROMPT = 6
+
 function selectPromptSkills(skills: ResolvedRuntimeSkill[]): ResolvedRuntimeSkill[] {
   const ordered = [...skills]
     .filter((skill) =>
@@ -670,14 +680,37 @@ function selectPromptSkills(skills: ResolvedRuntimeSkill[]): ResolvedRuntimeSkil
 
   const selected: ResolvedRuntimeSkill[] = []
   let totalChars = 0
+  let learnedChars = 0
+  let learnedCount = 0
   for (const skill of ordered) {
     if (selected.length >= MAX_SKILLS_IN_PROMPT) break
     const contentLen = skill.name.length + skill.content.length + 12
     if (totalChars + contentLen > MAX_SKILLS_PROMPT_CHARS) continue
+    const isLearned = skill.source === 'learned'
+    if (isLearned) {
+      if (learnedCount >= MAX_LEARNED_SKILLS_IN_PROMPT) continue
+      if (learnedChars + contentLen > MAX_LEARNED_SKILLS_PROMPT_CHARS) continue
+      learnedChars += contentLen
+      learnedCount += 1
+    }
     totalChars += contentLen
     selected.push(skill)
   }
   return selected
+}
+
+// Hard cap on how much skill content we inline per pinned skill. Long skill
+// files (multi-page markdown guides) were dominating the system prompt — one
+// coordinator agent had 24,402 chars (39% of its 62 k budget) from a single
+// pinned skill. When content exceeds the cap we truncate and instruct the
+// agent to pull the rest on demand via `use_skill` action="load".
+const INLINED_SKILL_CHAR_CAP = 3000
+
+function truncateInlinedSkillContent(content: string, skillName: string): string {
+  const trimmed = content.trim()
+  if (trimmed.length <= INLINED_SKILL_CHAR_CAP) return trimmed
+  const head = trimmed.slice(0, INLINED_SKILL_CHAR_CAP)
+  return `${head}\n\n[Skill content truncated at ${INLINED_SKILL_CHAR_CAP} chars to save context. Call \`use_skill\` with action="load" and skillId for "${skillName}" to load the full guide when you need it.]`
 }
 
 function sectionFromSkills(params: {
@@ -688,7 +721,7 @@ function sectionFromSkills(params: {
   const usable = params.skills.filter((skill) => skill.content.trim())
   if (usable.length === 0) return ''
   const body = usable
-    .map((skill) => `### ${skill.name}\n${skill.content}`)
+    .map((skill) => `### ${skill.name}\n${truncateInlinedSkillContent(skill.content, skill.name)}`)
     .join('\n\n')
   return [params.title, params.preface, '', body].join('\n')
 }

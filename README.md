@@ -389,6 +389,15 @@ Operational docs: https://swarmclaw.ai/docs/observability
 
 ## Releases
 
+### v1.5.39 Highlights
+
+- **Agents default to scoped tool access**: new agents (and existing agents whose `tools` list is non-empty) now only see the tools they've been given in the system prompt. This trims ~3 k input tokens per turn — an observed CEO/coordinator agent with 14 tools and 4 loaded skills went from 62 k to 38 k chars of system prompt. Opt back into the old firehose by toggling **Universal tool access** in the agent sheet's new "Context & Tool Access" section. Memory, context management, and `ask_human` are always included regardless of the scoped list.
+- **Pinned skills budget hardening**: one long markdown skill was eating 24 k of a 62 k prompt. Inlined pinned-skill content is now capped at 3 k chars with a pointer to `use_skill` action="load" for the full guide, and auto-attached *learned* skills get a dedicated sub-budget (max 6 skills / 8 k chars) so they cannot dominate the main pinned-skills section.
+- **OpenClaw chat fast-fails on dangling credentials**: v1.5.38 added gateway-side fast-fail; the chat streaming path now does the same, emitting a clear `err` event naming the missing credential instead of dialing the gateway unauthenticated and waiting 120 s for the timeout.
+- **Queue: orphan-recovery auto-heals stale checkouts**: pre-1.5.38 storage could leave `queued` tasks with a stale `checkoutRunId` that `checkoutTask()` refused forever. Orphan recovery now clears the stale id in the same sweep that re-queues the task, and `reconcileFinishedRunningTasks` / agent-not-found / capability-mismatch paths also null out the checkout when they terminally fail a task.
+- **Perf ring buffer raised to 2 000 entries**: queue/task repository events fire ~20 Hz during task processing and were evicting chat-execution/prompt perf entries out of the 200-entry buffer before they could be read. The larger buffer lets the perf viewer actually show a full turn.
+- **Tests**: added regression tests for pre-1.5.38 stale-checkout orphan recovery and for the scoped-tool-access algorithm.
+
 ### v1.5.38 Highlights
 
 - **Task queue: reclaim stale checkouts**: `checkoutTask()` now reclaims a lingering `checkoutRunId` on a `queued` task instead of refusing it forever. An ungraceful server exit mid-turn (crash, SIGKILL, HMR reload) previously left tasks uncheckoutable, producing a dispatch → orphan-recovery → failed-checkout spin that logged "Recovering orphaned queued task" tens of thousands of times per session. `scheduleRetryOrDeadLetter()` also clears the prior checkout when scheduling a retry or dead-lettering.
@@ -421,12 +430,6 @@ Operational docs: https://swarmclaw.ai/docs/observability
 - **Doctor: detect dangling gateway credentials**: the setup doctor now flags gateway profiles that reference deleted or missing credentials, explaining the "gateway token missing" connection errors.
 - **Gateway credential resolution logging**: when a gateway credential can't be resolved, the server now logs a clear warning identifying the missing credential ID.
 - **Credential decryption error logging**: when a stored credential can't be decrypted (e.g. after `CREDENTIAL_SECRET` changes), the server now logs the credential ID and provider so users know which key to re-add.
-
-### v1.5.34 Highlights
-
-- **Ollama Cloud auth fix**: SwarmClaw now normalizes `api.ollama.com` and `www.ollama.com` to `ollama.com` before making authenticated requests, avoiding the redirect that was dropping authorization headers and causing false provider-health/runtime failures.
-- **Chat execution context hardening**: tool invocation now resolves names case-insensitively, oversized tool results are truncated before they are fed back into the model, and proactive grounding/heartbeat prompts stay smaller under pressure to reduce avoidable context blowouts.
-- **API compatibility fixes**: OpenAI-compatible streaming now captures reasoning deltas from providers that emit them outside `delta.content`, and A2A endpoints are exempt from the main proxy access-key gate so they can rely on their own auth scheme.
 
 Older releases: https://swarmclaw.ai/docs/release-notes
 

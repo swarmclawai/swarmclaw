@@ -422,6 +422,21 @@ export function streamOpenClawChat({ session, message, imagePath, apiKey, write,
 
   const wsUrl = session.apiEndpoint ? deriveOpenClawWsUrl(session.apiEndpoint) : 'ws://127.0.0.1:18789'
   const token = apiKey || session.apiKey || undefined
+  // If the session references a credential but nothing resolved, the credential
+  // was deleted or corrupted. Fail fast with a clear error instead of dialing
+  // the gateway unauthenticated and timing out 120 s later (the original symptom
+  // behind the "OpenClaw gateway timed out after 120 s" report).
+  const credentialIdSet = typeof session.credentialId === 'string' && session.credentialId.trim().length > 0
+  if (credentialIdSet && !token) {
+    return Promise.resolve().then(() => {
+      active.delete(session.id)
+      write(`data: ${JSON.stringify({
+        t: 'err',
+        text: `OpenClaw credential "${session.credentialId}" is missing from the credential store. Reattach an existing credential or create a new one in Settings → Credentials.`,
+      })}\n\n`)
+      return ''
+    })
+  }
   return new Promise((resolve) => {
     let fullResponse = ''
     let settled = false

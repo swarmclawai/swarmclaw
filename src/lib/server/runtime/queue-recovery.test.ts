@@ -309,6 +309,67 @@ describe('queue recovery', () => {
     assert.equal(output.attempts, 1)
   })
 
+  it('processNext orphan recovery clears stale checkoutRunId on queued tasks', () => {
+    // Regression: tasks written before the 1.5.38 fix could land in storage with
+    // status='queued' + a set checkoutRunId (because the old scheduleRetryOrDeadLetter
+    // forgot to release the checkout). Orphan recovery must repair this invalid combo
+    // so the next checkoutTask() can succeed — otherwise the loop spins forever.
+    const output = runWithTempDataDir<{
+      status: string | null
+      checkoutRunId: string | null
+      queued: string[]
+    }>(`
+      const storageMod = await import('@/lib/server/storage')
+      const queueMod = await import('@/lib/server/runtime/queue')
+      const storage = storageMod.default || storageMod
+      const queue = queueMod.default || queueMod
+
+      const now = Date.now()
+      storage.saveAgents({
+        'agent-a': {
+          id: 'agent-a',
+          name: 'Agent A',
+          provider: 'openai',
+          model: 'gpt-test',
+          createdAt: now,
+          updatedAt: now,
+        },
+      })
+      storage.saveTasks({
+        stale: {
+          id: 'stale',
+          title: 'Pre-1.5.38 stuck task',
+          description: 'Queued but still holds a stale checkoutRunId from a prior failed run',
+          status: 'queued',
+          agentId: 'agent-a',
+          checkoutRunId: 'stale-run-id',
+          createdAt: now - 10_000,
+          updatedAt: now - 10_000,
+        },
+      })
+      // Intentionally NOT in the queue array — simulates the orphan condition.
+      storage.saveQueue([])
+
+      await queue.processNext()
+
+      const task = storage.loadTasks().stale
+      console.log(JSON.stringify({
+        status: task?.status ?? null,
+        checkoutRunId: task?.checkoutRunId ?? null,
+        queued: storage.loadQueue(),
+      }))
+    `)
+
+    // Orphan recovery should have put the task back in the queue AND cleared the stale id.
+    assert.equal(output.checkoutRunId, null, 'orphan recovery must clear stale checkoutRunId')
+    // After recovery the task either stayed queued or moved to running (depending on concurrency).
+    // Either way it must not still be stuck in an orphan state.
+    assert.ok(
+      output.status === 'queued' || output.status === 'running' || output.status === 'failed',
+      `unexpected status after recovery: ${output.status}`,
+    )
+  })
+
   it('dead-letter path clears checkoutRunId so terminal tasks do not appear checked-out', () => {
     const output = runWithTempDataDir<{
       status: string | null
