@@ -69,7 +69,7 @@ If you are running multiple agents against the same checkout, please do not kill
 
 ## Where to look first
 
-- **`CLAUDE.md` and `AGENTS.md`** are the canonical project conventions. They cover storage patterns (`saveCollection`, `setIfChanged`), Zustand store rules, the chat-execution pipeline, terminal-tool boundaries, the extensions migration, the desktop-app architecture, and the release checklist. Both files stay in sync; pick whichever reads better for you.
+- **`CLAUDE.md`** is the canonical project conventions reference. It covers storage patterns (`saveCollection`, `setIfChanged`), Zustand store rules, the chat-execution pipeline, terminal-tool boundaries, the extensions migration, the desktop-app architecture, and the release checklist. Read this first before any non-trivial change.
 - **`src/lib/providers/`** for new provider integrations. Most new providers are OpenAI-compatible and can be added as a thin wrapper that delegates to `streamOpenAiChat`. See `claude.ts` and `anthropic.ts` for the raw HTTP / SSE pattern when a provider is not OpenAI-compatible.
 - **`src/lib/server/session-tools/`** for new agent tools. Native tool builders go through the assembler in `session-tools/index.ts`; native tool names are deduplicated across all assembly phases.
 - **`src/lib/server/chat-execution/`** for the chat loop, continuation evaluator, classifier, and tool-event tracker.

@@ -31,7 +31,14 @@ import {
   releaseRuntimeLock,
   tryAcquireRuntimeLock,
 } from '@/lib/server/runtime/runtime-lock-repository'
-import { errorMessage } from '@/lib/shared-utils'
+import { errorMessage, hmrSingleton } from '@/lib/shared-utils'
+
+// HMR-safe single-shot guard so the "subprocess fallback unavailable"
+// warning logs once per process lifetime, not per API call.
+const subprocessFallbackUnavailableLogged = hmrSingleton<{ value: boolean }>(
+  '__swarmclaw_daemon_subprocess_fallback_warned__',
+  () => ({ value: false }),
+)
 
 const TAG = 'daemon-controller'
 const LAUNCH_LOCK_NAME = 'daemon-launcher'
@@ -367,7 +374,22 @@ export async function ensureDaemonProcessRunning(
     const secondCheck = await getLiveDaemonSnapshot()
     if (secondCheck?.status.running) return false
 
-    const { root, entry } = resolveDaemonRuntimeEntry()
+    let resolved: { root: string; entry: string }
+    try {
+      resolved = resolveDaemonRuntimeEntry()
+    } catch (err: unknown) {
+      // The standalone Docker image does not ship `src/` (Next.js standalone
+      // output excludes raw source files), so the subprocess fallback can
+      // never spawn there. Fail soft: log once and let callers fall back to
+      // whatever in-process daemon path is available rather than surfacing
+      // a 500 to API consumers. Reported as issue #41 (Bug 3).
+      if (!subprocessFallbackUnavailableLogged.value) {
+        subprocessFallbackUnavailableLogged.value = true
+        log.warn(TAG, `[daemon] Subprocess fallback unavailable in this build (${errorMessage(err)}). The in-process daemon will continue to be the primary path.`)
+      }
+      return false
+    }
+    const { root, entry } = resolved
     const adminPort = await reservePort()
     const adminToken = crypto.randomBytes(24).toString('hex')
     fs.mkdirSync(path.dirname(DAEMON_LOG_PATH), { recursive: true })

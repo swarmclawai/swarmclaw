@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { execSync } from 'child_process'
 import { getDb } from '@/lib/server/storage'
+import { gitAvailable } from '@/lib/server/git-metadata'
 
 const RELEASE_TAG_RE = /^v\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/
 
@@ -37,6 +38,17 @@ function ensureCleanWorkingTree() {
 }
 
 export async function POST() {
+  // The git-pull update path only makes sense for source/git checkouts.
+  // Docker and packaged-app installs have their own update channels and
+  // calling this route on those installs would otherwise return a confusing
+  // 500. Surface the situation as a 200 with a clear reason instead.
+  if (!gitAvailable()) {
+    return NextResponse.json({
+      success: false,
+      reason: 'no_git_metadata',
+      error: 'Self-update is only supported for source / git checkouts. Use the npm or Docker upgrade path for this install.',
+    })
+  }
   try {
     const beforeSha = run('git rev-parse --short HEAD')
     const beforeRef = run('git rev-parse HEAD')

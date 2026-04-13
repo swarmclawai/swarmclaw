@@ -4,6 +4,7 @@ import { loadConnectors, saveConnectors } from '@/lib/server/connectors/connecto
 import { decryptKey, loadCredentials } from '@/lib/server/credentials/credential-repository'
 import { loadQueue } from '@/lib/server/runtime/queue-repository'
 import { pruneExpiredLocks, readRuntimeLock, releaseRuntimeLock, renewRuntimeLock, tryAcquireRuntimeLock } from '@/lib/server/runtime/runtime-lock-repository'
+import { isOwnerProcessDead } from '@/lib/server/daemon/lease-owner'
 import { loadSchedules } from '@/lib/server/schedules/schedule-repository'
 import { loadSessions } from '@/lib/server/sessions/session-repository'
 import { loadSettings } from '@/lib/server/settings/settings-repository'
@@ -126,6 +127,7 @@ interface DaemonState {
   shuttingDown: boolean
   providerPingCircuitBreaker: Map<string, { consecutiveFailures: number; skipUntil: number }>
   lockRenewIntervalId: ReturnType<typeof setInterval> | null
+  leaseRetryTimeoutId: ReturnType<typeof setTimeout> | null
   primaryLeaseHeld: boolean
 }
 
@@ -151,6 +153,7 @@ const ds: DaemonState = hmrSingleton<DaemonState>('__swarmclaw_daemon__', () => 
   shuttingDown: false,
   providerPingCircuitBreaker: new Map<string, { consecutiveFailures: number; skipUntil: number }>(),
   lockRenewIntervalId: null,
+  leaseRetryTimeoutId: null,
   primaryLeaseHeld: false,
 }))
 
@@ -180,6 +183,7 @@ if (ds.connectorHealthCheckRunning === undefined) ds.connectorHealthCheckRunning
 if (ds.shuttingDown === undefined) ds.shuttingDown = false
 if (!ds.providerPingCircuitBreaker) ds.providerPingCircuitBreaker = new Map<string, { consecutiveFailures: number; skipUntil: number }>()
 if (ds.lockRenewIntervalId === undefined) ds.lockRenewIntervalId = null
+if (ds.leaseRetryTimeoutId === undefined) ds.leaseRetryTimeoutId = null
 if (ds.primaryLeaseHeld === undefined) ds.primaryLeaseHeld = false
 
 function stopDaemonLeaseRenewal(opts?: { release?: boolean }) {
@@ -229,12 +233,60 @@ function acquireDaemonLease(source: string): boolean {
   }
   if (!acquired) {
     let owner = 'another process'
+    let expiresAt: number | null = null
     try {
-      owner = readRuntimeLock(DAEMON_RUNTIME_LOCK_NAME)?.owner || owner
+      const lease = readRuntimeLock(DAEMON_RUNTIME_LOCK_NAME)
+      if (lease) {
+        owner = lease.owner || owner
+        expiresAt = lease.expiresAt
+      }
     } catch {
       // Best-effort diagnostics only.
     }
+
+    // Stale-lease recovery: when a previous container / process crashed
+    // without releasing the lease, the new instance would otherwise wait
+    // up to the full TTL (DAEMON_RUNTIME_LOCK_TTL_MS) before being able
+    // to start the daemon. If the recorded owner pid is local to this
+    // host AND is no longer alive, reclaim the lease immediately and
+    // retry. Conservative: any uncertainty (different host, malformed
+    // owner, kill probe failed for an unexpected reason) skips the
+    // reclaim path. Reported as issue #41 (Bug 2).
+    if (isOwnerProcessDead(owner)) {
+      try {
+        releaseRuntimeLock(DAEMON_RUNTIME_LOCK_NAME, owner)
+        log.info(TAG, `[daemon] Reclaimed stale daemon-primary lease from dead owner ${owner}`)
+        let retried = false
+        try {
+          retried = tryAcquireRuntimeLock(DAEMON_RUNTIME_LOCK_NAME, daemonLockOwner, DAEMON_RUNTIME_LOCK_TTL_MS)
+        } catch (err: unknown) {
+          log.warn(TAG, `[daemon] Reclaim retry failed (source=${source}): ${errorMessage(err)}`)
+        }
+        if (retried) {
+          ds.primaryLeaseHeld = true
+          startDaemonLeaseRenewal()
+          return true
+        }
+      } catch (err: unknown) {
+        log.warn(TAG, `[daemon] Failed to release stale lease (source=${source}): ${errorMessage(err)}`)
+      }
+    }
+
     log.info(TAG, `[daemon] Skipping start (source=${source}); lease held by ${owner}`)
+
+    // Schedule one deferred retry slightly past the lease's expiry so
+    // the daemon comes up automatically once the prior owner's TTL has
+    // elapsed, instead of waiting for the next API call to nudge it.
+    if (expiresAt !== null) {
+      const delayMs = Math.max(1_000, expiresAt - Date.now() + 1_000)
+      if (ds.leaseRetryTimeoutId) clearTimeout(ds.leaseRetryTimeoutId)
+      ds.leaseRetryTimeoutId = setTimeout(() => {
+        ds.leaseRetryTimeoutId = null
+        if (ds.running || ds.primaryLeaseHeld) return
+        ensureDaemonStarted(`${source}:lease-retry`)
+      }, delayMs)
+      ds.leaseRetryTimeoutId.unref?.()
+    }
     return false
   }
   ds.primaryLeaseHeld = true
