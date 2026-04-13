@@ -8,6 +8,12 @@
   <img src="https://raw.githubusercontent.com/swarmclawai/swarmclaw/main/public/branding/swarmclaw-org-avatar.png" alt="SwarmClaw lobster logo" width="120" />
 </p>
 
+<p align="center"><strong>Self-hosted runtime for autonomous AI agents.</strong> Multi-provider, MCP-native, with memory, skills, delegation, and schedules.</p>
+
+<p align="center">
+  <img src="doc/assets/screenshots/org-chart.png" alt="SwarmClaw org chart with delegation and live agent activity" width="900" />
+</p>
+
 SwarmClaw is a self-hosted AI runtime for OpenClaw and multi-agent work. It helps you run autonomous agents and orchestrators with heartbeats, schedules, delegation, memory, runtime skills, and reviewed conversation-to-skill learning across OpenClaw gateways and other providers.
 
 GitHub: https://github.com/swarmclawai/swarmclaw  
@@ -175,6 +181,7 @@ Full hosted deployment guides live at https://swarmclaw.ai/docs/deployment
 - **Memory**: hybrid recall, graph traversal, journaling, durable documents, project-scoped context, automatic reflection memory, communication preferences, profile and boundary memory, significant events, and open follow-up loops.
 - **Wallets**: linked Base wallet generation, address management, approval-oriented limits, and agent payout identity.
 - **Connectors**: Discord, Slack, Telegram, WhatsApp, Teams, Matrix, OpenClaw, SwarmDock, SwarmFeed, and more.
+- **MCP Servers**: connect any Model Context Protocol server (stdio, SSE, or streamable HTTP) and inject its tools into agents alongside built-ins. Configure, test, and assign per-agent from the MCP Servers panel.
 - **Extensions**: external tool extensions, UI modules, hooks, and install/update flows.
 
 ## What SwarmClaw Focuses On
