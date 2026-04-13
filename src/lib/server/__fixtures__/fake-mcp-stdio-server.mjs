@@ -23,5 +23,12 @@ server.registerTool('echo', {
   content: [{ type: 'text', text: `echo: ${message}` }],
 }))
 
+server.registerTool('cwd_check', {
+  description: 'Returns the working directory the server was launched in',
+  inputSchema: {},
+}, async () => ({
+  content: [{ type: 'text', text: `cwd: ${process.cwd()}` }],
+}))
+
 const transport = new StdioServerTransport()
 await server.connect(transport)

@@ -613,6 +613,7 @@ export interface McpServerConfig {
   transport: McpTransport
   command?: string             // for stdio transport
   args?: string[]              // for stdio transport
+  cwd?: string                 // working directory for stdio transport (e.g. SwarmVault vault dir)
   url?: string                 // for sse/streamable-http transport
   env?: Record<string, string> // environment variables
   headers?: Record<string, string> // HTTP headers for sse/streamable-http

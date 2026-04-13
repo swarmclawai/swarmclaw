@@ -77,6 +77,7 @@ export async function connectMcpServer(
     transport = new StdioClientTransport({
       command: config.command!,
       args: config.args ?? [],
+      cwd: config.cwd || undefined,
       env: { ...process.env, ...config.env } as Record<string, string>,
     })
   } else if (config.transport === 'sse') {

@@ -20,6 +20,7 @@ export async function POST(req: Request) {
     transport: body.transport,
     command: body.command,
     args: body.args,
+    cwd: body.cwd,
     url: body.url,
     env: body.env,
     headers: body.headers,

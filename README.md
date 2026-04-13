@@ -396,6 +396,12 @@ Operational docs: https://swarmclaw.ai/docs/observability
 
 ## Releases
 
+### v1.5.45 Highlights
+
+- **SwarmVault MCP preset**: a new "SwarmVault" Quick Setup chip in the MCP server sheet pre-fills `npx -y @swarmvaultai/cli mcp` over `stdio` and prompts for the vault directory. One click registers a SwarmVault knowledge vault as an MCP server; agents pick it up via the existing per-agent MCP server selector. SwarmVault docs: https://swarmvault.ai
+- **`cwd` on stdio MCP servers**: `McpServerConfig` now has an optional `cwd` field. The MCP client passes it through to `StdioClientTransport` so servers that discover config from the working directory (SwarmVault, anything that reads from `cwd`-relative files) work correctly. Existing MCP servers are untouched (the field is optional and defaults to the SwarmClaw process cwd, which was the prior behaviour).
+- **Bundled `swarmvault` skill**: ships at `skills/swarmvault/SKILL.md` and is auto-discovered alongside the other bundled skills. Captures the schema-first / graph-query-first conventions (read `swarmvault.schema.md` before compile or query work, treat `raw/` as immutable, prefer `graph query|path|explain` over grep, preserve `page_id` / `source_ids` / `node_ids` / `freshness` / `source_hashes` frontmatter, save high-value answers to `wiki/outputs/`). Pin it on any agent that talks to a SwarmVault vault. Optional and decoupled from the MCP integration.
+
 ### v1.5.44 Highlights
 
 - **Model lists refreshed across every provider**: dropdowns now lead with the April-2026 flagship models instead of mid-2025 names. OpenAI goes to GPT-5.4 / 5.4-mini / 5.4-nano / 5.3 / o3-mini. Google and Gemini CLI lead with Gemini 3.1 Pro, Gemini 3 Flash, and 3.1 Flash-Lite, keeping 2.5 as a legacy fallback. xAI jumps from Grok 3 to Grok 4 plus the Grok 4 / 4.1 Fast reasoning and non-reasoning variants. Groq drops the deprecated `deepseek-r1-distill-llama-70b` and leads with Llama 4 Maverick, Llama 4 Scout, Kimi K2, and gpt-oss 120b/20b. Mistral moves to Magistral 1.2, Devstral 2, Codestral, and Mistral Small 4. Fireworks / Nebius / DeepInfra now lead with DeepSeek V3.2, Kimi K2.5, and Qwen 3 235B instead of the older R1-0528 checkpoint. Anthropic and Claude CLI reorder Opus 4.6 / Sonnet 4.6 / Haiku 4.5 newest-first. OpenCode Web refreshes its `providerID/modelID` seed list.

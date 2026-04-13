@@ -4,10 +4,39 @@ import { useState } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
+import { HintTip } from '@/components/shared/hint-tip'
 import { api } from '@/lib/app/api-client'
 import { toast } from 'sonner'
 import type { McpServerConfig, McpTransport } from '@/types'
 import { useMountedRef } from '@/hooks/use-mounted-ref'
+
+interface McpPreset {
+  id: string
+  label: string
+  description: string
+  helpUrl?: string
+  transport: McpTransport
+  command?: string
+  args?: string[]
+  needsCwd?: boolean
+  cwdHint?: string
+  defaultName: string
+}
+
+const MCP_PRESETS: McpPreset[] = [
+  {
+    id: 'swarmvault',
+    label: 'SwarmVault',
+    description: 'Local-first knowledge vault. Point this at a directory containing swarmvault.config.json.',
+    helpUrl: 'https://swarmvault.ai',
+    transport: 'stdio',
+    command: 'npx',
+    args: ['-y', '@swarmvaultai/cli', 'mcp'],
+    needsCwd: true,
+    cwdHint: 'Absolute path to a SwarmVault workspace (the directory containing swarmvault.config.json). Run `npx @swarmvaultai/cli init` there first if you haven\'t.',
+    defaultName: 'SwarmVault',
+  },
+]
 
 function McpServerForm({ editing, onClose, loadMcpServers }: {
   editing: McpServerConfig | null
@@ -19,6 +48,8 @@ function McpServerForm({ editing, onClose, loadMcpServers }: {
   const [transport, setTransport] = useState<McpTransport>(editing?.transport || 'stdio')
   const [command, setCommand] = useState(editing?.command || '')
   const [args, setArgs] = useState(editing?.args?.join(', ') || '')
+  const [cwd, setCwd] = useState(editing?.cwd || '')
+  const [activePresetId, setActivePresetId] = useState<string | null>(null)
   const [url, setUrl] = useState(editing?.url || '')
   const [envText, setEnvText] = useState(
     editing?.env ? Object.entries(editing.env).map(([k, v]) => `${k}=${v}`).join('\n') : '',
@@ -61,6 +92,7 @@ function McpServerForm({ editing, onClose, loadMcpServers }: {
     if (transport === 'stdio') {
       data.command = command.trim()
       data.args = args.trim() ? args.split(',').map((a) => a.trim()).filter(Boolean) : []
+      data.cwd = cwd.trim() || undefined
     } else {
       data.url = url.trim()
     }
@@ -122,6 +154,16 @@ function McpServerForm({ editing, onClose, loadMcpServers }: {
 
   const canSave = name.trim() && (transport === 'stdio' ? command.trim() : url.trim())
 
+  const applyPreset = (preset: McpPreset) => {
+    setActivePresetId(preset.id)
+    setTransport(preset.transport)
+    if (preset.command !== undefined) setCommand(preset.command)
+    if (preset.args !== undefined) setArgs(preset.args.join(', '))
+    if (!name.trim()) setName(preset.defaultName)
+  }
+
+  const activePreset = activePresetId ? MCP_PRESETS.find((p) => p.id === activePresetId) ?? null : null
+
   const inputClass = "w-full px-4 py-3.5 rounded-[14px] border border-white/[0.08] bg-surface text-text text-[15px] outline-none transition-all duration-200 placeholder:text-text-3/50 focus-glow"
   const labelClass = "block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-3"
 
@@ -133,6 +175,44 @@ function McpServerForm({ editing, onClose, loadMcpServers }: {
         </h2>
         <p className="text-[14px] text-text-3">Configure an MCP server to provide tools to agents</p>
       </div>
+
+      {!editing && MCP_PRESETS.length > 0 && (
+        <div className="mb-8">
+          <label className={labelClass}>Quick Setup</label>
+          <div className="flex flex-wrap gap-2">
+            {MCP_PRESETS.map((preset) => {
+              const isActive = activePresetId === preset.id
+              return (
+                <button
+                  key={preset.id}
+                  type="button"
+                  onClick={() => applyPreset(preset)}
+                  className={`py-2 px-4 rounded-[12px] border text-[13px] font-600 cursor-pointer transition-all ${
+                    isActive
+                      ? 'border-accent-bright bg-accent-bright/10 text-accent-bright'
+                      : 'border-white/[0.08] bg-transparent text-text-2 hover:bg-surface-2'
+                  }`}
+                  style={{ fontFamily: 'inherit' }}
+                  title={preset.description}
+                >
+                  {preset.label}
+                </button>
+              )
+            })}
+          </div>
+          {activePreset && (
+            <p className="mt-3 text-[12px] text-text-3">
+              {activePreset.description}
+              {activePreset.helpUrl && (
+                <>
+                  {' '}
+                  <a href={activePreset.helpUrl} target="_blank" rel="noopener noreferrer" className="text-accent-bright hover:underline">Learn more</a>
+                </>
+              )}
+            </p>
+          )}
+        </div>
+      )}
 
       <div className="mb-8">
         <label className={labelClass}>Name</label>
@@ -164,6 +244,22 @@ function McpServerForm({ editing, onClose, loadMcpServers }: {
               Arguments <span className="normal-case tracking-normal font-normal text-text-3">(comma-separated)</span>
             </label>
             <input type="text" value={args} onChange={(e) => setArgs(e.target.value)} placeholder="e.g. /path/to/dir, --verbose" className={inputClass} style={{ fontFamily: 'inherit' }} />
+          </div>
+          <div className="mb-8">
+            <label className={labelClass}>
+              <span className="inline-flex items-center gap-2">
+                Working Directory <span className="normal-case tracking-normal font-normal text-text-3">(optional)</span>
+                <HintTip text={activePreset?.cwdHint || 'Working directory for the spawned process. Useful when the MCP server discovers config from cwd (e.g. SwarmVault).'} />
+              </span>
+            </label>
+            <input
+              type="text"
+              value={cwd}
+              onChange={(e) => setCwd(e.target.value)}
+              placeholder={activePreset?.needsCwd ? 'e.g. /Users/you/my-vault' : 'e.g. /path/to/working/dir'}
+              className={inputClass}
+              style={{ fontFamily: 'inherit' }}
+            />
           </div>
         </>
       ) : (
