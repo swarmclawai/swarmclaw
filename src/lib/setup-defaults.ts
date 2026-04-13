@@ -7,6 +7,7 @@ export type SetupProvider =
   | 'claude-cli'
   | 'codex-cli'
   | 'opencode-cli'
+  | 'opencode-web'
   | 'gemini-cli'
   | 'copilot-cli'
   | 'droid-cli'
@@ -77,6 +78,19 @@ export const SETUP_PROVIDERS: SetupProviderOption[] = [
     requiresKey: false,
     supportsEndpoint: false,
     badge: 'CLI',
+    icon: 'O',
+  },
+  {
+    id: 'opencode-web',
+    name: 'OpenCode Web',
+    description: 'Connect to a remote OpenCode HTTP server (`opencode serve` or `opencode web`). Supports HTTPS and HTTP Basic Auth.',
+    requiresKey: false,
+    optionalKey: true,
+    supportsEndpoint: true,
+    defaultEndpoint: 'http://localhost:4096',
+    keyLabel: 'username:password (Basic Auth)',
+    keyPlaceholder: 'opencode:••••••• (or just the password)',
+    badge: 'HTTP',
     icon: 'O',
   },
   {
@@ -741,6 +755,13 @@ export const DEFAULT_AGENTS: Record<SetupProvider, DefaultAgentConfig> = {
     description: 'A helpful assistant powered by OpenCode CLI.',
     systemPrompt: SWARMCLAW_ASSISTANT_PROMPT,
     model: 'claude-sonnet-4-6',
+    tools: STARTER_AGENT_TOOLS,
+  },
+  'opencode-web': {
+    name: 'OpenCode Web',
+    description: 'A helpful assistant powered by a remote OpenCode HTTP server.',
+    systemPrompt: SWARMCLAW_ASSISTANT_PROMPT,
+    model: 'anthropic/claude-sonnet-4-5',
     tools: STARTER_AGENT_TOOLS,
   },
   'gemini-cli': {

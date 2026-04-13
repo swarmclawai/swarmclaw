@@ -389,6 +389,12 @@ Operational docs: https://swarmclaw.ai/docs/observability
 
 ## Releases
 
+### v1.5.42 Highlights
+
+- **New `opencode-web` provider — connect to remote OpenCode HTTP servers** ([#40](https://github.com/swarmclawai/swarmclaw/issues/40), requested by [@SteamedFish](https://github.com/SteamedFish)): point an agent at any host running `opencode serve` or `opencode web` (default port `4096`). Supports HTTPS endpoints, HTTP Basic Auth (encode credentials as `username:password` in the API key field; bare passwords default the username to `opencode`), automatic OpenCode session reuse across chat turns, and per-session workspace isolation via `?directory=...`. Models are entered as `providerID/modelID` (e.g. `anthropic/claude-sonnet-4-5`). The existing `opencode-cli` provider is unchanged.
+- **New `CONTRIBUTING.md`**: short, scannable guide covering bug reports, feature requests, PR expectations, commit conventions, and where to look in the codebase. Models the gold-standard examples after issues #39 and #40.
+- **`GET /api/memory/:id` now returns a single entry by default**: previously it eagerly traversed linked memories and returned an array, which broke naive callers that expected a single object per REST convention. Linked traversal is now opt-in via `?depth=N` or `?envelope=true`.
+
 ### v1.5.41 Highlights
 
 - **Moonshot / Kimi compatibility — duplicate `files` tool name fixed**: any agent with the default `files` extension was sending two tools both literally named `files` to the LLM. Most providers tolerated the duplicate; Moonshot's strict tool-schema validation rejected it with `MoonshotException - function name files is duplicated` ([#39](https://github.com/swarmclawai/swarmclaw/issues/39), reported by [@SteamedFish](https://github.com/SteamedFish)). Three fixes: the v2 file builder is now correctly gated on `files_v2` (not `files`), it registers under the matching capability key, and the session-tools assembler now shares a single dedup Set across native, CRUD, and extension phases so any future name collision is rejected with a clear warning instead of a silent double-register.
@@ -421,14 +427,6 @@ Operational docs: https://swarmclaw.ai/docs/observability
 - **Autonomy: dedupe reflection memories across kinds**: the supervisor reflection writer now drops notes whose normalized text has already been stored this run, eliminating near-identical memory rows classified under multiple kinds.
 - **OpenClaw gateway: fast-fail on dangling credentials**: when an agent's OpenClaw route references a deleted or missing credential, the gateway now refuses to dial the WebSocket up front instead of attempting an unauthenticated handshake and waiting the full 120 s for the agent-side timeout. The credential-missing log line is promoted from warn to error so it surfaces in routine monitoring.
 - **Prompt size profiler**: setting `SWARMCLAW_PROFILE_PROMPT=1` now logs a per-section size breakdown of the assembled system prompt (block index, first-line label, char count) on every turn, making it practical to diagnose why a specific agent is eating context budget. Off by default so production turns stay quiet.
-
-### v1.5.37 Highlights
-
-- **Factory Droid CLI as a provider and delegation backend**: adds [`droid`](https://docs.factory.ai/cli/droid-exec/overview) as a first-class chat provider and `delegate` backend with streaming JSON output, session resume, and a conservative `--auto low` autonomy pin on the delegate path. Install `droid` and sign in via browser (or set `FACTORY_API_KEY`), then pick **Factory Droid CLI** in the setup wizard. Resolves #38.
-- **Desktop Release CI hardening**: v1.5.36's Electron build workflow failed on all three platforms. This release:
-  - Adds a proper `author` with email to `package.json` and a `linux.maintainer` entry in `electron-builder.yml` so the Linux `.deb` target stops rejecting the build.
-  - Pins `outputFileTracingRoot` in `next.config.ts` to the project root so the Next.js build no longer walks `C:\Users\<user>\Application Data` (a legacy NTFS junction that throws EPERM on Windows runners).
-  - Pins Python 3.11 in the desktop-release workflow so `node-gyp` rebuilds of native modules (`node-liblzma`, etc.) succeed on Python 3.12+ runners where `distutils` was removed from the stdlib.
 
 Older releases: https://swarmclaw.ai/docs/release-notes
 

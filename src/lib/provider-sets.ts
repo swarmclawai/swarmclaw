@@ -1,5 +1,5 @@
 /** CLI providers that use their own tool execution outside the shared tool-runtime path. */
-export const NON_LANGGRAPH_PROVIDER_IDS = new Set(['claude-cli', 'codex-cli', 'opencode-cli', 'gemini-cli', 'copilot-cli', 'droid-cli', 'cursor-cli', 'qwen-code-cli'])
+export const NON_LANGGRAPH_PROVIDER_IDS = new Set(['claude-cli', 'codex-cli', 'opencode-cli', 'opencode-web', 'gemini-cli', 'copilot-cli', 'droid-cli', 'cursor-cli', 'qwen-code-cli'])
 
 /** Providers that manage their own runtime/tool loop even when reached over an API endpoint. */
 export const RUNTIME_MANAGED_PROVIDER_IDS = new Set(['hermes', 'goose'])

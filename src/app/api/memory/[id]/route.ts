@@ -35,8 +35,13 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const requestedLinkedLimit = parseOptionalInt(searchParams.get('linkedLimit'))
   const db = getMemoryDb()
   const defaults = getMemoryLookupLimits()
+  // By default, GET /memory/:id returns a single entry (REST convention).
+  // Linked-traversal is opt-in via ?depth=N or ?envelope=true — previously
+  // this endpoint returned an array of linked entries by default, which
+  // broke every naive caller that expected a single object.
+  const linkedTraversalRequested = requestedDepth !== undefined || envelope
   const limits = resolveLookupRequest(defaults, {
-    depth: requestedDepth,
+    depth: linkedTraversalRequested ? requestedDepth : 0,
     limit: requestedLimit,
     linkedLimit: requestedLinkedLimit,
   })

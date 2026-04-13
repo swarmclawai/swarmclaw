@@ -69,6 +69,7 @@ export interface Session {
   claudeSessionId: string | null
   codexThreadId?: string | null
   opencodeSessionId?: string | null
+  opencodeWebSessionId?: string | null
   geminiSessionId?: string | null
   copilotSessionId?: string | null
   droidSessionId?: string | null

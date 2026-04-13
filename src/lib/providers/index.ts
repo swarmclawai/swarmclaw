@@ -1,6 +1,7 @@
 import { streamClaudeCliChat } from './claude-cli'
 import { streamCodexCliChat } from './codex-cli'
 import { streamOpenCodeCliChat } from './opencode-cli'
+import { streamOpenCodeWebChat } from './opencode-web'
 import { streamGeminiCliChat } from './gemini-cli'
 import { streamCopilotCliChat } from './copilot-cli'
 import { streamDroidCliChat } from './droid-cli'
@@ -135,6 +136,18 @@ export const PROVIDERS: Record<string, BuiltinProviderConfig> = {
     requiresApiKey: false,
     requiresEndpoint: false,
     handler: { streamChat: streamOpenCodeCliChat },
+  },
+  'opencode-web': {
+    id: 'opencode-web',
+    name: 'OpenCode Web',
+    // OpenCode addresses models as `providerID/modelID`. Free-text entry is
+    // supported; these defaults seed the dropdown with common combinations.
+    models: ['anthropic/claude-sonnet-4-5', 'anthropic/claude-opus-4-5', 'openai/gpt-4.1', 'openai/o4-mini', 'google/gemini-2.5-pro'],
+    requiresApiKey: false,
+    optionalApiKey: true,
+    requiresEndpoint: true,
+    defaultEndpoint: 'http://localhost:4096',
+    handler: { streamChat: streamOpenCodeWebChat },
   },
   'gemini-cli': {
     id: 'gemini-cli',

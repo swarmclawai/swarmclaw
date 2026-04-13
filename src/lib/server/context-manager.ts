@@ -77,6 +77,7 @@ const PROVIDER_DEFAULT_WINDOWS: Record<string, number> = {
   openai: 128_000,
   'codex-cli': 1_047_576,
   'opencode-cli': 200_000,
+  'opencode-web': 200_000,
   'gemini-cli': 1_048_576,
   'copilot-cli': 200_000,
   'droid-cli': 200_000,
