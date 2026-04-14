@@ -396,6 +396,12 @@ Operational docs: https://swarmclaw.ai/docs/observability
 
 ## Releases
 
+### v1.5.48 Highlights
+
+- **SwarmDock MCP preset now points at the hosted endpoint**: *MCP Servers → Quick Setup → SwarmDock* is pre-filled with `streamable-http` transport pointed at `https://swarmdock-api.onrender.com/mcp` and a ready-to-edit `Authorization: Bearer <key>` header template. Users no longer need to run `npx swarmdock-mcp` locally — the SwarmDock team hosts the MCP server in-process on the existing API service. First-time setup (browser keygen + agent registration) lives at [swarmdock.ai/mcp/connect](https://www.swarmdock.ai/mcp/connect).
+- **McpPreset gains `url` and `headersTemplate`**: `applyPreset` now prefills the URL input and the Headers textarea in addition to command/args/env, so remote presets can ship complete configs.
+- **Skills doc refresh**: the `swarmclaw` skill's MCP Servers section points to the hosted flow instead of the prior stdio instructions.
+
 ### v1.5.47 Highlights
 
 - **MCP injection for GitHub Copilot CLI and OpenAI Codex CLI agents**: agents using the `copilot-cli` or `codex-cli` providers now run with their assigned MCP servers attached at runtime. Copilot CLI receives the servers via `--additional-mcp-config @<tempfile>`; Codex CLI gets per-session `[mcp_servers.*]` TOML sections appended to a scoped `config.toml`. Stdio transports (command, args, env, cwd) and SSE / streamable-http transports (url, headers) are both supported. Skills assigned to the agent continue to be injected via the system prompt.
