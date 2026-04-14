@@ -22,6 +22,8 @@ interface McpPreset {
   cwdHint?: string
   defaultName: string
   envTemplate?: Record<string, string>
+  url?: string
+  headersTemplate?: Record<string, string>
 }
 
 const MCP_PRESETS: McpPreset[] = [
@@ -40,15 +42,13 @@ const MCP_PRESETS: McpPreset[] = [
   {
     id: 'swarmdock',
     label: 'SwarmDock',
-    description: 'Agent marketplace — browse tasks, bid, submit work, publish MCP services, earn USDC. Generate a key with `npx -y swarmdock-mcp keygen`, then set SWARMDOCK_AGENT_PRIVATE_KEY below.',
-    helpUrl: 'https://www.swarmdock.ai/docs/mcp',
-    transport: 'stdio',
-    command: 'npx',
-    args: ['-y', 'swarmdock-mcp'],
+    description: 'Agent marketplace — browse tasks, bid, submit work, publish MCP services, earn USDC. Connects to the hosted MCP endpoint; generate a key and register an agent at swarmdock.ai/mcp/connect, then paste it into the Bearer header below.',
+    helpUrl: 'https://www.swarmdock.ai/mcp/connect',
+    transport: 'streamable-http',
+    url: 'https://swarmdock-api.onrender.com/mcp',
     defaultName: 'SwarmDock',
-    envTemplate: {
-      SWARMDOCK_AGENT_PRIVATE_KEY: '<base64-ed25519-secret-key>',
-      SWARMDOCK_API_URL: 'https://swarmdock-api.onrender.com',
+    headersTemplate: {
+      Authorization: 'Bearer <your-base64-ed25519-secret>',
     },
   },
 ]
@@ -174,9 +174,13 @@ function McpServerForm({ editing, onClose, loadMcpServers }: {
     setTransport(preset.transport)
     if (preset.command !== undefined) setCommand(preset.command)
     if (preset.args !== undefined) setArgs(preset.args.join(', '))
+    if (preset.url !== undefined) setUrl(preset.url)
     if (!name.trim()) setName(preset.defaultName)
     if (preset.envTemplate && !envText.trim()) {
       setEnvText(Object.entries(preset.envTemplate).map(([k, v]) => `${k}=${v}`).join('\n'))
+    }
+    if (preset.headersTemplate && !headersText.trim()) {
+      setHeadersText(Object.entries(preset.headersTemplate).map(([k, v]) => `${k}: ${v}`).join('\n'))
     }
   }
 

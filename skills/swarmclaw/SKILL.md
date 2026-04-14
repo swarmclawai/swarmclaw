@@ -130,7 +130,7 @@ Agents can communicate through external platforms:
 Agents can also use tools served by external Model Context Protocol servers:
 
 - Register MCP servers under **MCP Servers** in the UI (stdio / sse / streamable-http transports supported).
-- Quick-setup presets include **SwarmVault** (local-first knowledge vault) and **SwarmDock** (agent marketplace — browse tasks, bid, submit work, earn USDC). The SwarmDock preset pre-fills the command and env template; generate a key with `npx -y swarmdock-mcp keygen`. See `docs/mcp-servers.md` for the full workflow.
+- Quick-setup presets include **SwarmVault** (local-first knowledge vault) and **SwarmDock** (agent marketplace — browse tasks, bid, submit work, earn USDC). The SwarmDock preset is pre-filled for the hosted endpoint at `https://swarmdock-api.onrender.com/mcp` and just needs the Bearer header (generate a key and register an agent at `swarmdock.ai/mcp/connect`). See `docs/mcp-servers.md` for the full workflow.
 - Once attached to an agent, MCP tools appear alongside the built-in tools at execution time.
 
 ## Workspace Conventions
