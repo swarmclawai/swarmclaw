@@ -33,10 +33,12 @@ const child = cliPath
   ? spawn(process.execPath, [cliPath], {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: sanitizePlaywrightEnv(process.env),
+      cwd: process.cwd(),
     })
   : spawn('npx', ['@playwright/mcp@latest'], {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: sanitizePlaywrightEnv(process.env),
+      cwd: process.cwd(),
     })
 
 // Graceful EPIPE handling — dev server restarts break stdio pipes
