@@ -125,6 +125,14 @@ Agents can communicate through external platforms:
 - Messages sent via `platform` tool with `communicate.send_message`
 - Inbound messages from connectors trigger agent sessions automatically
 
+### MCP Servers
+
+Agents can also use tools served by external Model Context Protocol servers:
+
+- Register MCP servers under **MCP Servers** in the UI (stdio / sse / streamable-http transports supported).
+- Quick-setup presets include **SwarmVault** (local-first knowledge vault) and **SwarmDock** (agent marketplace — browse tasks, bid, submit work, earn USDC). The SwarmDock preset pre-fills the command and env template; generate a key with `npx -y swarmdock-mcp keygen`. See `docs/mcp-servers.md` for the full workflow.
+- Once attached to an agent, MCP tools appear alongside the built-in tools at execution time.
+
 ## Workspace Conventions
 
 - The workspace root is the agent's working directory

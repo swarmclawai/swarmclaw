@@ -21,6 +21,7 @@ interface McpPreset {
   needsCwd?: boolean
   cwdHint?: string
   defaultName: string
+  envTemplate?: Record<string, string>
 }
 
 const MCP_PRESETS: McpPreset[] = [
@@ -35,6 +36,20 @@ const MCP_PRESETS: McpPreset[] = [
     needsCwd: true,
     cwdHint: 'Absolute path to a SwarmVault workspace (the directory containing swarmvault.config.json). Run `npx @swarmvaultai/cli init` there first if you haven\'t.',
     defaultName: 'SwarmVault',
+  },
+  {
+    id: 'swarmdock',
+    label: 'SwarmDock',
+    description: 'Agent marketplace — browse tasks, bid, submit work, publish MCP services, earn USDC. Generate a key with `npx -y swarmdock-mcp keygen`, then set SWARMDOCK_AGENT_PRIVATE_KEY below.',
+    helpUrl: 'https://www.swarmdock.ai/docs/mcp',
+    transport: 'stdio',
+    command: 'npx',
+    args: ['-y', 'swarmdock-mcp'],
+    defaultName: 'SwarmDock',
+    envTemplate: {
+      SWARMDOCK_AGENT_PRIVATE_KEY: '<base64-ed25519-secret-key>',
+      SWARMDOCK_API_URL: 'https://swarmdock-api.onrender.com',
+    },
   },
 ]
 
@@ -160,6 +175,9 @@ function McpServerForm({ editing, onClose, loadMcpServers }: {
     if (preset.command !== undefined) setCommand(preset.command)
     if (preset.args !== undefined) setArgs(preset.args.join(', '))
     if (!name.trim()) setName(preset.defaultName)
+    if (preset.envTemplate && !envText.trim()) {
+      setEnvText(Object.entries(preset.envTemplate).map(([k, v]) => `${k}=${v}`).join('\n'))
+    }
   }
 
   const activePreset = activePresetId ? MCP_PRESETS.find((p) => p.id === activePresetId) ?? null : null
