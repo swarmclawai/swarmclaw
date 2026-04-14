@@ -12,7 +12,7 @@ import { toast } from 'sonner'
 import { ModelCombobox } from '@/components/shared/model-combobox'
 import type { ProviderType, ClaudeSkill, AgentPackManifest, AgentRoutingStrategy, AgentRoutingTarget } from '@/types'
 import { AVAILABLE_TOOLS, PLATFORM_TOOLS } from '@/lib/tool-definitions'
-import { NATIVE_CAPABILITY_PROVIDER_IDS, NON_LANGGRAPH_PROVIDER_IDS, WORKER_ONLY_PROVIDER_IDS } from '@/lib/provider-sets'
+import { MCP_INJECTION_PROVIDER_IDS, NATIVE_CAPABILITY_PROVIDER_IDS, NON_LANGGRAPH_PROVIDER_IDS, WORKER_ONLY_PROVIDER_IDS } from '@/lib/provider-sets'
 import { isOrchestratorProviderEligible } from '@/lib/orchestrator-config'
 import { AgentAvatar } from './agent-avatar'
 import { AgentPickerList } from '@/components/shared/agent-picker-list'
@@ -2009,7 +2009,7 @@ export function AgentSheet() {
         </SectionCard>
       )}
 
-      {(!WORKER_ONLY_PROVIDER_IDS.has(provider) || provider === 'copilot-cli' || provider === 'codex-cli') && (
+      {(!WORKER_ONLY_PROVIDER_IDS.has(provider) || MCP_INJECTION_PROVIDER_IDS.has(provider)) && (
       <AdvancedSettingsSection
         open={showAdvancedSettings}
         onToggle={() => setShowAdvancedSettings((current) => !current)}

@@ -9,3 +9,6 @@ export const NATIVE_CAPABILITY_PROVIDER_IDS = new Set(['claude-cli', 'codex-cli'
 
 /** Providers that can only act as workers — no coordinator role, no heartbeat, no advanced settings. */
 export const WORKER_ONLY_PROVIDER_IDS = new Set(['claude-cli', 'codex-cli', 'opencode-cli', 'gemini-cli', 'copilot-cli', 'droid-cli', 'cursor-cli', 'qwen-code-cli', 'goose', 'openclaw', 'hermes'])
+
+/** CLI providers that support MCP server and skill injection at runtime (via provider-specific config mechanisms). */
+export const MCP_INJECTION_PROVIDER_IDS = new Set(['copilot-cli', 'codex-cli'])
