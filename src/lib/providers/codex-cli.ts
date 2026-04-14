@@ -74,7 +74,9 @@ export function streamCodexCliChat({ session, message, imagePath, systemPrompt, 
   const needsTempHome = (systemPrompt && !session.codexThreadId) || agentMcpServerIds.length > 0
   if (needsTempHome) {
     const realCodexHome = process.env.CODEX_HOME || path.join(os.homedir(), '.codex')
-    tempCodexHome = path.join(os.tmpdir(), `swarmclaw-codex-${session.id}`)
+    // Use ~/.codex-sessions/ not /tmp — codex refuses to create helper binaries under /tmp
+    const sessionsDir = path.join(os.homedir(), '.codex-sessions')
+    tempCodexHome = path.join(sessionsDir, session.id)
     fs.mkdirSync(tempCodexHome, { recursive: true })
 
     // Symlink auth/config files from real CODEX_HOME into temp dir
