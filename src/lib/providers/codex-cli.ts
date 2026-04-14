@@ -99,13 +99,16 @@ export function streamCodexCliChat({ session, message, imagePath, systemPrompt, 
             tomlParts.push(`command = ${JSON.stringify(config.command)}`)
             const argsStr = (config.args || []).map((a: string) => JSON.stringify(a)).join(', ')
             tomlParts.push(`args = [${argsStr}]`)
-            if (config.env && Object.keys(config.env).length > 0) {
-              const envPairs = Object.entries(config.env as Record<string, string>)
-                .map(([k, v]) => `${JSON.stringify(k)} = ${JSON.stringify(v)}`).join(', ')
-              tomlParts.push(`env = {${envPairs}}`)
-            }
             if (config.cwd) tomlParts.push(`cwd = ${JSON.stringify(config.cwd)}`)
             tomlParts.push('')
+            // Env vars go in a separate subsection: [mcp_servers.name.env]
+            if (config.env && Object.keys(config.env).length > 0) {
+              tomlParts.push(`[mcp_servers.${name}.env]`)
+              for (const [k, v] of Object.entries(config.env as Record<string, string>)) {
+                tomlParts.push(`${k} = ${JSON.stringify(v)}`)
+              }
+              tomlParts.push('')
+            }
           } else if ((config.transport === 'sse' || config.transport === 'streamable-http') && config.url) {
             tomlParts.push(`[mcp_servers.${name}]`)
             tomlParts.push(`url = ${JSON.stringify(config.url)}`)
