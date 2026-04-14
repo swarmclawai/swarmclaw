@@ -244,6 +244,65 @@ class BraveProvider implements WebSearchProvider {
 }
 
 // ---------------------------------------------------------------------------
+// Exa (API key required — from secrets or EXA_API_KEY env var)
+// ---------------------------------------------------------------------------
+
+interface ExaSearchResult {
+  title?: string
+  url?: string
+  publishedDate?: string | null
+  author?: string | null
+  text?: string
+  highlights?: string[]
+  highlightScores?: number[]
+  summary?: string
+}
+
+class ExaProvider implements WebSearchProvider {
+  id = 'exa'
+  name = 'Exa'
+
+  constructor(private apiKey: string) {}
+
+  async search(query: string, maxResults: number): Promise<SearchResult[]> {
+    const res = await fetch('https://api.exa.ai/search', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': this.apiKey,
+        'x-exa-integration': 'swarmclaw',
+      },
+      body: JSON.stringify({
+        query,
+        type: 'auto',
+        numResults: maxResults,
+        contents: {
+          highlights: { numSentences: 3 },
+          text: { maxCharacters: 500 },
+          summary: true,
+        },
+      }),
+      signal: AbortSignal.timeout(15000),
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`)
+    const data = await res.json()
+    const rawResults: ExaSearchResult[] = Array.isArray(data.results) ? data.results : []
+    return rawResults.slice(0, maxResults).map((r) => ({
+      title: r.title || '',
+      url: r.url || '',
+      snippet: buildExaSnippet(r),
+    }))
+  }
+}
+
+function buildExaSnippet(result: ExaSearchResult): string {
+  if (result.summary) return result.summary
+  if (result.highlights && result.highlights.length > 0) return result.highlights.join(' … ')
+  if (result.text) return result.text
+  return ''
+}
+
+// ---------------------------------------------------------------------------
 // Factory
 // ---------------------------------------------------------------------------
 
@@ -278,6 +337,17 @@ export async function getSearchProvider(settings: Partial<AppSettings>): Promise
       }
       if (!apiKey) throw new Error('Brave Search requires an API key. Set one in Settings > Web Search.')
       return new BraveProvider(apiKey)
+    }
+    case 'exa': {
+      let apiKey = settings.exaApiKey
+      if (!apiKey) apiKey = process.env.EXA_API_KEY ?? null
+      if (!apiKey) {
+        const { getSecret } = await import('../storage')
+        const secret = await getSecret('exa')
+        apiKey = secret?.value ?? null
+      }
+      if (!apiKey) throw new Error('Exa requires an API key. Set one in Settings > Web Search or set the EXA_API_KEY environment variable.')
+      return new ExaProvider(apiKey)
     }
     default:
       return new DuckDuckGoProvider()

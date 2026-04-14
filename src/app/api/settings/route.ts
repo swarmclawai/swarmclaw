@@ -26,7 +26,7 @@ const TASK_QG_MIN_EVIDENCE_MIN = 0
 const TASK_QG_MIN_EVIDENCE_MAX = 8
 const SESSION_RESET_TIMEOUT_MIN = 0
 const SESSION_RESET_TIMEOUT_MAX = 365 * 24 * 60 * 60
-const SECRET_SETTING_KEYS = ['elevenLabsApiKey', 'tavilyApiKey', 'braveApiKey'] as const
+const SECRET_SETTING_KEYS = ['elevenLabsApiKey', 'tavilyApiKey', 'braveApiKey', 'exaApiKey'] as const
 
 function parseIntSetting(value: unknown, fallback: number, min: number, max: number): number {
   const parsed = typeof value === 'number'

@@ -115,8 +115,10 @@ export interface AppSettings {
   // Theme
   themeHue?: string
   // Web search provider
-  webSearchProvider?: 'duckduckgo' | 'google' | 'bing' | 'searxng' | 'tavily' | 'brave'
+  webSearchProvider?: 'duckduckgo' | 'google' | 'bing' | 'searxng' | 'tavily' | 'brave' | 'exa'
   searxngUrl?: string
+  exaApiKey?: string | null
+  exaApiKeyConfigured?: boolean
   // Task custom field definitions
   taskCustomFieldDefs?: Array<{ key: string; label: string; type: 'text' | 'number' | 'select'; options?: string[] }>
   // OpenClaw sync settings
