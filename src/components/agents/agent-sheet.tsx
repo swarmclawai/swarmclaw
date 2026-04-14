@@ -1656,7 +1656,7 @@ export function AgentSheet() {
         </div>
       )}
 
-      {currentProvider?.requiresEndpoint && (provider !== 'ollama' || ollamaMode === 'local') && (
+      {(currentProvider?.requiresEndpoint || currentProvider?.optionalEndpoint) && (provider !== 'ollama' || ollamaMode === 'local') && (
         <div className="mb-8">
           <SectionLabel>{provider === 'openclaw' ? 'OpenClaw Endpoint' : provider === 'hermes' ? 'Hermes API Endpoint' : 'Endpoint'}</SectionLabel>
           <input type="text" value={apiEndpoint || ''} onChange={(e) => setApiEndpoint(e.target.value || null)} placeholder={currentProvider.defaultEndpoint || 'http://localhost:11434'} className={`${inputClass} font-mono text-[14px]`} />

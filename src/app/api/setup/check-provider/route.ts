@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
-import { loadCredentials, decryptKey } from '@/lib/server/storage'
+import { loadCredentials, decryptKey, loadProviderConfigs } from '@/lib/server/storage'
+import { listCredentialIdsByProvider } from '@/lib/server/credentials/credential-service'
 import { getDeviceId, wsConnect, rpcOnConnectedGateway } from '@/lib/providers/openclaw'
 import { buildCliEnv, probeCliAuth, resolveCliBinary } from '@/lib/providers/cli-utils'
 import { OPENAI_COMPATIBLE_DEFAULTS } from '@/lib/server/provider-health'
@@ -109,7 +110,7 @@ async function checkOpenAiCompatible(
     },
     body: JSON.stringify({
       model: testModel,
-      max_tokens: 8,
+      max_completion_tokens: 8,
       messages: [{ role: 'user', content: 'Reply OK' }],
     }),
     signal: AbortSignal.timeout(15_000),
@@ -126,9 +127,10 @@ async function checkOpenAiCompatible(
   }
 }
 
-async function checkAnthropic(apiKey: string, modelRaw: string): Promise<{ ok: boolean; message: string }> {
+async function checkAnthropic(apiKey: string, endpointRaw: string, modelRaw: string): Promise<{ ok: boolean; message: string }> {
   const model = modelRaw || 'claude-sonnet-4-6'
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
+  const baseUrl = (endpointRaw || 'https://api.anthropic.com').replace(/\/+$/, '')
+  const res = await fetch(`${baseUrl}/v1/messages`, {
     method: 'POST',
     headers: {
       'x-api-key': apiKey,
@@ -221,7 +223,7 @@ async function checkOllama(params: {
   // Test the chat endpoint
   const label = runtime.useCloud ? 'Ollama Cloud' : 'Ollama'
   const chatEndpoint = `${normalizedEndpoint}/v1/chat/completions`
-  const chatBody = JSON.stringify({ model: testModel, max_tokens: 8, messages: [{ role: 'user', content: 'Reply OK' }] })
+  const chatBody = JSON.stringify({ model: testModel, max_completion_tokens: 8, messages: [{ role: 'user', content: 'Reply OK' }] })
 
   const chatRes = await fetch(chatEndpoint, {
     method: 'POST',
@@ -312,7 +314,7 @@ export async function POST(req: Request) {
   const provider = clean(body.provider) as SetupProvider
   let apiKey = clean(body.apiKey)
   const credentialId = clean(body.credentialId)
-  const endpoint = clean(body.endpoint)
+  let endpoint = clean(body.endpoint)
   const model = clean(body.model)
   const CLI_PROVIDERS = new Set<CliSetupProvider>(['claude-cli', 'codex-cli', 'opencode-cli', 'gemini-cli', 'copilot-cli', 'droid-cli', 'cursor-cli', 'qwen-code-cli', 'goose'])
 
@@ -327,6 +329,30 @@ export async function POST(req: Request) {
     } catch {
       return NextResponse.json({ ok: false, message: 'Failed to decrypt credential.' }, { status: 500 })
     }
+  }
+
+  // Auto-resolve credential by provider when no explicit credentialId
+  if (!apiKey && !credentialId && provider) {
+    try {
+      const credIds = listCredentialIdsByProvider(provider)
+      if (credIds.length > 0) {
+        const creds = loadCredentials()
+        for (const cid of credIds) {
+          if (creds[cid]?.encryptedKey) {
+            try { apiKey = decryptKey(creds[cid].encryptedKey); break } catch { /* skip */ }
+          }
+        }
+      }
+    } catch { /* best effort */ }
+  }
+
+  // Auto-resolve endpoint from provider config when not explicitly provided
+  if (!endpoint && provider) {
+    try {
+      const pConfigs = loadProviderConfigs()
+      const pConfig = pConfigs[provider]
+      if (pConfig?.baseUrl) endpoint = pConfig.baseUrl
+    } catch { /* best effort */ }
   }
 
   if (CLI_PROVIDERS.has(provider as CliSetupProvider)) {
@@ -354,7 +380,7 @@ export async function POST(req: Request) {
       }
       case 'anthropic': {
         if (!apiKey) return NextResponse.json({ ok: false, message: 'Anthropic API key is required.' })
-        const result = await checkAnthropic(apiKey, model)
+        const result = await checkAnthropic(apiKey, endpoint, model)
         return NextResponse.json(result)
       }
       case 'google':

@@ -10,6 +10,8 @@ export interface ProviderInfo {
   requiresApiKey: boolean
   optionalApiKey?: boolean
   requiresEndpoint: boolean
+  /** When true, shows an optional Base URL field in provider settings (e.g. for proxies). */
+  optionalEndpoint?: boolean
   defaultEndpoint?: string
 }
 

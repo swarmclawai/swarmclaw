@@ -74,6 +74,8 @@ export const PROVIDERS: Record<string, BuiltinProviderConfig> = {
     models: ['gpt-5.4', 'gpt-5.4-mini', 'gpt-5.4-nano', 'gpt-5.3', 'o3-mini', 'gpt-4.1', 'gpt-4.1-mini'],
     requiresApiKey: true,
     requiresEndpoint: false,
+    optionalEndpoint: true,
+    defaultEndpoint: 'https://api.openai.com/v1',
     handler: { streamChat: streamOpenAiChat },
   },
   openrouter: {
@@ -107,7 +109,17 @@ export const PROVIDERS: Record<string, BuiltinProviderConfig> = {
     models: ['claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5'],
     requiresApiKey: true,
     requiresEndpoint: false,
-    handler: { streamChat: streamAnthropicChat },
+    optionalEndpoint: true,
+    defaultEndpoint: 'https://api.anthropic.com',
+    handler: {
+      streamChat: (opts) => {
+        const patchedSession = {
+          ...opts.session,
+          apiEndpoint: opts.session.apiEndpoint || 'https://api.anthropic.com',
+        }
+        return streamAnthropicChat({ ...opts, session: patchedSession })
+      },
+    },
   },
   openclaw: {
     id: 'openclaw',
@@ -518,7 +530,28 @@ function buildCustomProviderConfig(custom: CustomProviderConfig): BuiltinProvide
 }
 
 export function getProvider(id: string): BuiltinProviderConfig | null {
-  if (PROVIDERS[id]) return PROVIDERS[id]
+  // Check builtin providers — inject custom baseUrl from provider config if set
+  const builtin = PROVIDERS[id]
+  if (builtin) {
+    const pConfigs = loadProviderConfigs()
+    const pConfig = pConfigs[id]
+    if (pConfig?.baseUrl && pConfig.baseUrl !== builtin.defaultEndpoint) {
+      const originalHandler = builtin.handler
+      return {
+        ...builtin,
+        handler: {
+          streamChat: (opts) => {
+            const patchedSession = {
+              ...opts.session,
+              apiEndpoint: opts.session.apiEndpoint || pConfig.baseUrl,
+            }
+            return originalHandler.streamChat({ ...opts, session: patchedSession })
+          },
+        },
+      }
+    }
+    return builtin
+  }
 
   // Check custom providers
   const customs = getCustomProviders()

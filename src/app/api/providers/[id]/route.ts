@@ -31,7 +31,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       id,
       name: builtin.name,
       type: 'builtin',
-      baseUrl: builtin.defaultEndpoint || '',
+      baseUrl: (typeof body.baseUrl === 'string' ? body.baseUrl : builtin.defaultEndpoint) || '',
       models: [...builtin.models],
       requiresApiKey: builtin.requiresApiKey,
       credentialId: null,

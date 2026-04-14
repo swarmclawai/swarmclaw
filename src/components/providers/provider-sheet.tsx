@@ -53,6 +53,7 @@ export function ProviderSheet() {
   // Test connection state
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'pass' | 'fail'>('idle')
   const [testMessage, setTestMessage] = useState('')
+  const [testModel, setTestModel] = useState('')
 
   const [liveModels, setLiveModels] = useState<string[]>([])
   const [liveLoading, setLiveLoading] = useState(false)
@@ -85,7 +86,7 @@ export function ProviderSheet() {
         setIsEnabled(editingCustom.isEnabled)
       } else if (editingBuiltin) {
         setName(editingBuiltin.name)
-        setBaseUrl(editingBuiltin.defaultEndpoint || '')
+        setBaseUrl(editingBuiltinOverride?.baseUrl || editingBuiltin.defaultEndpoint || '')
         setModels(editingBuiltin.models.join(', '))
         setRequiresApiKey(editingBuiltin.requiresApiKey)
         // Default to existing credential for this provider
@@ -113,6 +114,7 @@ export function ProviderSheet() {
     setLiveModels([])
     setLiveMessage('')
     setLiveCached(false)
+    setTestModel('')
   }, [editingId, credentialId, baseUrl, requiresApiKey])
 
   const handleTestConnection = async () => {
@@ -124,6 +126,7 @@ export function ProviderSheet() {
         provider: editingId || 'custom',
         credentialId,
         endpoint: baseUrl,
+        model: testModel || undefined,
       })
       if (result.ok) {
         setTestStatus('pass')
@@ -157,6 +160,7 @@ export function ProviderSheet() {
           id: editingId || '',
           models: modelList,
           isEnabled,
+          baseUrl: baseUrl.trim() || undefined,
         })
         toast.success('Built-in provider updated')
         onClose()
@@ -290,7 +294,7 @@ export function ProviderSheet() {
       </div>
 
       {/* Base URL — for custom providers and built-ins with endpoints (Ollama, OpenClaw) */}
-      {(!isBuiltin || editingBuiltin?.requiresEndpoint) && (
+      {(!isBuiltin || editingBuiltin?.requiresEndpoint || editingBuiltin?.optionalEndpoint) && (
         <div className="mb-8">
           <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-3">
             {isBuiltin ? 'Endpoint' : 'Base URL'}
@@ -511,6 +515,27 @@ export function ProviderSheet() {
               <span className="text-[12px] text-text-3">Hidden from the agent sheet when off.</span>
             )}
           </label>
+        </div>
+      )}
+
+      {/* Test model selector */}
+      {showTestButton && (
+        <div className="mb-4">
+          <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-3">
+            Test Model
+            <span className="normal-case tracking-normal font-normal text-text-3 ml-1">(optional)</span>
+          </label>
+          <select
+            value={testModel}
+            onChange={(e) => { setTestModel(e.target.value); setTestStatus('idle'); setTestMessage('') }}
+            className={`${inputClass} appearance-none cursor-pointer`}
+            style={{ fontFamily: 'inherit' }}
+          >
+            <option value="">Auto-detect</option>
+            {modelList.map((m) => (
+              <option key={m} value={m}>{m}</option>
+            ))}
+          </select>
         </div>
       )}
 

@@ -3,6 +3,7 @@ import { getProvider } from '@/lib/providers'
 import { loadCredential } from '@/lib/server/credentials/credential-repository'
 import { listCredentialIdsByProvider, resolveCredentialSecret } from '@/lib/server/credentials/credential-service'
 import { resolveOllamaRuntimeConfig } from '@/lib/server/ollama-runtime'
+import { loadProviderConfigs } from '@/lib/server/storage'
 
 function clean(value: string | null | undefined): string | null {
   if (typeof value !== 'string') return null
@@ -16,7 +17,23 @@ export function resolveProviderCredentialId(input: {
   credentialId?: string | null
 }): string | null {
   const normalizedId = clean(input.credentialId)
-  if (!normalizedId) return null
+
+  // When no credentialId provided, auto-match by provider
+  if (!normalizedId) {
+    const provider = clean(input.provider)
+    if (!provider) return null
+    const byProvider = listCredentialIdsByProvider(provider)
+      .map((id) => [id, loadCredential(id)] as const)
+      .filter(([, cred]) => Boolean(cred))
+    if (byProvider.length === 1) return byProvider[0][0]
+    if (byProvider.length > 1) {
+      // Pick the most recently created credential
+      return [...byProvider]
+        .sort((a, b) => ((b[1]?.createdAt as number) || 0) - ((a[1]?.createdAt as number) || 0))[0]?.[0] || null
+    }
+    return null
+  }
+
   if (loadCredential(normalizedId)) return normalizedId
 
   const provider = clean(input.provider)
@@ -69,6 +86,15 @@ export function resolveProviderApiEndpoint(input: {
       apiEndpoint: null,
     })
     return normalizeProviderEndpoint(provider, runtime.endpoint) || runtime.endpoint.replace(/\/+$/, '')
+  }
+
+  // Prefer provider config's custom baseUrl over the hardcoded defaultEndpoint
+  const pConfigs = loadProviderConfigs()
+  const pConfig = pConfigs[provider]
+  if (pConfig?.baseUrl) {
+    const customNormalized = normalizeProviderEndpoint(provider, pConfig.baseUrl)
+    if (customNormalized) return customNormalized
+    return pConfig.baseUrl.replace(/\/+$/, '')
   }
 
   const providerInfo = getProvider(provider)

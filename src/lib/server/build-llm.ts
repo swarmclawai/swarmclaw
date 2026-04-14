@@ -79,6 +79,7 @@ export function buildChatModel(opts: {
     const anthropicOpts: Record<string, unknown> = {
       model: model || 'claude-sonnet-4-6',
       anthropicApiKey: resolvedApiKey || undefined,
+      ...(endpoint ? { anthropicApiUrl: endpoint } : {}),
       maxTokens: 8192,
       maxRetries: OPENAI_COMPAT_MODEL_MAX_RETRIES,
     }

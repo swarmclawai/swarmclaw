@@ -1,5 +1,4 @@
 import fs from 'fs'
-import https from 'https'
 import type { StreamChatOptions } from './index'
 import { PROVIDER_DEFAULTS, IMAGE_EXTS, TEXT_EXTS, ANTHROPIC_MAX_TOKENS, MAX_HISTORY_MESSAGES, writeSSE } from './provider-defaults'
 import { log } from '@/lib/server/logger'
@@ -45,55 +44,66 @@ export function streamAnthropicChat({ session, message, imagePath, apiKey, syste
         }
 
         const payload = JSON.stringify(body)
-        const abortController = { aborted: false }
-        let fullResponse = ''
-        let apiReqRef: ReturnType<typeof https.request> | null = null
 
+        // Support custom base URL (e.g. proxy / gateway)
+        const baseUrl = (session.apiEndpoint || PROVIDER_DEFAULTS.anthropic).replace(/\/+$/, '')
+        const url = `${baseUrl}/v1/messages`
+
+        const abortController = new AbortController()
         if (signal) {
-          if (signal.aborted) {
-            abortController.aborted = true
-          } else {
-            signal.addEventListener('abort', () => {
-              abortController.aborted = true
-              apiReqRef?.destroy()
-            }, { once: true })
-          }
+          if (signal.aborted) abortController.abort()
+          else signal.addEventListener('abort', () => abortController.abort(), { once: true })
         }
+        active.set(session.id, { kill: () => abortController.abort() })
 
-        const apiReq = https.request({
-          hostname: PROVIDER_DEFAULTS.anthropic,
-          path: '/v1/messages',
-          method: 'POST',
-          timeout: 60_000,
-          headers: {
-            'x-api-key': apiKey || '',
-            'anthropic-version': '2023-06-01',
-            'Content-Type': 'application/json',
-          },
-        }, (apiRes) => {
-          if (apiRes.statusCode !== 200) {
-            let errBody = ''
-            apiRes.on('data', (c: Buffer) => errBody += c)
-            apiRes.on('end', () => {
-              const msg = `Anthropic error ${apiRes.statusCode}: ${errBody.slice(0, 200)}`
-              log.error(TAG, `[${session.id}] ${msg}`)
-              let errMsg = `Anthropic API error (${apiRes.statusCode})`
-              try {
-                const parsed = JSON.parse(errBody)
-                if (parsed.error?.message) errMsg = parsed.error.message
-              } catch {}
-              writeSSE(write, 'err', errMsg)
-              active.delete(session.id)
-              reject(new Error(msg))
-            })
+        let fullResponse = ''
+
+        try {
+          const res = await fetch(url, {
+            method: 'POST',
+            headers: {
+              'x-api-key': apiKey || '',
+              'anthropic-version': '2023-06-01',
+              'Content-Type': 'application/json',
+            },
+            body: payload,
+            signal: abortController.signal,
+          })
+
+          if (!res.ok) {
+            const errBody = await res.text().catch(() => '')
+            const msg = `Anthropic error ${res.status}: ${errBody.slice(0, 200)}`
+            log.error(TAG, `[${session.id}] ${msg}`)
+            let errMsg = `Anthropic API error (${res.status})`
+            try {
+              const parsed = JSON.parse(errBody)
+              if (parsed.error?.message) errMsg = parsed.error.message
+            } catch {}
+            writeSSE(write, 'err', errMsg)
+            active.delete(session.id)
+            reject(new Error(msg))
             return
           }
 
+          if (!res.body) {
+            const msg = `No response body from ${baseUrl}`
+            log.error(TAG, `[${session.id}] ${msg}`)
+            active.delete(session.id)
+            reject(new Error(msg))
+            return
+          }
+
+          const reader = res.body.getReader()
+          const decoder = new TextDecoder()
           let buf = ''
           let malformedChunkLogged = false
-          apiRes.on('data', (chunk: Buffer) => {
-            if (abortController.aborted) return
-            buf += chunk.toString()
+
+          while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+            if (abortController.signal.aborted) break
+
+            buf += decoder.decode(value, { stream: true })
             const lines = buf.split('\n')
             buf = lines.pop()!
 
@@ -122,33 +132,21 @@ export function streamAnthropicChat({ session, message, imagePath, apiKey, syste
                 }
               }
             }
-          })
+          }
 
-          apiRes.on('end', () => {
-            if (onUsage && (usageInput > 0 || usageOutput > 0)) {
-              onUsage({ inputTokens: usageInput, outputTokens: usageOutput })
-            }
-            active.delete(session.id)
-            resolve(fullResponse)
-          })
-        })
+          if (onUsage && (usageInput > 0 || usageOutput > 0)) {
+            onUsage({ inputTokens: usageInput, outputTokens: usageOutput })
+          }
+        } catch (err: unknown) {
+          const errObj = err as { name?: string; message?: string }
+          if (errObj.name !== 'AbortError') {
+            log.error(TAG, `[${session.id}] anthropic fetch error:`, errObj.message || '')
+            writeSSE(write, 'err', errObj.message || 'Anthropic request failed')
+          }
+        }
 
-        apiReqRef = apiReq
-        active.set(session.id, { kill: () => { abortController.aborted = true; apiReq.destroy() } })
-
-        apiReq.on('timeout', () => {
-          log.error(TAG, `[${session.id}] anthropic request timed out after 60s`)
-          apiReq.destroy(new Error('Request timed out after 60s'))
-        })
-
-        apiReq.on('error', (e) => {
-          log.error(TAG, `[${session.id}] anthropic request error:`, e.message)
-          writeSSE(write, 'err', e.message)
-          active.delete(session.id)
-          reject(e)
-        })
-
-        apiReq.end(payload)
+        active.delete(session.id)
+        resolve(fullResponse)
       } catch (err) { reject(err) }
     })()
   })

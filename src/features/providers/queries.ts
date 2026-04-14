@@ -25,6 +25,7 @@ interface SaveBuiltinProviderInput {
   id: string
   models: string[]
   isEnabled: boolean
+  baseUrl?: string
 }
 
 interface SaveCustomProviderInput {
@@ -36,6 +37,7 @@ interface CheckProviderConnectionInput {
   provider: string
   credentialId?: string | null
   endpoint?: string | null
+  model?: string | null
 }
 
 async function invalidateProviderQueries(queryClient: ReturnType<typeof useQueryClient>) {
@@ -80,11 +82,12 @@ export function useToggleProviderMutation() {
 export function useSaveBuiltinProviderMutation() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async ({ id, models, isEnabled }: SaveBuiltinProviderInput) => {
+    mutationFn: async ({ id, models, isEnabled, baseUrl }: SaveBuiltinProviderInput) => {
       await api('PUT', `/providers/${id}/models`, { models })
       return api('PUT', `/providers/${id}`, {
         type: 'builtin',
         isEnabled,
+        ...(baseUrl ? { baseUrl } : {}),
       })
     },
     onSuccess: async () => {
@@ -126,11 +129,12 @@ export function useResetProviderModelsMutation() {
 
 export function useCheckProviderConnectionMutation() {
   return useMutation({
-    mutationFn: ({ provider, credentialId, endpoint }: CheckProviderConnectionInput) =>
+    mutationFn: ({ provider, credentialId, endpoint, model }: CheckProviderConnectionInput) =>
       api<{ ok: boolean; message: string }>('POST', '/setup/check-provider', {
         provider,
         credentialId,
         endpoint,
+        model,
       }),
   })
 }
