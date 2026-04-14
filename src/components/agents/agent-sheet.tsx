@@ -2007,13 +2007,14 @@ export function AgentSheet() {
         </SectionCard>
       )}
 
-      {!WORKER_ONLY_PROVIDER_IDS.has(provider) && (
+      {(!WORKER_ONLY_PROVIDER_IDS.has(provider) || provider === 'copilot-cli' || provider === 'codex-cli') && (
       <AdvancedSettingsSection
         open={showAdvancedSettings}
         onToggle={() => setShowAdvancedSettings((current) => !current)}
         summary={advancedSummary}
         badges={agentAdvancedBadges}
       >
+      {!WORKER_ONLY_PROVIDER_IDS.has(provider) && (<>
       <SectionCard
         title="Context & Tool Access"
         description="Control how many tools are described in this agent's system prompt. Scoped (default) keeps the agent focused and saves ~3 k input tokens per turn; Universal gives it visibility into every built-in tool."
@@ -2450,6 +2451,7 @@ export function AgentSheet() {
         </div>
       )}
       </SectionCard>
+      </>)}
 
       <SectionCard
         title="Tools & Skills"
