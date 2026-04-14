@@ -559,6 +559,20 @@ const COMMAND_GROUPS = {
       delete: { description: 'Delete a goal', method: 'DELETE', path: '/goals/:id', params: ['id'] },
     },
   },
+  missions: {
+    description: 'Manage autonomous missions',
+    commands: {
+      list: { description: 'List autonomous missions', method: 'GET', path: '/missions' },
+      get: { description: 'Get a mission by id', method: 'GET', path: '/missions/:id', params: ['id'] },
+      create: { description: 'Create an autonomous mission', method: 'POST', path: '/missions' },
+      update: { description: 'Update a mission', method: 'PUT', path: '/missions/:id', params: ['id'], body: true },
+      delete: { description: 'Delete a mission', method: 'DELETE', path: '/missions/:id', params: ['id'] },
+      control: { description: 'Start, pause, resume, cancel, complete, or fail a mission', method: 'POST', path: '/missions/:id/control', params: ['id'] },
+      reports: { description: 'List mission reports', method: 'GET', path: '/missions/:id/reports', params: ['id'] },
+      'report-now': { description: 'Force-generate a mission report now', method: 'POST', path: '/missions/:id/reports', params: ['id'] },
+      events: { description: 'List mission events', method: 'GET', path: '/missions/:id/events', params: ['id'] },
+    },
+  },
 }
 
 const GROUP_NAMES = Object.keys(COMMAND_GROUPS)

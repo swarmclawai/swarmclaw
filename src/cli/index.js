@@ -804,6 +804,21 @@ const COMMAND_GROUPS = [
     ],
   },
   {
+    name: 'missions',
+    description: 'Manage autonomous missions',
+    commands: [
+      cmd('list', 'GET', '/missions', 'List autonomous missions'),
+      cmd('get', 'GET', '/missions/:id', 'Get a mission by id'),
+      cmd('create', 'POST', '/missions', 'Create an autonomous mission', { expectsJsonBody: true }),
+      cmd('update', 'PUT', '/missions/:id', 'Update a mission', { expectsJsonBody: true }),
+      cmd('delete', 'DELETE', '/missions/:id', 'Delete a mission'),
+      cmd('control', 'POST', '/missions/:id/control', 'Start, pause, resume, cancel, complete, or fail a mission', { expectsJsonBody: true }),
+      cmd('reports', 'GET', '/missions/:id/reports', 'List mission reports'),
+      cmd('report-now', 'POST', '/missions/:id/reports', 'Force-generate a mission report now'),
+      cmd('events', 'GET', '/missions/:id/events', 'List mission events (use --query sinceAt=..., --query untilAt=...)'),
+    ],
+  },
+  {
     name: 'swarmfeed',
     description: 'SwarmFeed social network',
     commands: [

@@ -396,6 +396,15 @@ Operational docs: https://swarmclaw.ai/docs/observability
 
 ## Releases
 
+### v1.5.49 Highlights
+
+- **Autonomous Missions**: a new first-class concept for long-running, goal-driven agent work. Hand your agent team a goal on Friday, come back Monday to see what they shipped. Each mission carries a title, a natural-language objective, bulleted success criteria, hard budgets (USD, tokens, turns, wallclock), periodic markdown reports, and a full milestone timeline. Missions drive any session through the existing heartbeat pipeline, so delegation to Claude Code, Codex, OpenCode, Cursor, Droid, Goose, Qwen, or native SwarmClaw agents all work without changes.
+- **Budget enforcement in the run pipeline**: `enqueueSessionRun` now consults the mission's budget before every autonomous turn. When any cap is hit the mission transitions to `budget_exhausted`, the queue drains, and a final report fires. Warn thresholds (default 50% / 80% / 95% of each cap) emit `budget_warn` milestones exactly once each.
+- **Scheduler tick from heartbeat**: `runMissionScheduler()` fires every heartbeat tick, independent of the active-hours window, so wallclock budgets and periodic reports still fire overnight. Report cadence is configurable per mission; reports land as in-app notifications today and ship as Slack/Discord/audio in a follow-up.
+- **`/missions` dashboard**: new page with a live mission list, status pills, four-axis budget gauges, a scrollable milestone timeline, a reports drawer, and start / pause / cancel / mark-complete / generate-report-now controls.
+- **CLI commands**: `swarmclaw missions list|get|create|update|delete|control|reports|report-now|events`. Create a mission, start it, and watch the timeline from the terminal or CI.
+- **New storage collections**: `agent_missions`, `mission_reports`, and `agent_mission_events`. The legacy deprecated `missions` table is left untouched so nothing in existing installs is disturbed.
+
 ### v1.5.48 Highlights
 
 - **SwarmDock MCP preset now points at the hosted endpoint**: *MCP Servers → Quick Setup → SwarmDock* is pre-filled with `streamable-http` transport pointed at `https://swarmdock-api.onrender.com/mcp` and a ready-to-edit `Authorization: Bearer <key>` header template. Users no longer need to run `npx swarmdock-mcp` locally — the SwarmDock team hosts the MCP server in-process on the existing API service. First-time setup (browser keygen + agent registration) lives at [swarmdock.ai/mcp/connect](https://www.swarmdock.ai/mcp/connect).

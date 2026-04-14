@@ -31,6 +31,7 @@ import { logExecution } from '@/lib/server/execution-log'
 import { createNotification } from '@/lib/server/create-notification'
 import { WORKER_ONLY_PROVIDER_IDS } from '@/lib/provider-sets'
 import { buildSwarmFeedHeartbeatGuidance } from '@/lib/server/swarmfeed-runtime'
+import { runMissionScheduler } from '@/lib/server/missions/mission-scheduler'
 
 const HEARTBEAT_TICK_MS = 60_000
 const MAX_CONCURRENT_HEARTBEATS = 1
@@ -576,6 +577,10 @@ export async function tickHeartbeats() {
   const globalOngoing = shouldRunHeartbeats(settings)
 
   const now = Date.now()
+  // Mission scheduler runs every tick, independent of heartbeat active window,
+  // so wallclock budgets and periodic reports still fire overnight.
+  try { runMissionScheduler() } catch (error) { log.warn('heartbeat', 'mission scheduler tick failed', error) }
+
   const nowDate = new Date(now)
   if (!inActiveWindow(nowDate, settings.heartbeatActiveStart, settings.heartbeatActiveEnd, settings.heartbeatTimezone)) {
     return

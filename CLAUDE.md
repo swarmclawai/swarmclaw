@@ -112,6 +112,18 @@ For single-item updates, use `upsertCollectionItem()` instead — it doesn't tri
 
 **Normalization on load:** `storage-normalization.ts` auto-migrates records when they're loaded, applying default values for new fields. When you add a new field to a stored type, add its default to the normalization function — don't rely on `undefined` checks scattered across the codebase.
 
+### Missions (Autonomous Goal-Driven Runs)
+
+Missions wrap a session with a goal, budgets, a milestone log, and periodic reports. They are the first-class way users hand off long-running autonomous work. A Mission always has exactly one `rootSessionId` that drives it through the existing heartbeat pipeline.
+
+**Storage tables**: `agent_missions`, `mission_reports`, `agent_mission_events`. The legacy deprecated `missions` table is untouched. All mission-specific repository and service code lives in `src/lib/server/missions/`.
+
+**Budget enforcement**: `enqueueSessionRun` consults `checkMissionBudgetForSession(session.missionId)` on every autonomous-managed enqueue (anything that is not a direct user chat). When a cap is hit the mission transitions to `budget_exhausted`, the queue drains, and a final report fires. User-initiated chats bypass the check so the user can still talk to a mission session mid-run. Caps enforced today: USD, tokens, turns, wallclock.
+
+**Scheduler**: `runMissionScheduler()` is called from the top of `tickHeartbeats()` every minute, independent of the heartbeat active-hours window. It enforces wallclock budgets and dispatches `reportSchedule` reports. The scheduler uses `hmrSingleton` for state so it survives HMR.
+
+**Nested patch pitfall**: when writing mission service code, never call `appendMissionMilestone` inside a `patchMission` updater closure. The inner patch reads a stale snapshot and clobbers the outer write. Collect the milestone intent during the patch, call `appendMissionMilestone` after the patch returns. See `recordTurnUsage` in `mission-service.ts` for the pattern.
+
 ### Desktop App (Electron)
 
 SwarmClaw also ships as a desktop app via Electron. The wrapper lives in `electron/`

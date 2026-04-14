@@ -26,6 +26,9 @@ import type {
   KnowledgeSource,
   LearnedSkill,
   Message,
+  Mission,
+  MissionEvent,
+  MissionReport,
   ProtocolTemplate,
   ProtocolRun,
   ProtocolRunEvent,
@@ -176,6 +179,9 @@ const COLLECTIONS = [
   'wallets',
   'wallet_transactions',
   'goals',
+  'agent_missions',
+  'mission_reports',
+  'agent_mission_events',
 ] as const
 
 export type StorageCollection = (typeof COLLECTIONS)[number]
@@ -1685,6 +1691,29 @@ export const loadGoals = goalsStore.load
 export const loadGoal = goalsStore.loadItem
 export const upsertGoal = goalsStore.upsert
 export const deleteGoalItem = goalsStore.deleteItem
+
+// --- Agent Missions (autonomous goal-driven runs) ---
+const agentMissionsStore = createCollectionStore<Mission>('agent_missions', { ttlMs: 5_000 })
+export const loadAgentMissions = agentMissionsStore.load
+export const saveAgentMissions = agentMissionsStore.save
+export const loadAgentMission = agentMissionsStore.loadItem
+export const upsertAgentMission = agentMissionsStore.upsert
+export const patchAgentMission = agentMissionsStore.patch
+export const deleteAgentMission = agentMissionsStore.deleteItem
+
+const missionReportsStore = createCollectionStore<MissionReport>('mission_reports')
+export const loadMissionReports = missionReportsStore.load
+export const saveMissionReports = missionReportsStore.save
+export const loadMissionReport = missionReportsStore.loadItem
+export const upsertMissionReport = missionReportsStore.upsert
+export const deleteMissionReport = missionReportsStore.deleteItem
+
+const agentMissionEventsStore = createCollectionStore<MissionEvent>('agent_mission_events')
+export const loadAgentMissionEvents = agentMissionEventsStore.load
+export const saveAgentMissionEvents = agentMissionEventsStore.save
+export const loadAgentMissionEvent = agentMissionEventsStore.loadItem
+export const upsertAgentMissionEvent = agentMissionEventsStore.upsert
+export const deleteAgentMissionEvent = agentMissionEventsStore.deleteItem
 
 function legacyMissionStatusToWorkingStatus(value: unknown): 'idle' | 'progress' | 'blocked' | 'completed' {
   const normalized = typeof value === 'string' ? value.trim().toLowerCase() : ''

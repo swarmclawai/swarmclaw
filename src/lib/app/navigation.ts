@@ -15,6 +15,7 @@ const VIEW_TO_PATH: Record<AppView, string> = {
   memory: '/memory',
 
   tasks: '/tasks',
+  missions: '/missions',
   secrets: '/secrets',
   wallets: '/wallets',
   providers: '/providers',

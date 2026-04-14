@@ -8,6 +8,7 @@ import { getEnabledToolIds } from '@/lib/capability-selection'
 import { isAllEstopEngaged, isAutonomyEstopEngaged } from '@/lib/server/runtime/estop'
 import { isRestartRecoverableSource } from '@/lib/server/runtime/run-ledger'
 import { getActiveSessionProcess } from '@/lib/server/runtime/runtime-state'
+import { checkMissionBudgetForSession } from '@/lib/server/missions/mission-budget-hook'
 
 import { cancelPendingForSession } from './cancellation'
 import {
@@ -49,6 +50,7 @@ const LONG_TOOL_NAMES: ReadonlySet<string> = new Set(['claude_code', 'codex_cli'
 type SessionToolConfig = {
   tools?: string[] | null
   extensions?: string[] | null
+  missionId?: string | null
 }
 
 function computeEffectiveRunTimeoutMs(
@@ -113,6 +115,13 @@ export function enqueueSessionRun(
   }
   if (isAutonomyEstopEngaged() && isAutonomyManagedEnqueue(source, internal)) {
     throw new Error(`Autonomy estop is engaged. New ${source} runs are paused.`)
+  }
+  if (isAutonomyManagedEnqueue(source, internal)) {
+    const sessionForMission = getSession(input.sessionId) as SessionToolConfig | null
+    const missionVerdict = checkMissionBudgetForSession(sessionForMission?.missionId ?? null)
+    if (!missionVerdict.allow) {
+      throw new Error(`Mission halted: ${missionVerdict.reason ?? 'budget exhausted'}`)
+    }
   }
   const executionKey = typeof input.executionGroupKey === 'string' && input.executionGroupKey.trim()
     ? input.executionGroupKey.trim()

@@ -355,6 +355,135 @@ function normalizeStoredMissionEventRecord(value: unknown): unknown {
   return event
 }
 
+// --- Agent Mission normalizers (autonomous goal-driven runs, v1.5.49+) ---
+
+const VALID_AGENT_MISSION_STATUSES = new Set([
+  'draft',
+  'running',
+  'paused',
+  'completed',
+  'failed',
+  'cancelled',
+  'budget_exhausted',
+])
+
+const VALID_AGENT_MISSION_REPORT_FORMATS = new Set(['markdown', 'slack', 'discord', 'email', 'audio'])
+
+function normalizeFiniteNumber(value: unknown): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null
+  return value
+}
+
+function normalizeNonNegativeNumber(value: unknown, fallback: number): number {
+  const n = normalizeFiniteNumber(value)
+  if (n == null || n < 0) return fallback
+  return n
+}
+
+function normalizeStoredAgentMissionRecord(value: unknown): unknown {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value
+  const mission = value as StoredObject
+
+  const status = typeof mission.status === 'string' ? mission.status.trim().toLowerCase() : ''
+  mission.status = VALID_AGENT_MISSION_STATUSES.has(status) ? status : 'draft'
+
+  mission.successCriteria = normalizeStoredStringArray(mission.successCriteria, 64)
+  mission.agentIds = normalizeStoredStringArray(mission.agentIds, 32)
+  mission.reportConnectorIds = normalizeStoredStringArray(mission.reportConnectorIds, 16)
+
+  const budget = mission.budget && typeof mission.budget === 'object' && !Array.isArray(mission.budget)
+    ? mission.budget as StoredObject
+    : {}
+  budget.maxUsd = normalizeFiniteNumber(budget.maxUsd)
+  budget.maxTokens = normalizeFiniteNumber(budget.maxTokens)
+  budget.maxToolCalls = normalizeFiniteNumber(budget.maxToolCalls)
+  budget.maxWallclockSec = normalizeFiniteNumber(budget.maxWallclockSec)
+  budget.maxTurns = normalizeFiniteNumber(budget.maxTurns)
+  if (!Array.isArray(budget.warnAtFractions)) {
+    budget.warnAtFractions = [0.5, 0.8, 0.95]
+  } else {
+    budget.warnAtFractions = (budget.warnAtFractions as unknown[])
+      .map((entry) => normalizeFiniteNumber(entry))
+      .filter((entry): entry is number => entry != null && entry > 0 && entry < 1)
+    if ((budget.warnAtFractions as number[]).length === 0) {
+      budget.warnAtFractions = [0.5, 0.8, 0.95]
+    }
+  }
+  mission.budget = budget
+
+  const usage = mission.usage && typeof mission.usage === 'object' && !Array.isArray(mission.usage)
+    ? mission.usage as StoredObject
+    : {}
+  usage.usdSpent = normalizeNonNegativeNumber(usage.usdSpent, 0)
+  usage.tokensUsed = normalizeNonNegativeNumber(usage.tokensUsed, 0)
+  usage.toolCallsUsed = normalizeNonNegativeNumber(usage.toolCallsUsed, 0)
+  usage.turnsRun = normalizeNonNegativeNumber(usage.turnsRun, 0)
+  usage.wallclockMsElapsed = normalizeNonNegativeNumber(usage.wallclockMsElapsed, 0)
+  usage.startedAt = normalizeFiniteNumber(usage.startedAt)
+  usage.lastUpdatedAt = normalizeNonNegativeNumber(usage.lastUpdatedAt, 0)
+  if (!Array.isArray(usage.warnFractionsHit)) {
+    usage.warnFractionsHit = []
+  } else {
+    usage.warnFractionsHit = (usage.warnFractionsHit as unknown[])
+      .map((entry) => normalizeFiniteNumber(entry))
+      .filter((entry): entry is number => entry != null)
+  }
+  mission.usage = usage
+
+  if (!Array.isArray(mission.milestones)) mission.milestones = []
+  // Cap the stored tail so missions don't balloon
+  if ((mission.milestones as unknown[]).length > 200) {
+    mission.milestones = (mission.milestones as unknown[]).slice(-200)
+  }
+
+  const reportSchedule = mission.reportSchedule
+    && typeof mission.reportSchedule === 'object'
+    && !Array.isArray(mission.reportSchedule)
+    ? mission.reportSchedule as StoredObject
+    : null
+  if (reportSchedule) {
+    const format = typeof reportSchedule.format === 'string' ? reportSchedule.format.trim().toLowerCase() : ''
+    reportSchedule.format = VALID_AGENT_MISSION_REPORT_FORMATS.has(format) ? format : 'markdown'
+    reportSchedule.intervalSec = normalizeNonNegativeNumber(reportSchedule.intervalSec, 3600)
+    reportSchedule.enabled = reportSchedule.enabled !== false
+    reportSchedule.lastReportAt = normalizeFiniteNumber(reportSchedule.lastReportAt)
+    mission.reportSchedule = reportSchedule
+  } else if (mission.reportSchedule !== undefined) {
+    mission.reportSchedule = null
+  }
+
+  if (typeof mission.createdAt !== 'number') mission.createdAt = Date.now()
+  if (typeof mission.updatedAt !== 'number') mission.updatedAt = mission.createdAt as number
+  if (mission.startedAt === undefined) mission.startedAt = null
+  if (mission.endedAt === undefined) mission.endedAt = null
+  if (mission.endReason === undefined) mission.endReason = null
+
+  return mission
+}
+
+function normalizeStoredMissionReportRecord(value: unknown): unknown {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value
+  const report = value as StoredObject
+  const format = typeof report.format === 'string' ? report.format.trim().toLowerCase() : ''
+  report.format = VALID_AGENT_MISSION_REPORT_FORMATS.has(format) ? format : 'markdown'
+  if (!Array.isArray(report.highlights)) report.highlights = []
+  if (!Array.isArray(report.deliveredTo)) report.deliveredTo = []
+  if (typeof report.body !== 'string') report.body = ''
+  if (typeof report.title !== 'string') report.title = 'Mission report'
+  return report
+}
+
+function normalizeStoredAgentMissionEventRecord(value: unknown): unknown {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value
+  const event = value as StoredObject
+  if (!event.payload || typeof event.payload !== 'object' || Array.isArray(event.payload)) {
+    event.payload = {}
+  }
+  if (typeof event.kind !== 'string' || !event.kind.trim()) event.kind = 'unknown'
+  if (typeof event.at !== 'number' || !Number.isFinite(event.at)) event.at = Date.now()
+  return event
+}
+
 // --- Delegation job normalizer ---
 
 function normalizeStoredDelegationJobRecord(value: unknown): unknown {
@@ -428,7 +557,7 @@ export function normalizeStoredRecord(
   value: unknown,
   loadItem: CollectionItemLoader,
 ): NormalizationResult {
-  // Tables with no normalization — early exit
+  // Tables with no normalization, early exit.
   if (
     table !== 'agents' && table !== 'tasks' && table !== 'missions'
     && table !== 'mission_events' && table !== 'delegation_jobs'
@@ -436,6 +565,9 @@ export function normalizeStoredRecord(
     && table !== 'provider_configs'
     && table !== 'runtime_runs' && table !== 'runtime_run_events'
     && table !== 'wallets'
+    && table !== 'agent_missions'
+    && table !== 'mission_reports'
+    && table !== 'agent_mission_events'
   ) {
     return { value, changed: false }
   }
@@ -588,6 +720,18 @@ function normalizeStoredRecordInner(
 
   if (table === 'mission_events') {
     return normalizeStoredMissionEventRecord(value)
+  }
+
+  if (table === 'agent_missions') {
+    return normalizeStoredAgentMissionRecord(value)
+  }
+
+  if (table === 'mission_reports') {
+    return normalizeStoredMissionReportRecord(value)
+  }
+
+  if (table === 'agent_mission_events') {
+    return normalizeStoredAgentMissionEventRecord(value)
   }
 
   if (table === 'delegation_jobs') {
