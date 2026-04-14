@@ -33,7 +33,10 @@ export function streamCodexCliChat({ session, message, imagePath, systemPrompt, 
     args.push('resume', session.codexThreadId)
   }
 
-  args.push('--json', '--full-auto', '--skip-git-repo-check')
+  // Use --dangerously-bypass-approvals-and-sandbox instead of --full-auto so that
+  // MCP tool calls are not silently cancelled by codex's approval gate.
+  // SwarmClaw runs in its own sandboxed environment so bypassing codex's sandbox is safe.
+  args.push('--json', '--dangerously-bypass-approvals-and-sandbox', '--skip-git-repo-check')
 
   if (session.model) args.push('-m', session.model)
   if (codexModelRequiresReasoningDowngrade(session.model)) {
