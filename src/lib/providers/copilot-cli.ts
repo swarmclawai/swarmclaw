@@ -6,6 +6,8 @@ import type { StreamChatOptions } from './index'
 import { log } from '../server/logger'
 import { loadRuntimeSettings } from '@/lib/server/runtime/runtime-settings'
 import { resolveCliBinary, buildCliEnv, probeCliAuth, attachAbortHandler, symlinkConfigFiles, isStderrNoise } from './cli-utils'
+import { getAgent } from '@/lib/server/agents/agent-repository'
+import { loadMcpServers } from '@/lib/server/storage'
 
 /**
  * GitHub Copilot CLI provider — spawns `copilot -p <message> --output-format=json -s --yolo`.
@@ -63,6 +65,44 @@ export function streamCopilotCliChat({ session, message, imagePath, systemPrompt
     // Write system prompt as AGENTS.override.md
     fs.writeFileSync(path.join(tempCopilotHome, 'AGENTS.override.md'), systemPrompt)
     env.COPILOT_HOME = tempCopilotHome
+  }
+
+  // Inject agent-assigned MCP servers via --additional-mcp-config flag
+  let mcpAdditionalConfigPath: string | null = null
+  try {
+    const agentForMcp = session.agentId ? getAgent(session.agentId as string) : null
+    const agentMcpServerIds: string[] = agentForMcp?.mcpServerIds || []
+    if (agentMcpServerIds.length > 0) {
+      const allMcpServers = loadMcpServers()
+      const mcpServerEntries: Record<string, Record<string, unknown>> = {}
+      for (const serverId of agentMcpServerIds) {
+        const config = allMcpServers[serverId]
+        if (!config) continue
+        const name = config.name.replace(/[^a-zA-Z0-9_-]/g, '-')
+        if (config.transport === 'stdio' && config.command) {
+          mcpServerEntries[name] = {
+            command: config.command,
+            args: config.args || [],
+            ...(config.env && Object.keys(config.env).length > 0 ? { env: config.env } : {}),
+            ...(config.cwd ? { cwd: config.cwd } : {}),
+          }
+        } else if ((config.transport === 'sse' || config.transport === 'streamable-http') && config.url) {
+          mcpServerEntries[name] = {
+            type: config.transport,
+            url: config.url,
+            ...(config.headers && Object.keys(config.headers).length > 0 ? { headers: config.headers } : {}),
+          }
+        }
+      }
+      if (Object.keys(mcpServerEntries).length > 0) {
+        mcpAdditionalConfigPath = path.join(os.tmpdir(), `swarmclaw-copilot-mcp-${session.id}.json`)
+        fs.writeFileSync(mcpAdditionalConfigPath, JSON.stringify({ mcpServers: mcpServerEntries }))
+        args.push('--additional-mcp-config', `@${mcpAdditionalConfigPath}`)
+        log.info('copilot-cli', `Injecting ${Object.keys(mcpServerEntries).length} MCP server(s)`)
+      }
+    }
+  } catch (mcpErr) {
+    log.warn('copilot-cli', `Failed to build MCP config: ${mcpErr}`)
   }
 
   log.info('copilot-cli', `Spawning: ${binary}`, {
@@ -221,6 +261,9 @@ export function streamCopilotCliChat({ session, message, imagePath, systemPrompt
       if (tempCopilotHome) {
         try { fs.rmSync(tempCopilotHome, { recursive: true }) } catch { /* ignore */ }
       }
+      if (mcpAdditionalConfigPath) {
+        try { fs.unlinkSync(mcpAdditionalConfigPath) } catch { /* ignore */ }
+      }
       if ((code ?? 0) !== 0 && !fullResponse.trim()) {
         const msg = stderrText.trim()
           ? `Copilot CLI exited with code ${code ?? 'unknown'}${sig ? ` (${sig})` : ''}: ${stderrText.trim().slice(0, 1200)}`
@@ -235,6 +278,9 @@ export function streamCopilotCliChat({ session, message, imagePath, systemPrompt
       active.delete(session.id)
       if (tempCopilotHome) {
         try { fs.rmSync(tempCopilotHome, { recursive: true }) } catch { /* ignore */ }
+      }
+      if (mcpAdditionalConfigPath) {
+        try { fs.unlinkSync(mcpAdditionalConfigPath) } catch { /* ignore */ }
       }
       write(`data: ${JSON.stringify({ t: 'err', text: e.message })}\n\n`)
       resolve(fullResponse)

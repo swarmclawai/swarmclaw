@@ -6,6 +6,8 @@ import type { StreamChatOptions } from './index'
 import { log } from '../server/logger'
 import { loadRuntimeSettings } from '@/lib/server/runtime/runtime-settings'
 import { resolveCliBinary, buildCliEnv, probeCliAuth, attachAbortHandler, symlinkConfigFiles, isStderrNoise } from './cli-utils'
+import { getAgent } from '@/lib/server/agents/agent-repository'
+import { loadMcpServers } from '@/lib/server/storage'
 
 const TAG = 'provider-codex'
 
@@ -64,10 +66,13 @@ export function streamCodexCliChat({ session, message, imagePath, systemPrompt, 
     }
   }
 
-  // System prompt: write temp AGENTS.override.md in a temp CODEX_HOME
+  // System prompt + MCP injection: create a temp CODEX_HOME when needed
   // Symlink auth files from the real config dir so auth still works
   let tempCodexHome: string | null = null
-  if (systemPrompt && !session.codexThreadId) {
+  const agentForMcp = session.agentId ? getAgent(session.agentId as string) : null
+  const agentMcpServerIds: string[] = agentForMcp?.mcpServerIds || []
+  const needsTempHome = (systemPrompt && !session.codexThreadId) || agentMcpServerIds.length > 0
+  if (needsTempHome) {
     const realCodexHome = process.env.CODEX_HOME || path.join(os.homedir(), '.codex')
     tempCodexHome = path.join(os.tmpdir(), `swarmclaw-codex-${session.id}`)
     fs.mkdirSync(tempCodexHome, { recursive: true })
@@ -75,8 +80,54 @@ export function streamCodexCliChat({ session, message, imagePath, systemPrompt, 
     // Symlink auth/config files from real CODEX_HOME into temp dir
     symlinkConfigFiles(realCodexHome, tempCodexHome)
 
-    // Write system prompt as AGENTS.override.md
-    fs.writeFileSync(path.join(tempCodexHome, 'AGENTS.override.md'), systemPrompt)
+    // Write system prompt as AGENTS.override.md (first turn only)
+    if (systemPrompt && !session.codexThreadId) {
+      fs.writeFileSync(path.join(tempCodexHome, 'AGENTS.override.md'), systemPrompt)
+    }
+
+    // Inject agent-assigned MCP servers into config.toml
+    if (agentMcpServerIds.length > 0) {
+      try {
+        const allMcpServers = loadMcpServers()
+        const tomlParts: string[] = []
+        for (const serverId of agentMcpServerIds) {
+          const config = allMcpServers[serverId]
+          if (!config) continue
+          const name = config.name.replace(/[^a-zA-Z0-9_]/g, '_')
+          if (config.transport === 'stdio' && config.command) {
+            tomlParts.push(`[mcp_servers.${name}]`)
+            tomlParts.push(`command = ${JSON.stringify(config.command)}`)
+            const argsStr = (config.args || []).map((a: string) => JSON.stringify(a)).join(', ')
+            tomlParts.push(`args = [${argsStr}]`)
+            if (config.env && Object.keys(config.env).length > 0) {
+              const envPairs = Object.entries(config.env as Record<string, string>)
+                .map(([k, v]) => `${JSON.stringify(k)} = ${JSON.stringify(v)}`).join(', ')
+              tomlParts.push(`env = {${envPairs}}`)
+            }
+            if (config.cwd) tomlParts.push(`cwd = ${JSON.stringify(config.cwd)}`)
+            tomlParts.push('')
+          } else if ((config.transport === 'sse' || config.transport === 'streamable-http') && config.url) {
+            tomlParts.push(`[mcp_servers.${name}]`)
+            tomlParts.push(`url = ${JSON.stringify(config.url)}`)
+            tomlParts.push('')
+          }
+        }
+        if (tomlParts.length > 0) {
+          const realConfigPath = path.join(realCodexHome, 'config.toml')
+          const existingConfig = fs.existsSync(realConfigPath)
+            ? fs.readFileSync(realConfigPath, 'utf-8')
+            : ''
+          const tempConfigPath = path.join(tempCodexHome, 'config.toml')
+          // Remove symlink created by symlinkConfigFiles before writing our own file
+          try { fs.unlinkSync(tempConfigPath) } catch { /* no symlink — ignore */ }
+          fs.writeFileSync(tempConfigPath, existingConfig + '\n' + tomlParts.join('\n'))
+          log.info('codex-cli', `Injecting ${agentMcpServerIds.length} MCP server(s) via config.toml`)
+        }
+      } catch (mcpErr) {
+        log.warn('codex-cli', `Failed to build MCP config: ${mcpErr}`)
+      }
+    }
+
     env.CODEX_HOME = tempCodexHome
   }
 
