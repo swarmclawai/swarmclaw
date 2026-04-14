@@ -179,6 +179,7 @@ export function AgentSheet() {
   const dynamicSkills = useAppStore((s) => s.skills)
   const mcpServers = useAppStore((s) => s.mcpServers)
   const loadSkills = useAppStore((s) => s.loadSkills)
+  const loadMcpServersAction = useAppStore((s) => s.loadMcpServers)
   const [claudeSkills, setClaudeSkills] = useState<ClaudeSkill[]>([])
   const [claudeSkillsLoading, setClaudeSkillsLoading] = useState(false)
   const loadClaudeSkills = async () => {
@@ -390,6 +391,7 @@ export function AgentSheet() {
       loadGatewayProfiles()
       loadCredentials()
       loadSkills()
+      loadMcpServersAction()
       loadProjects()
       loadClaudeSkills()
       // Fetch enabled extension IDs so we can filter tool toggles
