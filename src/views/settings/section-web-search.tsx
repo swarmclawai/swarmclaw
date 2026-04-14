@@ -6,6 +6,7 @@ export function WebSearchSection({ appSettings, patchSettings, inputClass }: Set
   const provider = appSettings.webSearchProvider || 'duckduckgo'
   const hasTavilyKey = appSettings.tavilyApiKeyConfigured === true
   const hasBraveKey = appSettings.braveApiKeyConfigured === true
+  const hasExaKey = appSettings.exaApiKeyConfigured === true
 
   return (
     <div className="mb-10">
@@ -30,6 +31,7 @@ export function WebSearchSection({ appSettings, patchSettings, inputClass }: Set
             <option value="searxng">SearXNG (self-hosted, no key required)</option>
             <option value="tavily">Tavily (API key required)</option>
             <option value="brave">Brave Search (API key required)</option>
+            <option value="exa">Exa (API key required)</option>
           </select>
         </div>
 
@@ -80,6 +82,24 @@ export function WebSearchSection({ appSettings, patchSettings, inputClass }: Set
               <p className="text-[11px] text-emerald-400/90 mt-1.5">Stored securely. Clear the field and save to remove it.</p>
             )}
             <p className="text-[11px] text-text-3/60 mt-2">Get your API key from <a href="https://brave.com/search/api/" target="_blank" rel="noopener noreferrer" className="text-accent-bright hover:underline">brave.com/search/api</a></p>
+          </div>
+        )}
+
+        {provider === 'exa' && (
+          <div>
+            <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-2">Exa API Key</label>
+            <input
+              type="password"
+              value={appSettings.exaApiKey || ''}
+              onChange={(e) => patchSettings({ exaApiKey: e.target.value || null })}
+              placeholder={hasExaKey ? 'Stored securely. Enter a new key to replace it.' : 'exa-...'}
+              className={inputClass}
+              style={{ fontFamily: 'inherit' }}
+            />
+            {hasExaKey && (
+              <p className="text-[11px] text-emerald-400/90 mt-1.5">Stored securely. Clear the field and save to remove it.</p>
+            )}
+            <p className="text-[11px] text-text-3/60 mt-2">Get your API key from <a href="https://exa.ai" target="_blank" rel="noopener noreferrer" className="text-accent-bright hover:underline">exa.ai</a>. You can also set the <code className="text-[11px] font-mono text-text-2">EXA_API_KEY</code> environment variable.</p>
           </div>
         )}
       </div>
