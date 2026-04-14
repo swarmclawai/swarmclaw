@@ -1023,12 +1023,7 @@ async function routeMessage(connector: Connector, msg: InboundMessage): Promise<
     }
   }
 
-  // Environment fallback: if no stored credential exists but an env var is set,
-  // use it for certain CLI providers (helps non-interactive servers).
-  // Codex CLI expects OPENAI_API_KEY in env when not logged in.
-  if (!apiKey && session.provider === 'codex-cli' && process.env.OPENAI_API_KEY) {
-    apiKey = process.env.OPENAI_API_KEY
-  }
+
 
   // Build system prompt: [identity] \n\n [userPrompt] \n\n [soul] \n\n [systemPrompt]
   const settings = loadSettings()
