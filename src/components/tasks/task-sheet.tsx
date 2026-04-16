@@ -186,6 +186,7 @@ export function TaskSheet() {
 
   const onClose = () => {
     formInitRef.current = null
+    setDepError(null)
     setOpen(false)
     setEditingId(null)
   }
@@ -215,14 +216,16 @@ export function TaskSheet() {
     try {
       if (editing) {
         const res = await updateTaskMutation.mutateAsync({ id: editing.id, patch: payload })
-        if (res && typeof res === 'object' && 'error' in res) {
-          setDepError(String((res as unknown as Record<string, unknown>).error))
+        const errMsg = res && typeof res === 'object' ? (res as unknown as Record<string, unknown>).error : undefined
+        if (typeof errMsg === 'string' && errMsg.trim()) {
+          setDepError(errMsg)
           return
         }
       } else {
         const res = await createTaskMutation.mutateAsync(payload)
-        if (res && typeof res === 'object' && 'error' in res) {
-          setDepError(String((res as unknown as Record<string, unknown>).error))
+        const errMsg = res && typeof res === 'object' ? (res as unknown as Record<string, unknown>).error : undefined
+        if (typeof errMsg === 'string' && errMsg.trim()) {
+          setDepError(errMsg)
           return
         }
       }
