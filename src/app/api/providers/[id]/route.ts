@@ -4,6 +4,7 @@ import { loadProviderConfigs, saveProviderConfigs } from '@/lib/server/storage'
 import { mutateItem, deleteItem, notFound, badRequest, type CollectionOps } from '@/lib/server/collection-helpers'
 import { safeParseBody } from '@/lib/server/safe-parse-body'
 import { notify } from '@/lib/server/ws-hub'
+import { ProviderUpdateSchema, formatZodError } from '@/lib/validation/schemas'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const ops: CollectionOps<any> = { load: loadProviderConfigs, save: saveProviderConfigs, topic: 'providers' }
@@ -18,8 +19,17 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const { data: body, error } = await safeParseBody<Record<string, unknown>>(req)
+  const { data: raw, error } = await safeParseBody<Record<string, unknown>>(req)
   if (error) return error
+  const parsed = ProviderUpdateSchema.safeParse(raw)
+  if (!parsed.success) return NextResponse.json(formatZodError(parsed.error), { status: 400 })
+
+  const rawKeys = new Set(Object.keys(raw ?? {}))
+  const body: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(parsed.data)) {
+    if (rawKeys.has(key)) body[key] = value
+  }
+
   if (!ops.load()[id]) {
     const builtin = PROVIDERS[id]
     if (!builtin) return notFound()

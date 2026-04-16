@@ -1,3 +1,4 @@
+import { NextResponse } from 'next/server'
 import { z } from 'zod'
 
 import { explainElevenLabsError, requestElevenLabsMp3Stream } from '@/lib/server/elevenlabs'
@@ -22,6 +23,9 @@ export async function POST(req: Request) {
       },
     })
   } catch (err: unknown) {
-    return new Response(explainElevenLabsError(err), { status: 500 })
+    return NextResponse.json(
+      { error: explainElevenLabsError(err) },
+      { status: 500 },
+    )
   }
 }

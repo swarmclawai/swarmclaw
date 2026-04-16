@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { loadExternalAgents, saveExternalAgents } from '@/lib/server/storage'
 import { mutateItem, notFound, type CollectionOps } from '@/lib/server/collection-helpers'
 import { notify } from '@/lib/server/ws-hub'
+import { ExternalAgentUpdateSchema, formatZodError } from '@/lib/validation/schemas'
 export const dynamic = 'force-dynamic'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -9,12 +10,24 @@ const ops: CollectionOps<any> = { load: loadExternalAgents, save: saveExternalAg
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const body = await req.json().catch(() => ({}))
+  const raw = await req.json().catch(() => null)
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return NextResponse.json({ error: 'Invalid or missing request body' }, { status: 400 })
+  }
+  const parsed = ExternalAgentUpdateSchema.safeParse(raw)
+  if (!parsed.success) return NextResponse.json(formatZodError(parsed.error), { status: 400 })
+
+  const rawKeys = new Set(Object.keys(raw))
+  const body: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(parsed.data)) {
+    if (rawKeys.has(key)) body[key] = value
+  }
+
   const now = Date.now()
   const result = mutateItem(ops, id, (runtime) => {
     const action = typeof body.action === 'string' ? body.action : ''
     const nextMetadata = body.metadata && typeof body.metadata === 'object'
-      ? { ...(runtime.metadata || {}), ...body.metadata }
+      ? { ...(runtime.metadata || {}), ...(body.metadata as Record<string, unknown>) }
       : runtime.metadata
 
     const next = {

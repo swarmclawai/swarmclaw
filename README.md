@@ -399,6 +399,11 @@ Operational docs: https://swarmclaw.ai/docs/observability
 
 ## Releases
 
+### v1.5.56 Highlights
+
+- **Fix: TTS error responses are now proper JSON instead of a raw Buffer blob.** `POST /api/tts` and `POST /api/tts/stream` previously returned `500` with the error message wrapped in a `new NextResponse(string, ...)` that the CLI JSON-decoded into `{"type":"Buffer","data":[78,111,...]}`. Both routes now return `NextResponse.json({error}, {status: 500})`. Regression test added.
+- **Zod-validated PUT/PATCH endpoints — hardening sweep.** Extends the v1.5.55 work (agents, tasks, webhooks) to close the same silent-corruption bug class on the remaining vulnerable routes: `PUT /api/secrets/:id`, `POST /api/secrets`, `PATCH /api/goals/:id`, `PUT /api/providers/:id`, `PUT /api/documents/:id`, `PUT /api/external-agents/:id`, and `PUT /api/chatrooms/:id`. Each route validates against a dedicated schema (`SecretUpdateSchema`, `SecretCreateSchema`, `GoalUpdateSchema`, `ProviderUpdateSchema`, `DocumentUpdateSchema`, `ExternalAgentUpdateSchema`, `ChatroomUpdateSchema`) in `src/lib/validation/schemas.ts`, then filters parsed data to the keys actually present in the raw body so Zod defaults can't overwrite untouched stored fields. Endpoints already doing per-field `typeof` guards (knowledge, gateways, projects) were left as-is.
+
 ### v1.5.55 Highlights
 
 - **Fix: mission budget updates with decimal values no longer silently fail with a 400.** The mission UI's `numOrNull` parsed user input with `Number.parseFloat`, but the API requires `int()` for `maxTokens`, `maxToolCalls`, `maxWallclockSec`, and `maxTurns`. Typing `1000.5` returned a cryptic Zod error to the toast and the update was lost. Added `intOrNull` (rounds) in `mission-edit-sheet.tsx`, `mission-template-install-dialog.tsx`, and `app/missions/page.tsx`. `maxUsd` still accepts decimals.

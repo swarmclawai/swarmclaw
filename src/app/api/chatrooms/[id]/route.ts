@@ -9,6 +9,7 @@ import {
   ensureChatroomRoutingGuidance,
   synthesizeRoutingGuidanceFromRules,
 } from '@/lib/server/chatrooms/chatroom-routing'
+import { ChatroomUpdateSchema, formatZodError } from '@/lib/validation/schemas'
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -25,14 +26,23 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const { data: body, error } = await safeParseBody<Record<string, unknown>>(req)
+  const { data: raw, error } = await safeParseBody<Record<string, unknown>>(req)
   if (error) return error
+  const parsed = ChatroomUpdateSchema.safeParse(raw)
+  if (!parsed.success) return NextResponse.json(formatZodError(parsed.error), { status: 400 })
+
+  const rawKeys = new Set(Object.keys(raw ?? {}))
+  const body: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(parsed.data)) {
+    if (rawKeys.has(key)) body[key] = value
+  }
+
   const chatrooms = loadChatrooms()
   const chatroom = chatrooms[id]
   if (!chatroom) return notFound()
 
-  if (body.name !== undefined) chatroom.name = body.name
-  if (body.description !== undefined) chatroom.description = body.description
+  if (body.name !== undefined) chatroom.name = body.name as string
+  if (body.description !== undefined) chatroom.description = body.description as string
   if (body.chatMode !== undefined) {
     chatroom.chatMode = body.chatMode === 'parallel' ? 'parallel' : 'sequential'
   }

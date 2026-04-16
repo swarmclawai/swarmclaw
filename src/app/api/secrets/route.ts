@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { genId } from '@/lib/id'
 import { loadSecrets, saveSecrets, encryptKey } from '@/lib/server/storage'
 import { safeParseBody } from '@/lib/server/safe-parse-body'
+import { SecretCreateSchema, formatZodError } from '@/lib/validation/schemas'
 export const dynamic = 'force-dynamic'
 
 
@@ -18,15 +19,19 @@ export async function GET(_req: Request) {
 }
 
 export async function POST(req: Request) {
-  const { data: body, error } = await safeParseBody<{ value?: string; name?: string; service?: string; scope?: string; agentIds?: string[]; projectId?: string }>(req)
+  const { data: raw, error } = await safeParseBody<Record<string, unknown>>(req)
   if (error) return error
+  const parsed = SecretCreateSchema.safeParse(raw)
+  if (!parsed.success) return NextResponse.json(formatZodError(parsed.error), { status: 400 })
+  const body = parsed.data
+
+  if (!body.value.trim()) {
+    return NextResponse.json({ error: 'value is required' }, { status: 400 })
+  }
+
   const id = genId()
   const now = Date.now()
   const secrets = loadSecrets()
-
-  if (!body.value?.trim()) {
-    return NextResponse.json({ error: 'value is required' }, { status: 400 })
-  }
 
   secrets[id] = {
     id,

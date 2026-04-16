@@ -58,6 +58,22 @@ describe('AgentCreateSchema', () => {
     assert.equal(parsed.sessionResetMode, 'isolated')
   })
 
+  it('preserves heartbeat goal/nextAction/target/prompt fields without dropping them', () => {
+    const parsed = AgentCreateSchema.parse({
+      name: 'Daily Reporter',
+      provider: 'openai',
+      heartbeatPrompt: 'Custom prompt',
+      heartbeatGoal: 'Report the day-of-week',
+      heartbeatNextAction: 'Reply with weekday',
+      heartbeatTarget: 'last',
+    })
+
+    assert.equal(parsed.heartbeatPrompt, 'Custom prompt')
+    assert.equal(parsed.heartbeatGoal, 'Report the day-of-week')
+    assert.equal(parsed.heartbeatNextAction, 'Reply with weekday')
+    assert.equal(parsed.heartbeatTarget, 'last')
+  })
+
   it('accepts executeConfig for sandboxed execute defaults', () => {
     const parsed = AgentCreateSchema.parse({
       name: 'Builder',

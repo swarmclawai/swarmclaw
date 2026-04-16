@@ -23,6 +23,9 @@ export async function POST(req: Request) {
       },
     })
   } catch (err: unknown) {
-    return new NextResponse(explainElevenLabsError(err), { status: 500 })
+    return NextResponse.json(
+      { error: explainElevenLabsError(err) },
+      { status: 500 },
+    )
   }
 }

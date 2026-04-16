@@ -104,6 +104,9 @@ export const AgentCreateSchema = z.object({
   heartbeatIntervalSec: z.number().int().nonnegative().nullable().optional().default(null),
   heartbeatModel: z.string().nullable().optional().default(null),
   heartbeatPrompt: z.string().nullable().optional().default(null),
+  heartbeatGoal: z.string().nullable().optional().default(null),
+  heartbeatNextAction: z.string().nullable().optional().default(null),
+  heartbeatTarget: z.string().nullable().optional().default(null),
   orchestratorEnabled: z.boolean().optional().default(false),
   orchestratorMission: z.string().optional().default(''),
   orchestratorWakeInterval: z.union([z.string(), z.number()]).nullable().optional().default(null),
@@ -237,6 +240,95 @@ export const WebhookUpdateSchema = z.object({
   isEnabled: z.boolean().optional(),
 })
 
+/** PUT /secrets/:id body. Never allow mutating `encryptedValue` here — that only
+ * happens via POST /secrets with a fresh plaintext value that we re-encrypt. */
+export const SecretUpdateSchema = z.object({
+  name: z.string().min(1).max(200).optional(),
+  service: z.string().max(64).optional(),
+  scope: z.enum(['global', 'agent', 'project']).optional(),
+  agentIds: z.array(z.string()).max(64).optional(),
+  projectId: z.string().nullable().optional(),
+}).strict()
+
+export const SecretCreateSchema = z.object({
+  value: z.string().min(1, 'value is required'),
+  name: z.string().max(200).optional(),
+  service: z.string().max(64).optional(),
+  scope: z.enum(['global', 'agent', 'project']).optional(),
+  agentIds: z.array(z.string()).max(64).optional(),
+  projectId: z.string().nullable().optional(),
+}).strict()
+
+/** PATCH /goals/:id — partial updates of a Goal. Matches the Goal type. */
+export const GoalUpdateSchema = z.object({
+  title: z.string().min(1).max(200).optional(),
+  description: z.string().max(4000).optional(),
+  level: z.enum(['organization', 'team', 'project', 'agent', 'task']).optional(),
+  parentGoalId: z.string().nullable().optional(),
+  projectId: z.string().nullable().optional(),
+  agentId: z.string().nullable().optional(),
+  taskId: z.string().nullable().optional(),
+  objective: z.string().max(4000).optional(),
+  constraints: z.array(z.string()).max(32).optional(),
+  successMetric: z.string().max(1000).nullable().optional(),
+  budgetUsd: z.number().nonnegative().nullable().optional(),
+  deadlineAt: z.number().nullable().optional(),
+  status: z.enum(['active', 'achieved', 'abandoned']).optional(),
+}).strict()
+
+/** PUT /providers/:id — any of the provider-config writable fields. */
+export const ProviderUpdateSchema = z.object({
+  name: z.string().min(1).max(200).optional(),
+  baseUrl: z.string().optional(),
+  models: z.array(z.string()).max(200).optional(),
+  credentialId: z.string().nullable().optional(),
+  isEnabled: z.boolean().optional(),
+  requiresApiKey: z.boolean().optional(),
+  notes: z.string().max(4000).nullable().optional(),
+}).strict()
+
+/** PUT /documents/:id — note: creating a new revision is a side-effect of
+ * passing a new `content`, so content shape is strict here. */
+export const DocumentUpdateSchema = z.object({
+  title: z.string().min(1).max(500).optional(),
+  fileName: z.string().max(500).nullable().optional(),
+  sourcePath: z.string().max(4000).nullable().optional(),
+  content: z.string().optional(),
+  method: z.string().max(64).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+  textLength: z.number().int().nonnegative().optional(),
+  createdBy: z.string().max(200).nullable().optional(),
+}).strict()
+
+/** PUT /external-agents/:id — runtime fields + `action` control. */
+export const ExternalAgentUpdateSchema = z.object({
+  id: z.string().optional(),
+  name: z.string().min(1).max(200).optional(),
+  sourceType: z.enum(['codex', 'claude', 'opencode', 'openclaw', 'custom', 'a2a']).optional(),
+  status: z.enum(['online', 'idle', 'offline', 'stale']).optional(),
+  provider: z.string().nullable().optional(),
+  model: z.string().nullable().optional(),
+  workspace: z.string().nullable().optional(),
+  transport: z.enum(['http', 'ws', 'cli', 'gateway', 'custom']).nullable().optional(),
+  endpoint: z.string().nullable().optional(),
+  agentId: z.string().nullable().optional(),
+  gatewayProfileId: z.string().nullable().optional(),
+  capabilities: z.array(z.string()).optional(),
+  labels: z.array(z.string()).optional(),
+  lifecycleState: z.enum(['active', 'draining', 'cordoned']).optional(),
+  gatewayTags: z.array(z.string()).optional(),
+  gatewayUseCase: z.string().nullable().optional(),
+  version: z.string().nullable().optional(),
+  lastHealthNote: z.string().nullable().optional(),
+  metadata: z.record(z.string(), z.unknown()).nullable().optional(),
+  action: z.enum(['activate', 'drain', 'cordon', 'restart']).optional(),
+  tokenStats: z.object({
+    inputTokens: z.number().nonnegative().optional(),
+    outputTokens: z.number().nonnegative().optional(),
+    totalTokens: z.number().nonnegative().optional(),
+  }).nullable().optional(),
+})
+
 export const ChatroomCreateSchema = z.object({
   name: z.string().min(1, 'Chatroom name is required'),
   agentIds: z.array(z.string()).min(1, 'Select at least one agent').default([]),
@@ -253,6 +345,11 @@ export const ChatroomCreateSchema = z.object({
     priority: z.number(),
   })).optional(),
 })
+
+/** PUT /chatrooms/:id — partial updates. `agentIds` and moderation flows have
+ * their own downstream validation in the route, so this schema just guards
+ * types and ranges. */
+export const ChatroomUpdateSchema = ChatroomCreateSchema.partial()
 
 export const ProtocolPhaseDefinitionSchema = z.object({
   id: z.string().min(1),
