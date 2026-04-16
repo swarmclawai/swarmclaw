@@ -33,6 +33,7 @@ import {
 import { estimateCost } from '@/lib/server/cost'
 import { refreshSessionIdentityState } from '@/lib/server/identity-continuity'
 import { log } from '@/lib/server/logger'
+import { logExecution } from '@/lib/server/execution-log'
 import { syncSessionArchiveMemory } from '@/lib/server/memory/session-archive-memory'
 import { runCapabilityHook, transformCapabilityText } from '@/lib/server/native-capabilities'
 import { isHeartbeatSource } from '@/lib/server/runtime/heartbeat-source'
@@ -287,6 +288,22 @@ export async function finalizeChatTurn(params: {
         inferredError: terminalError,
       })
     }
+    logExecution(sessionId, 'error', terminalError, {
+      runId,
+      agentId: sessionForRun.agentId || null,
+      detail: {
+        provider: providerType,
+        model: sessionForRun.model,
+        streamErrors: streamErrors.length > 0 ? streamErrors : undefined,
+        source,
+        durationMs,
+        inputTokens: directUsage.received ? directUsage.inputTokens : null,
+        outputTokens: directUsage.received ? directUsage.outputTokens : null,
+        tokenUsageReceived: directUsage.received,
+        hadResponse: !!(fullResponse || '').trim(),
+        toolEventCount: toolEvents.length,
+      },
+    })
     errorMessage = terminalError
   }
 
