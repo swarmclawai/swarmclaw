@@ -7,6 +7,7 @@ import { buildAgentDisabledMessage, isAgentDisabled } from '@/lib/server/agents/
 import { loadAgent } from '@/lib/server/agents/agent-repository'
 import { clearMainLoopStateForSession } from '@/lib/server/agents/main-agent-loop'
 import { applyResolvedRoute, resolvePrimaryAgentRoute } from '@/lib/server/agents/agent-runtime-config'
+import { loadCredentials } from '@/lib/server/credentials/credential-repository'
 import { cleanupSessionProcesses } from '@/lib/server/runtime/process-manager'
 import { stopActiveSessionProcess } from '@/lib/server/runtime/runtime-state'
 import {
@@ -235,6 +236,13 @@ export function updateChatSession(sessionId: string, updates: Record<string, unk
   if (updates.credentialId !== undefined) session.credentialId = updates.credentialId
   else if (agentIdUpdateProvided && linkedRoute) session.credentialId = linkedRoute.credentialId ?? null
   else if (agentIdUpdateProvided && linkedAgent) session.credentialId = linkedAgent.credentialId ?? null
+  else if (updates.provider !== undefined && updates.provider !== session.provider) {
+    // Provider changed without an explicit credentialId — find a stored credential
+    // for the new provider so API-key-based providers (Groq, OpenAI, …) work.
+    const allCreds = loadCredentials()
+    const providerCred = Object.values(allCreds).find(c => c.provider === updates.provider)
+    session.credentialId = providerCred?.id ?? null
+  }
   if (updates.fallbackCredentialIds !== undefined) session.fallbackCredentialIds = updates.fallbackCredentialIds
   else if (agentIdUpdateProvided && linkedRoute) session.fallbackCredentialIds = [...linkedRoute.fallbackCredentialIds]
   if (updates.gatewayProfileId !== undefined) session.gatewayProfileId = updates.gatewayProfileId
@@ -264,6 +272,9 @@ export function updateChatSession(sessionId: string, updates: Record<string, unk
     session.apiEndpoint = linkedRoute.apiEndpoint ?? null
   } else if (agentIdUpdateProvided && linkedAgent) {
     session.apiEndpoint = normalizeProviderEndpoint(linkedAgent.provider, linkedAgent.apiEndpoint ?? null)
+  } else if (updates.provider !== undefined && updates.provider !== session.provider) {
+    // Provider changed — clear stale endpoint so the new provider uses its own default.
+    session.apiEndpoint = null
   }
   if (updates.heartbeatEnabled !== undefined) session.heartbeatEnabled = updates.heartbeatEnabled
   if (updates.heartbeatIntervalSec !== undefined) session.heartbeatIntervalSec = updates.heartbeatIntervalSec

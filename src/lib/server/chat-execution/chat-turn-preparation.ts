@@ -208,19 +208,24 @@ function syncSessionFromAgent(sessionId: string): void {
   }
   if (route) {
     const resolved = applyResolvedRoute({ ...session }, route)
-    if (session.provider !== resolved.provider) { session.provider = resolved.provider; changed = true }
-    if (session.model !== resolved.model) { session.model = resolved.model; changed = true }
-    if ((session.credentialId || null) !== (resolved.credentialId || null)) {
-      session.credentialId = resolved.credentialId ?? null
-      changed = true
-    }
-    if (JSON.stringify(session.fallbackCredentialIds || []) !== JSON.stringify(resolved.fallbackCredentialIds || [])) {
-      session.fallbackCredentialIds = [...(resolved.fallbackCredentialIds || [])]
-      changed = true
-    }
-    if ((session.apiEndpoint || null) !== (resolved.apiEndpoint || null)) {
-      session.apiEndpoint = resolved.apiEndpoint ?? null
-      changed = true
+    // Do NOT sync provider/model from the route here — the user may have manually
+    // switched the session model, and we must preserve that choice.
+    // Provider/model are initialized from the route at session-creation time only.
+    // Only sync credentials/endpoint when the session's provider still matches the
+    // route's provider — if the user switched providers, leave their credential alone.
+    if (session.provider === resolved.provider) {
+      if ((session.credentialId || null) !== (resolved.credentialId || null)) {
+        session.credentialId = resolved.credentialId ?? null
+        changed = true
+      }
+      if (JSON.stringify(session.fallbackCredentialIds || []) !== JSON.stringify(resolved.fallbackCredentialIds || [])) {
+        session.fallbackCredentialIds = [...(resolved.fallbackCredentialIds || [])]
+        changed = true
+      }
+      if ((session.apiEndpoint || null) !== (resolved.apiEndpoint || null)) {
+        session.apiEndpoint = resolved.apiEndpoint ?? null
+        changed = true
+      }
     }
     if ((session.gatewayProfileId || null) !== (resolved.gatewayProfileId || null)) {
       session.gatewayProfileId = resolved.gatewayProfileId ?? null
@@ -624,9 +629,15 @@ export async function prepareChatTurn(input: ExecuteChatTurnInput): Promise<Prep
       preferredGatewayTags: session.routePreferredGatewayTags || [],
       preferredGatewayUseCase: session.routePreferredGatewayUseCase || null,
     })
-    if (preferredRoute) {
+    if (preferredRoute && sessionForRun.provider === preferredRoute.provider) {
+      // Apply route for credentials/endpoint/gateway, but preserve the user's
+      // manually-selected model — only sync infra, not the model choice.
+      const savedModel = sessionForRun.model
       sessionForRun = applyResolvedRoute({ ...sessionForRun }, preferredRoute)
+      sessionForRun = { ...sessionForRun, model: savedModel }
     }
+    // If the user has manually switched to a different provider, skip the route
+    // entirely — the session already has the correct provider/model/credential.
   }
   let effectiveMessage = message
 
