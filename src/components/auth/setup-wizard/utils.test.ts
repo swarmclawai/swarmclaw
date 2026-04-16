@@ -59,7 +59,14 @@ test('getStarterKitsForPath: quick exposes a reduced starter set', () => {
 
 test('getStarterKitsForPath: intent stays focused on broad starter shapes', () => {
   const ids = getStarterKitsForPath('intent').map((kit) => kit.id)
-  assert.deepEqual(ids, ['personal_assistant', 'research_copilot', 'builder_studio', 'operator_swarm'])
+  assert.deepEqual(ids, [
+    'personal_assistant',
+    'research_copilot',
+    'builder_studio',
+    'operator_swarm',
+    'inbox_triage',
+    'data_analyst',
+  ])
 })
 
 test('getStarterKitsForPath: manual keeps the full catalog', () => {

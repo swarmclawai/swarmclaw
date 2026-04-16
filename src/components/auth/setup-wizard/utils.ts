@@ -25,7 +25,14 @@ export function getStarterKitsForPath(path: OnboardingPath): StarterKit[] {
     return STARTER_KITS.filter((kit) => quickIds.has(kit.id))
   }
   if (path === 'intent') {
-    const intentIds = new Set(['personal_assistant', 'builder_studio', 'research_copilot', 'operator_swarm'])
+    const intentIds = new Set([
+      'personal_assistant',
+      'builder_studio',
+      'research_copilot',
+      'operator_swarm',
+      'inbox_triage',
+      'data_analyst',
+    ])
     return STARTER_KITS.filter((kit) => intentIds.has(kit.id))
   }
   return STARTER_KITS

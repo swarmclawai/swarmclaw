@@ -6,6 +6,7 @@ import { errorMessage } from '@/lib/shared-utils'
 const SuiteSchema = z.object({
   agentId: z.string().min(1),
   categories: z.array(z.string()).optional(),
+  suite: z.string().min(1).optional(),
 })
 
 export async function POST(req: Request) {
@@ -19,7 +20,10 @@ export async function POST(req: Request) {
       )
     }
 
-    const result = await runEvalSuite(parsed.data.agentId, parsed.data.categories)
+    const result = await runEvalSuite(parsed.data.agentId, {
+      categories: parsed.data.categories,
+      suite: parsed.data.suite,
+    })
     return NextResponse.json(result)
   } catch (err: unknown) {
     return NextResponse.json(

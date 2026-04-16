@@ -1,6 +1,8 @@
 import type { EvalScenario } from './types'
+import { SWEBENCH_LITE_SCENARIOS } from './scenarios-swebench'
+import { GAIA_L1_SCENARIOS } from './scenarios-gaia'
 
-export const EVAL_SCENARIOS: EvalScenario[] = [
+const CORE_SCENARIOS: EvalScenario[] = [
   {
     id: 'coding-prime',
     name: 'Prime Number Function',
@@ -213,6 +215,23 @@ export const EVAL_SCENARIOS: EvalScenario[] = [
   },
 ]
 
+export const EVAL_SCENARIOS: EvalScenario[] = [
+  ...CORE_SCENARIOS,
+  ...SWEBENCH_LITE_SCENARIOS,
+  ...GAIA_L1_SCENARIOS,
+]
+
 export function getScenario(id: string): EvalScenario | undefined {
   return EVAL_SCENARIOS.find(s => s.id === id)
+}
+
+export function getSuiteScenarios(suite: string): EvalScenario[] {
+  if (suite === 'core') return EVAL_SCENARIOS.filter(s => !s.suite || s.suite === 'core')
+  return EVAL_SCENARIOS.filter(s => s.suite === suite)
+}
+
+export function listSuites(): string[] {
+  const seen = new Set<string>(['core'])
+  for (const s of EVAL_SCENARIOS) if (s.suite) seen.add(s.suite)
+  return Array.from(seen)
 }

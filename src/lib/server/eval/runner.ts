@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { genId } from '@/lib/id'
 import type { EvalScenario, EvalRun, EvalSuiteResult } from './types'
-import { getScenario, EVAL_SCENARIOS } from './scenarios'
+import { getScenario, EVAL_SCENARIOS, getSuiteScenarios } from './scenarios'
 import { scoreCriteria } from './scorer'
 import { saveEvalRun } from './store'
 import { loadSessions, saveSessions, loadAgents, loadCredentials, decryptKey } from '../storage'
@@ -112,10 +112,21 @@ export async function runEvalScenario(scenarioId: string, agentId: string): Prom
   return run
 }
 
-export async function runEvalSuite(agentId: string, categories?: string[]): Promise<EvalSuiteResult> {
-  const scenarios: EvalScenario[] = categories
-    ? EVAL_SCENARIOS.filter(s => categories.includes(s.category))
-    : EVAL_SCENARIOS
+export async function runEvalSuite(
+  agentId: string,
+  opts: { categories?: string[]; suite?: string } = {},
+): Promise<EvalSuiteResult> {
+  let scenarios: EvalScenario[]
+  if (opts.suite) {
+    scenarios = getSuiteScenarios(opts.suite)
+    if (opts.categories?.length) {
+      scenarios = scenarios.filter(s => opts.categories!.includes(s.category))
+    }
+  } else if (opts.categories?.length) {
+    scenarios = EVAL_SCENARIOS.filter(s => opts.categories!.includes(s.category))
+  } else {
+    scenarios = EVAL_SCENARIOS
+  }
 
   const runs: EvalRun[] = []
   for (const scenario of scenarios) {

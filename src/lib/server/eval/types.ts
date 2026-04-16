@@ -5,6 +5,8 @@ export interface ScoringCriterion {
   expected: string
 }
 
+export type EvalSuite = 'core' | 'swe-bench-lite' | 'gaia-l1' | 'tool-use' | 'code-action'
+
 export interface EvalScenario {
   id: string
   name: string
@@ -15,6 +17,8 @@ export interface EvalScenario {
   scoringCriteria: ScoringCriterion[]
   timeoutMs: number
   tools: string[]
+  /** Optional suite tag. Scenarios without a suite belong to the 'core' suite. */
+  suite?: EvalSuite
 }
 
 export interface EvalRun {

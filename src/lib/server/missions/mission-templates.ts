@@ -164,6 +164,29 @@ export const BUILT_IN_MISSION_TEMPLATES: MissionTemplate[] = [
       reportSchedule: report(12 * HOUR),
     },
   },
+  {
+    id: 'hello-world-demo',
+    name: 'Hello World Demo',
+    description:
+      'A zero-cost first-run mission that summarizes the current working directory into a short markdown report. Great for first-time users to watch an agent complete a bounded task end-to-end.',
+    icon: '👋',
+    category: 'research',
+    tags: ['demo', 'first-run', 'short'],
+    setupNote:
+      'No setup required. This demo mission runs in your workspace, reads a few files, and produces a short markdown summary. Best paired with a local Ollama model or any configured provider.',
+    defaults: {
+      title: 'Hello World Demo',
+      goal:
+        'List the files in the current working directory, pick the 3 that look most interesting, read a short excerpt from each, and write a markdown file `hello-world-report.md` with a one-paragraph summary of what this project appears to do. Do not modify any existing files.',
+      successCriteria: [
+        'Reads at least 3 files',
+        'Writes hello-world-report.md with a clear one-paragraph summary',
+        'Does not modify any pre-existing files',
+      ],
+      budget: budget({ maxUsd: 0.25, maxTokens: 20_000, maxTurns: 30, maxWallclockSec: 15 * 60 }),
+      reportSchedule: report(HOUR),
+    },
+  },
 ]
 
 const TEMPLATE_INDEX: Map<string, MissionTemplate> = new Map(

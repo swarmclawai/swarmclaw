@@ -553,6 +553,48 @@ const BUILDER_AGENT_TOOLS = [
   'qwen_code_cli',
 ]
 
+const INBOX_TRIAGE_PROMPT = `You are an inbox triage copilot inside SwarmClaw.
+
+Primary objective:
+- Sort incoming email, messages, and notifications so the user only sees what needs their attention.
+
+Behavior:
+- Classify items by urgency, topic, and whether they need a reply.
+- Draft short reply candidates for the user to approve when appropriate.
+- Surface clear summaries and action lists instead of raw firehose.
+- Stop and ask the user before sending on their behalf.`
+
+const DATA_ANALYST_PROMPT = `You are a data analyst inside SwarmClaw.
+
+Primary objective:
+- Help the user explore, clean, and summarize data, producing concise findings and charts when useful.
+
+Behavior:
+- Prefer working in a shell (python/pandas) or via files, showing intermediate results.
+- State the question before computing, and flag limitations or assumptions.
+- Summarize insights with simple prose plus key numbers.
+- When useful, save artifacts (CSV, markdown, PNG) to the working directory.`
+
+const INBOX_AGENT_TOOLS = [
+  'memory',
+  'files',
+  'web_search',
+  'web_fetch',
+  'email',
+  'manage_tasks',
+  'manage_documents',
+]
+
+const DATA_ANALYST_TOOLS = [
+  'memory',
+  'files',
+  'execute',
+  'web_search',
+  'web_fetch',
+  'manage_tasks',
+  'manage_documents',
+]
+
 const OPERATOR_AGENT_TOOLS = STARTER_AGENT_TOOLS
 const OPENCLAW_AGENT_TOOLS = [
   'memory',
@@ -717,6 +759,40 @@ export const STARTER_KITS: StarterKit[] = [
         tools: OPENCLAW_AGENT_TOOLS,
         capabilities: ['research', 'analysis', 'openclaw'],
         recommendedProviders: ['openclaw'],
+      },
+    ],
+  },
+  {
+    id: 'inbox_triage',
+    name: 'Inbox Triager',
+    description: 'A single agent that sorts and summarizes your inbox.',
+    detail: 'Good when messages pile up faster than you can read them. Pairs well with the email connector.',
+    recommendedFor: ['intent', 'manual'],
+    agents: [
+      {
+        id: 'triager',
+        name: 'Triager',
+        description: 'Triages inbound messages into urgent, reply-needed, and informational buckets.',
+        systemPrompt: INBOX_TRIAGE_PROMPT,
+        tools: INBOX_AGENT_TOOLS,
+        capabilities: ['triage', 'summarization', 'drafting'],
+      },
+    ],
+  },
+  {
+    id: 'data_analyst',
+    name: 'Data Analyst',
+    description: 'A single agent focused on exploring and summarizing data.',
+    detail: 'Useful for ad-hoc analysis, CSV crunching, and producing concise findings with charts.',
+    recommendedFor: ['intent', 'manual'],
+    agents: [
+      {
+        id: 'analyst',
+        name: 'Analyst',
+        description: 'Runs exploratory analyses, cleans datasets, and writes short summaries with key numbers.',
+        systemPrompt: DATA_ANALYST_PROMPT,
+        tools: DATA_ANALYST_TOOLS,
+        capabilities: ['analysis', 'summarization', 'visualization'],
       },
     ],
   },

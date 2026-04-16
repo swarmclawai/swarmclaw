@@ -85,6 +85,9 @@ function resolveHeartbeatLastConnectorTarget(session: Session | null | undefined
   }
 }
 
+const AUTO_DRAFT_DAILY_LIMIT = 3
+const AUTO_DRAFT_MIN_TOOL_EVENTS = 3
+
 function shouldAutoDraftSkillSuggestion(params: {
   assistantPersisted: boolean
   internal: boolean
@@ -96,8 +99,29 @@ function shouldAutoDraftSkillSuggestion(params: {
   if (!params.assistantPersisted) return false
   if (params.internal || params.isHeartbeatRun) return false
   if (!params.agentAutoDraftSetting) return false
-  if (params.toolEventCount === 0) return false
+  if (params.toolEventCount < AUTO_DRAFT_MIN_TOOL_EVENTS) return false
   return params.messageCount >= 4
+}
+
+async function isAutoDraftRateLimited(agentId: string | null): Promise<boolean> {
+  if (!agentId) return false
+  try {
+    const { loadSkillSuggestions } = await import('@/lib/server/skills/skill-repository')
+    const suggestions = loadSkillSuggestions()
+    const todayStart = new Date()
+    todayStart.setHours(0, 0, 0, 0)
+    const cutoff = todayStart.getTime()
+    let count = 0
+    for (const s of Object.values(suggestions)) {
+      if (s.sourceAgentId !== agentId) continue
+      if ((s.createdAt || 0) < cutoff) continue
+      count += 1
+      if (count >= AUTO_DRAFT_DAILY_LIMIT) return true
+    }
+    return false
+  } catch {
+    return false
+  }
 }
 
 async function resolveExactOutputContractWithTimeout(params: {
@@ -668,11 +692,14 @@ export async function finalizeChatTurn(params: {
       toolEventCount: persistedToolEvents.length,
       messageCount: messages.length,
     })) {
-      try {
-        const { createSkillSuggestionFromSession } = await import('@/lib/server/skills/skill-suggestions')
-        await createSkillSuggestionFromSession(sessionId)
-      } catch {
-        // Reviewed skill drafting is best-effort.
+      const rateLimited = await isAutoDraftRateLimited(current.agentId)
+      if (!rateLimited) {
+        try {
+          const { createSkillSuggestionFromSession } = await import('@/lib/server/skills/skill-suggestions')
+          await createSkillSuggestionFromSession(sessionId)
+        } catch {
+          // Reviewed skill drafting is best-effort.
+        }
       }
     }
     notify(`messages:${sessionId}`)

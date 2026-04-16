@@ -215,9 +215,10 @@ const COMMAND_GROUPS = [
     description: 'Run agent evaluation scenarios',
     commands: [
       cmd('scenarios', 'GET', '/eval/scenarios', 'List available eval scenarios'),
+      cmd('suites', 'GET', '/eval/suites', 'List available eval suites (core, swe-bench-lite, gaia-l1, ...)'),
       cmd('status', 'GET', '/eval/run', 'Get eval run status'),
       cmd('run', 'POST', '/eval/run', 'Run an eval scenario against an agent', { expectsJsonBody: true }),
-      cmd('suite', 'POST', '/eval/suite', 'Run a full eval suite against an agent', { expectsJsonBody: true }),
+      cmd('suite', 'POST', '/eval/suite', 'Run a full eval suite against an agent (pass { suite: "swe-bench-lite" } in body)', { expectsJsonBody: true }),
     ],
   },
   {
@@ -747,6 +748,7 @@ const COMMAND_GROUPS = [
     description: 'Usage and cost summary',
     commands: [
       cmd('get', 'GET', '/usage', 'Get usage summary'),
+      cmd('live', 'GET', '/usage/live', 'Get live per-session usage (use --query sessionId=...)'),
     ],
   },
   {
