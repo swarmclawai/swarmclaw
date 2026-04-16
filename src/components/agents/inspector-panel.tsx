@@ -73,22 +73,24 @@ function ModelSwitcherInline({ session, agent }: { session: Session; agent: Agen
   const refreshSession = useAppStore((s) => s.refreshSession)
   const streaming = useChatStore((s) => s.streaming)
   const [expanded, setExpanded] = useState(false)
-  const [selectedProvider, setSelectedProvider] = useState(agent.provider)
+  const [selectedProvider, setSelectedProvider] = useState(session.provider || agent.provider)
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     void loadProviders()
     void loadProviderConfigs()
   }, [loadProviderConfigs, loadProviders])
-  useEffect(() => { setSelectedProvider(agent.provider) }, [agent.provider])
+  // Sync selectedProvider when the session's provider changes (e.g. after a successful save)
+  useEffect(() => { setSelectedProvider(session.provider || agent.provider) }, [session.provider, agent.provider])
 
   const agentSelectableProviders = useMemo(
     () => buildAgentSelectableProviders(providers, providerConfigs),
     [providerConfigs, providers],
   )
   const currentProviderInfo = agentSelectableProviders.find((p) => p.id === selectedProvider)
-  const activeAgentProvider = agentSelectableProviders.find((p) => p.id === agent.provider)
-  const providerLabel = PROVIDER_LABELS[agent.provider] || activeAgentProvider?.name || agent.provider.replace(/-/g, ' ')
+  const activeSessionProvider = agentSelectableProviders.find((p) => p.id === (session.provider || agent.provider))
+  const effectiveProvider = session.provider || agent.provider
+  const providerLabel = PROVIDER_LABELS[effectiveProvider] || activeSessionProvider?.name || effectiveProvider.replace(/-/g, ' ')
 
   const handleModelChange = async (model: string) => {
     if (saving) return
@@ -117,7 +119,7 @@ function ModelSwitcherInline({ session, agent }: { session: Session; agent: Agen
           {providerLabel}
         </span>
         <span className="inline-flex max-w-[180px] items-center rounded-[8px] border border-white/[0.06] bg-white/[0.03] px-2 py-1 text-[10px] font-mono text-text-3/70 truncate group-hover:border-white/[0.1] group-hover:text-text-2 transition-colors">
-          {agent.model || 'Default model'}
+          {session.model || agent.model || 'Default model'}
         </span>
         <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="text-text-3/30 group-hover:text-text-3/60 transition-colors ml-auto shrink-0">
           <polyline points="6 9 12 15 18 9" />
@@ -157,7 +159,7 @@ function ModelSwitcherInline({ session, agent }: { session: Session; agent: Agen
       {currentProviderInfo && (
         <ModelCombobox
           providerId={currentProviderInfo.id}
-          value={agent.model || currentProviderInfo.models[0] || ''}
+          value={session.model || agent.model || currentProviderInfo.models[0] || ''}
           onChange={(m) => void handleModelChange(m)}
           models={currentProviderInfo.models}
           defaultModels={currentProviderInfo.defaultModels}
