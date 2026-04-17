@@ -6,7 +6,6 @@ import { ChatroomCreateSchema, formatZodError } from '@/lib/validation/schemas'
 import { safeParseBody } from '@/lib/server/safe-parse-body'
 import { z } from 'zod'
 import type { Chatroom, ChatroomMessage } from '@/types'
-import { isWorkerOnlyAgent } from '@/lib/server/agents/agent-availability'
 import {
   ensureChatroomRoutingGuidance,
   synthesizeRoutingGuidanceFromRules,
@@ -55,15 +54,6 @@ export async function POST(req: Request) {
   if (invalidAgentIds.length > 0) {
     return NextResponse.json(
       { error: `Unknown chatroom member(s): ${invalidAgentIds.join(', ')}` },
-      { status: 400 },
-    )
-  }
-  const cliAgentNames = requestedAgentIds
-    .filter((agentId) => isWorkerOnlyAgent(knownAgents[agentId]))
-    .map((agentId) => knownAgents[agentId]?.name || agentId)
-  if (cliAgentNames.length > 0) {
-    return NextResponse.json(
-      { error: `CLI-based agents cannot join chatrooms: ${cliAgentNames.join(', ')}. They can only be used for direct chats and delegation.` },
       { status: 400 },
     )
   }
