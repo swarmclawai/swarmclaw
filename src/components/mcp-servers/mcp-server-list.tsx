@@ -16,6 +16,7 @@ const transportColors: Record<string, string> = {
 
 type McpStatus = { ok: boolean; tools?: string[]; error?: string; loading: boolean }
 type McpToolMeta = { name: string; description?: string; inputSchema?: Record<string, unknown> }
+type McpToolsInfo = { totalTokens: number; exposedTokens: number; toolCount: number; loading?: boolean; error?: string }
 type McpInvokeResult = { ok: boolean; text?: string; error?: string; isError?: boolean; result?: unknown }
 type McpConformanceIssue = { level: 'error' | 'warning'; code: string; message: string; toolName?: string }
 type McpConformanceResult = {
@@ -56,6 +57,7 @@ export function McpServerList({ inSidebar }: { inSidebar?: boolean }) {
   const setMcpServerSheetOpen = useAppStore((s) => s.setMcpServerSheetOpen)
   const setEditingMcpServerId = useAppStore((s) => s.setEditingMcpServerId)
   const [statuses, setStatuses] = useState<Record<string, McpStatus>>({})
+  const [toolsInfo, setToolsInfo] = useState<Record<string, McpToolsInfo>>({})
   const [inspectorServerId, setInspectorServerId] = useState<string | null>(null)
   const [toolsByServer, setToolsByServer] = useState<Record<string, McpToolMeta[]>>({})
   const [inspectorLoading, setInspectorLoading] = useState(false)
@@ -108,6 +110,41 @@ export function McpServerList({ inSidebar }: { inSidebar?: boolean }) {
           setStatuses((prev) => ({ ...prev, [server.id]: { ok: false, error: 'Test failed', loading: false } }))
         }
       }, i * 200)
+      timersRef.current.push(timer)
+    })
+
+    // Tools-info — fetch in parallel with tests, staggered to avoid hammering
+    // every server at once. Piggybacks on the same connect that /test does,
+    // just produces richer data.
+    serverList.forEach((server, i) => {
+      setToolsInfo((prev) => ({ ...prev, [server.id]: { totalTokens: 0, exposedTokens: 0, toolCount: 0, loading: true } }))
+      const timer = setTimeout(async () => {
+        try {
+          const res = await api<{ tools: Array<{ tokens: number }>; totalTokens: number; exposedTokens: number }>('GET', `/mcp-servers/${server.id}/tools-info`)
+          if (cancelled || !mountedRef.current) return
+          setToolsInfo((prev) => ({
+            ...prev,
+            [server.id]: {
+              totalTokens: res.totalTokens,
+              exposedTokens: res.exposedTokens,
+              toolCount: res.tools?.length ?? 0,
+              loading: false,
+            },
+          }))
+        } catch (err: unknown) {
+          if (cancelled || !mountedRef.current) return
+          setToolsInfo((prev) => ({
+            ...prev,
+            [server.id]: {
+              totalTokens: 0,
+              exposedTokens: 0,
+              toolCount: 0,
+              loading: false,
+              error: err instanceof Error ? err.message : 'fetch failed',
+            },
+          }))
+        }
+      }, i * 200 + 100)
       timersRef.current.push(timer)
     })
 
@@ -472,6 +509,25 @@ export function McpServerList({ inSidebar }: { inSidebar?: boolean }) {
                 <p className="text-[12px] text-text-3/60 font-mono truncate">
                   {server.transport === 'stdio' ? server.command : server.url}
                 </p>
+                {(() => {
+                  const info = toolsInfo[server.id]
+                  if (!info || info.loading || info.error) return null
+                  if (info.totalTokens === 0) return null
+                  const savings = info.totalTokens > 0
+                    ? Math.round((1 - info.exposedTokens / info.totalTokens) * 100)
+                    : 0
+                  return (
+                    <p className="mt-1 text-[11px] font-mono text-text-3/75">
+                      <span className={info.exposedTokens < info.totalTokens ? 'text-emerald-400/80' : 'text-text-3'}>
+                        {info.exposedTokens.toLocaleString()}
+                      </span>
+                      <span className="text-text-3/50"> / {info.totalTokens.toLocaleString()} tokens exposed</span>
+                      {savings > 0 && (
+                        <span className="ml-2 text-emerald-400/80">({savings}% saved)</span>
+                      )}
+                    </p>
+                  )
+                })()}
                 {conformanceByServer[server.id] && (
                   <p className={`mt-1 text-[11px] ${conformanceByServer[server.id].ok ? 'text-emerald-300/80' : 'text-amber-300/80'}`}>
                     {conformanceByServer[server.id].ok

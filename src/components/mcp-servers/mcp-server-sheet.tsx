@@ -1,14 +1,16 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { HintTip } from '@/components/shared/hint-tip'
+import { AdvancedSettingsSection } from '@/components/shared/advanced-settings-section'
 import { api } from '@/lib/app/api-client'
 import { toast } from 'sonner'
 import type { McpServerConfig, McpTransport } from '@/types'
 import { useMountedRef } from '@/hooks/use-mounted-ref'
+import { RegistryBrowser, type RegistryPrefill } from './registry-browser'
 
 interface McpPreset {
   id: string
@@ -40,6 +42,18 @@ const MCP_PRESETS: McpPreset[] = [
     defaultName: 'SwarmVault',
   },
   {
+    id: 'mcp-gateway',
+    label: 'MCP Gateway (local)',
+    description: 'Consolidate many MCP servers behind one entry. The gateway fans out to your downstream servers, namespaces their tools, and only exposes the ones you pre-load — big token savings when you run more than a handful of MCP servers.',
+    helpUrl: 'https://github.com/swarmclawai/mcp-gateway',
+    transport: 'stdio',
+    command: 'npx',
+    args: ['-y', '@swarmclawai/mcp-gateway@latest', 'start'],
+    needsCwd: true,
+    cwdHint: 'Absolute path to a directory containing mcp-gateway.config.json. Run `npx @swarmclawai/mcp-gateway init --write` there first to generate a starter config.',
+    defaultName: 'MCP Gateway',
+  },
+  {
     id: 'swarmdock',
     label: 'SwarmDock',
     description: 'Agent marketplace — browse tasks, bid, submit work, publish MCP services, earn USDC. Connects to the hosted MCP endpoint; generate a key and register an agent at swarmdock.ai/mcp/connect, then paste it into the Bearer header below.',
@@ -65,6 +79,7 @@ function McpServerForm({ editing, onClose, loadMcpServers }: {
   const [args, setArgs] = useState(editing?.args?.join(', ') || '')
   const [cwd, setCwd] = useState(editing?.cwd || '')
   const [activePresetId, setActivePresetId] = useState<string | null>(null)
+  const [registryBrowserOpen, setRegistryBrowserOpen] = useState(false)
   const [url, setUrl] = useState(editing?.url || '')
   const [envText, setEnvText] = useState(
     editing?.env ? Object.entries(editing.env).map(([k, v]) => `${k}=${v}`).join('\n') : '',
@@ -72,10 +87,57 @@ function McpServerForm({ editing, onClose, loadMcpServers }: {
   const [headersText, setHeadersText] = useState(
     editing?.headers ? Object.entries(editing.headers).map(([k, v]) => `${k}: ${v}`).join('\n') : '',
   )
+  const initialExposureMode: 'all' | 'lazy' | 'selected' =
+    editing === null || editing?.alwaysExpose === undefined || editing.alwaysExpose === true
+      ? 'all'
+      : editing.alwaysExpose === false
+        ? 'lazy'
+        : 'selected'
+  const [exposureMode, setExposureMode] = useState<'all' | 'lazy' | 'selected'>(initialExposureMode)
+  const [exposureAllowlistText, setExposureAllowlistText] = useState(
+    Array.isArray(editing?.alwaysExpose) ? editing.alwaysExpose.join(', ') : '',
+  )
+  const [advancedOpen, setAdvancedOpen] = useState(initialExposureMode !== 'all')
+  const [discoveredTools, setDiscoveredTools] = useState<Array<{ name: string; description?: string; tokens: number }> | null>(null)
+  const [discoveredLoading, setDiscoveredLoading] = useState(false)
+  const [discoveredError, setDiscoveredError] = useState<string | null>(null)
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<{ ok: boolean; tools?: string[]; error?: string } | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
+
+  // Lazily load discovered tools when the user picks the allow-list mode
+  // for an existing (edited) server. Only hits the server once per sheet open.
+  useEffect(() => {
+    if (!editing || exposureMode !== 'selected' || discoveredTools || discoveredLoading) return
+    let cancelled = false
+    setDiscoveredLoading(true)
+    setDiscoveredError(null)
+    void (async () => {
+      try {
+        const res = await api<{ tools: Array<{ name: string; description?: string; tokens: number }> }>(
+          'GET',
+          `/mcp-servers/${editing.id}/tools-info`,
+        )
+        if (cancelled) return
+        setDiscoveredTools(res.tools)
+      } catch (err: unknown) {
+        if (cancelled) return
+        setDiscoveredError(err instanceof Error ? err.message : 'Failed to load tools')
+      } finally {
+        if (!cancelled) setDiscoveredLoading(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [editing, exposureMode, discoveredTools, discoveredLoading])
+
+  const toggleAllowlistTool = (toolName: string) => {
+    const current = exposureAllowlistText.split(/[\s,]+/).map((s) => s.trim()).filter(Boolean)
+    const next = current.includes(toolName)
+      ? current.filter((t) => t !== toolName)
+      : [...current, toolName]
+    setExposureAllowlistText(next.join(', '))
+  }
 
   const parseEnv = (text: string): Record<string, string> | undefined => {
     if (!text.trim()) return undefined
@@ -103,6 +165,12 @@ function McpServerForm({ editing, onClose, loadMcpServers }: {
       transport,
       env: parseEnv(envText),
       headers: parseHeaders(headersText),
+      alwaysExpose:
+        exposureMode === 'all'
+          ? true
+          : exposureMode === 'lazy'
+            ? false
+            : exposureAllowlistText.split(/[\s,]+/).map((s) => s.trim()).filter(Boolean),
     }
     if (transport === 'stdio') {
       data.command = command.trim()
@@ -186,6 +254,16 @@ function McpServerForm({ editing, onClose, loadMcpServers }: {
 
   const activePreset = activePresetId ? MCP_PRESETS.find((p) => p.id === activePresetId) ?? null : null
 
+  const applyRegistryPrefill = (prefill: RegistryPrefill) => {
+    setActivePresetId(null)
+    setTransport(prefill.transport)
+    if (prefill.command !== undefined) setCommand(prefill.command)
+    if (prefill.args !== undefined) setArgs(prefill.args.join(', '))
+    if (prefill.url !== undefined) setUrl(prefill.url)
+    if (!name.trim()) setName(prefill.name)
+    toast.success(`Prefilled from SwarmDock MCP Registry: ${prefill.sourceSlug}`)
+  }
+
   const inputClass = "w-full px-4 py-3.5 rounded-[14px] border border-white/[0.08] bg-surface text-text text-[15px] outline-none transition-all duration-200 placeholder:text-text-3/50 focus-glow"
   const labelClass = "block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-3"
 
@@ -221,6 +299,15 @@ function McpServerForm({ editing, onClose, loadMcpServers }: {
                 </button>
               )
             })}
+            <button
+              type="button"
+              onClick={() => setRegistryBrowserOpen(true)}
+              className="py-2 px-4 rounded-[12px] border border-dashed border-accent-bright/30 bg-transparent text-[13px] font-600 text-accent-bright cursor-pointer transition-all hover:bg-accent-bright/10"
+              style={{ fontFamily: 'inherit' }}
+              title="Browse the public SwarmDock MCP Registry"
+            >
+              Browse Registry...
+            </button>
           </div>
           {activePreset && (
             <p className="mt-3 text-[12px] text-text-3">
@@ -321,6 +408,115 @@ function McpServerForm({ editing, onClose, loadMcpServers }: {
         </div>
       )}
 
+      <AdvancedSettingsSection
+        open={advancedOpen}
+        onToggle={() => setAdvancedOpen((v) => !v)}
+        summary={exposureMode === 'all' ? 'All tools eager' : exposureMode === 'lazy' ? 'Lazy (on demand)' : 'Allow-list'}
+        badges={exposureMode === 'selected' && exposureAllowlistText.trim()
+          ? exposureAllowlistText.split(/[\s,]+/).map((s) => s.trim()).filter(Boolean).slice(0, 5)
+          : []}
+      >
+        <div className="space-y-4">
+          <div>
+            <label className={labelClass}>
+              Tool exposure
+              <HintTip text="Controls how this server's tools get bound into agent context. Lazy servers stay hidden until an agent calls `mcp_tool_search` to discover them — that's how you cut token usage from chatty MCP servers." />
+            </label>
+            <div className="flex flex-col gap-2">
+              {([
+                ['all', 'Expose all tools', 'Every tool from this server is bound on every turn. Default — preserves legacy behavior.'],
+                ['lazy', 'Lazy — expose none', 'No tools bound until the agent calls mcp_tool_search to discover them. Biggest token savings.'],
+                ['selected', 'Allow-list', 'Only pre-bind the tools you list below. Agent can still discover others via mcp_tool_search.'],
+              ] as const).map(([value, label, hint]) => (
+                <label key={value} className={`flex items-start gap-3 p-3 rounded-[12px] border cursor-pointer transition-all ${exposureMode === value ? 'border-accent-bright bg-accent-bright/5' : 'border-white/[0.08] hover:bg-surface-2'}`}>
+                  <input
+                    type="radio"
+                    name="exposureMode"
+                    value={value}
+                    checked={exposureMode === value}
+                    onChange={() => setExposureMode(value)}
+                    className="mt-1"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[14px] font-600 text-text">{label}</div>
+                    <div className="text-[12px] text-text-3 leading-[1.5] mt-0.5">{hint}</div>
+                  </div>
+                </label>
+              ))}
+            </div>
+          </div>
+          {exposureMode === 'selected' && (
+            <div>
+              <label className={labelClass}>
+                Allow-list tools
+                <HintTip text="Pick the tools to bind eagerly. Every unchecked tool stays discoverable via `mcp_tool_search`." />
+              </label>
+              {discoveredLoading && (
+                <div className="text-[12px] text-text-3">Loading tools...</div>
+              )}
+              {discoveredError && (
+                <div className="text-[12px] text-amber-400">
+                  Could not load tools: {discoveredError}. Type names manually below.
+                </div>
+              )}
+              {discoveredTools && discoveredTools.length > 0 && (
+                (() => {
+                  const selected = new Set(
+                    exposureAllowlistText.split(/[\s,]+/).map((s) => s.trim()).filter(Boolean),
+                  )
+                  const totalTokens = discoveredTools.reduce((n, t) => n + t.tokens, 0)
+                  const selectedTokens = discoveredTools
+                    .filter((t) => selected.has(t.name))
+                    .reduce((n, t) => n + t.tokens, 0)
+                  return (
+                    <div className="space-y-1 rounded-[12px] border border-white/[0.08] bg-surface/50 p-2 max-h-[320px] overflow-auto">
+                      <div className="px-2 py-1 text-[11px] font-mono text-text-3">
+                        {selectedTokens.toLocaleString()} / {totalTokens.toLocaleString()} tokens selected
+                      </div>
+                      {discoveredTools.map((t) => {
+                        const checked = selected.has(t.name)
+                        return (
+                          <label
+                            key={t.name}
+                            className={`flex items-start gap-3 p-2 rounded-[10px] cursor-pointer transition-colors ${checked ? 'bg-accent-bright/5' : 'hover:bg-white/[0.03]'}`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleAllowlistTool(t.name)}
+                              className="mt-1 shrink-0"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-[13px] font-mono text-text truncate">{t.name}</span>
+                                <span className="text-[10px] font-mono text-text-3 shrink-0">{t.tokens.toLocaleString()} tok</span>
+                              </div>
+                              {t.description && (
+                                <p className="text-[12px] text-text-3/80 leading-[1.4] mt-0.5 line-clamp-2">{t.description}</p>
+                              )}
+                            </div>
+                          </label>
+                        )
+                      })}
+                    </div>
+                  )
+                })()
+              )}
+              {(!discoveredTools || discoveredTools.length === 0) && !discoveredLoading && (
+                <textarea
+                  value={exposureAllowlistText}
+                  onChange={(e) => setExposureAllowlistText(e.target.value)}
+                  placeholder={"read_file\nwrite_file"}
+                  rows={3}
+                  className={`${inputClass} resize-y min-h-[80px] font-mono text-[13px]`}
+                  style={{ fontFamily: 'inherit' }}
+                />
+              )}
+            </div>
+          )}
+        </div>
+      </AdvancedSettingsSection>
+
       {editing && (
         <div className="mb-8">
           <button
@@ -371,6 +567,11 @@ function McpServerForm({ editing, onClose, loadMcpServers }: {
         danger
         onConfirm={() => { void handleDelete() }}
         onCancel={() => { if (!deleting) setConfirmDelete(false) }}
+      />
+      <RegistryBrowser
+        open={registryBrowserOpen}
+        onClose={() => setRegistryBrowserOpen(false)}
+        onSelect={applyRegistryPrefill}
       />
     </>
   )

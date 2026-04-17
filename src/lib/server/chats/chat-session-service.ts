@@ -22,8 +22,14 @@ import {
   clearMessages,
   deleteSessionMessages,
   getMessages,
+  replaceAllMessages,
   truncateAfter,
 } from '@/lib/server/messages/message-repository'
+import {
+  consumeClearUndoSnapshot,
+  recordClearUndoSnapshot,
+  type ClearUndoCliIds,
+} from '@/lib/server/chats/clear-undo-snapshots'
 import { deleteSessionWorkingState } from '@/lib/server/working-state/service'
 import { normalizeProviderEndpoint } from '@/lib/openclaw/openclaw-endpoint'
 import { serviceFail, serviceOk } from '@/lib/server/service-result'
@@ -387,6 +393,7 @@ export function clearChatMessages(sessionId: string): boolean {
   session.claudeSessionId = null
   session.codexThreadId = null
   session.opencodeSessionId = null
+  session.opencodeWebSessionId = null
   session.geminiSessionId = null
   session.copilotSessionId = null
   session.droidSessionId = null
@@ -397,6 +404,74 @@ export function clearChatMessages(sessionId: string): boolean {
   saveSession(sessionId, session)
   notify('sessions')
   return true
+}
+
+function snapshotSessionCliIds(session: Session): ClearUndoCliIds {
+  return {
+    claudeSessionId: session.claudeSessionId ?? null,
+    codexThreadId: session.codexThreadId ?? null,
+    opencodeSessionId: session.opencodeSessionId ?? null,
+    opencodeWebSessionId: session.opencodeWebSessionId ?? null,
+    geminiSessionId: session.geminiSessionId ?? null,
+    copilotSessionId: session.copilotSessionId ?? null,
+    droidSessionId: session.droidSessionId ?? null,
+    cursorSessionId: session.cursorSessionId ?? null,
+    qwenSessionId: session.qwenSessionId ?? null,
+    acpSessionId: session.acpSessionId ?? null,
+    delegateResumeIds: session.delegateResumeIds
+      ? { ...session.delegateResumeIds }
+      : null,
+  }
+}
+
+export function clearChatMessagesWithUndo(sessionId: string): ServiceResult<{
+  cleared: number
+  undoToken: string
+  expiresAt: number
+}> {
+  const session = getSession(sessionId)
+  if (!session) return serviceFail(404, 'Session not found')
+  const priorMessages = getMessages(sessionId)
+  const cli = snapshotSessionCliIds(session)
+  const { token, expiresAt } = recordClearUndoSnapshot({
+    sessionId,
+    messages: priorMessages,
+    cli,
+  })
+  clearChatMessages(sessionId)
+  return serviceOk({
+    cleared: priorMessages.length,
+    undoToken: token,
+    expiresAt,
+  })
+}
+
+export function restoreChatFromUndoToken(
+  sessionId: string,
+  undoToken: string,
+): ServiceResult<{ restored: number }> {
+  const session = getSession(sessionId)
+  if (!session) return serviceFail(404, 'Session not found')
+  const snapshot = consumeClearUndoSnapshot({ token: undoToken, sessionId })
+  if (!snapshot) return serviceFail(404, 'Undo window expired')
+  replaceAllMessages(sessionId, snapshot.messages)
+  const cli = snapshot.cli
+  session.claudeSessionId = cli.claudeSessionId
+  session.codexThreadId = cli.codexThreadId
+  session.opencodeSessionId = cli.opencodeSessionId
+  session.opencodeWebSessionId = cli.opencodeWebSessionId
+  session.geminiSessionId = cli.geminiSessionId
+  session.copilotSessionId = cli.copilotSessionId
+  session.droidSessionId = cli.droidSessionId
+  session.cursorSessionId = cli.cursorSessionId
+  session.qwenSessionId = cli.qwenSessionId
+  session.acpSessionId = cli.acpSessionId
+  session.delegateResumeIds = cli.delegateResumeIds
+    ? { ...cli.delegateResumeIds }
+    : emptyDelegateResumeIds()
+  saveSession(sessionId, session)
+  notify('sessions')
+  return serviceOk({ restored: snapshot.messages.length })
 }
 
 export function retryChatTurn(sessionId: string): ServiceResult<{ message: string; imagePath: string | null }> {

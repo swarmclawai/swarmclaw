@@ -629,6 +629,13 @@ export interface McpServerConfig {
   url?: string                 // for sse/streamable-http transport
   env?: Record<string, string> // environment variables
   headers?: Record<string, string> // HTTP headers for sse/streamable-http
+  // Tool-exposure policy — lets users cut token spend from chatty MCP servers.
+  // - true (default, back-compat)   → every tool is bound on every turn
+  // - false                         → no tools bound; agent uses mcp_tool_search to promote them
+  // - string[] (allow-list)         → only tools whose names appear here are bound eagerly
+  // Regardless of this setting, tools the agent has promoted via mcp_tool_search in the
+  // current session are bound too. And per-agent mcpEagerTools provide an explicit override.
+  alwaysExpose?: boolean | string[]
   createdAt: number
   updatedAt: number
 }

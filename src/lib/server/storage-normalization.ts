@@ -700,6 +700,16 @@ function normalizeStoredRecordInner(
     return task
   }
 
+  if (table === 'mcp_servers') {
+    const server = value as StoredObject
+    // Back-compat: existing servers had no alwaysExpose; match historical behavior
+    // where every tool was eagerly bound on every turn.
+    if (server.alwaysExpose === undefined) {
+      server.alwaysExpose = true
+    }
+    return server
+  }
+
   if (table === 'provider_configs') {
     const provider = value as StoredObject
     provider.type = provider.type === 'builtin' ? 'builtin' : 'custom'
@@ -801,6 +811,7 @@ function normalizeStoredRecordInner(
   if (session.geminiSessionId === undefined) session.geminiSessionId = null
   // Default copilotSessionId for new field
   if (session.copilotSessionId === undefined) session.copilotSessionId = null
+  if (session.opencodeWebSessionId === undefined) session.opencodeWebSessionId = null
   if (session.droidSessionId === undefined) session.droidSessionId = null
   if (session.cursorSessionId === undefined) session.cursorSessionId = null
   if (session.qwenSessionId === undefined) session.qwenSessionId = null

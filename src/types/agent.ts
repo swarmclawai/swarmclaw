@@ -86,6 +86,7 @@ export interface Agent {
   skillIds?: string[]           // IDs of pinned managed skills to keep always-on for this agent
   mcpServerIds?: string[]       // IDs of configured MCP servers to inject tools from
   mcpDisabledTools?: string[]   // MCP tool names disabled for this agent (denylist)
+  mcpEagerTools?: string[]      // Per-agent allowlist of MCP tool names to bind eagerly even when the server's alwaysExpose is false
   orgChart?: AgentOrgChart | null
   capabilities?: string[]       // e.g. ['frontend', 'screenshots', 'research', 'devops']
   threadSessionId?: string | null  // persistent shortcut chat session for agent-centric UI

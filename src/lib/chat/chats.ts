@@ -76,8 +76,44 @@ export const removeQueuedSessionMessage = (id: string, runId: string) =>
 export const clearSessionQueue = (id: string) =>
   api<{ cancelled: number; snapshot: SessionQueueSnapshot }>('DELETE', `/chats/${id}/queue`, {})
 
+export interface ClearChatResult {
+  cleared: number
+  undoToken: string
+  expiresAt: number
+}
+
 export const clearMessages = (id: string) =>
-  api<string>('POST', `/chats/${id}/clear`)
+  api<ClearChatResult>('POST', `/chats/${id}/clear`)
+
+export const undoClearMessages = (id: string, undoToken: string) =>
+  api<{ restored: number }>('POST', `/chats/${id}/clear/undo`, { undoToken })
+
+export interface ContextStatusResponse {
+  estimatedTokens: number
+  effectiveTokens: number
+  contextWindow: number
+  percentUsed: number
+  messageCount: number
+  extraTokens: number
+  reserveTokens: number
+  remainingTokens: number
+  strategy: 'ok' | 'warning' | 'critical'
+}
+
+export const fetchContextStatus = (id: string) =>
+  api<ContextStatusResponse>('GET', `/chats/${id}/context-status`)
+
+export interface CompactChatResult {
+  status: 'compacted' | 'no_action'
+  prunedCount?: number
+  memoriesStored?: number
+  summaryAdded?: boolean
+  messageCount: number
+  keepLastN?: number
+}
+
+export const compactChat = (id: string, keepLastN?: number) =>
+  api<CompactChatResult>('POST', `/chats/${id}/compact`, keepLastN ? { keepLastN } : {})
 
 export const stopChat = (id: string) =>
   api<string>('POST', `/chats/${id}/stop`)

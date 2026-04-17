@@ -54,7 +54,15 @@ import { enforceFileAccessPolicy } from './file-access-policy'
 
 import { getExtensionManager } from '../extensions'
 import { runCapabilityBeforeToolCall, runCapabilityHook } from '../native-capabilities'
-import { jsonSchemaToZod } from '../mcp-client'
+import { jsonSchemaToZod, sanitizeName } from '../mcp-client'
+import {
+  getPromoter,
+  recordDiscoveredTools,
+  searchDiscoveredTools,
+  shouldExposeMcpTool,
+  type DiscoveredTool,
+} from '../mcp-gateway-runtime'
+import { getOrConnectMcpClient } from '../mcp-connection-pool'
 import {
   getEnabledCapabilitySelection,
   isExternalExtensionId,
@@ -80,6 +88,11 @@ const DELEGATION_TOOL_NAMES = new Set([
   'delegate_to_cursor_cli',
   'delegate_to_qwen_code_cli',
 ])
+
+function inferBareName(langChainName: string, serverName: string): string {
+  const prefix = `mcp_${sanitizeName(serverName)}_`
+  return langChainName.startsWith(prefix) ? langChainName.slice(prefix.length) : langChainName
+}
 
 export async function buildSessionTools(cwd: string, enabledExtensions: string[], ctx?: ToolContext): Promise<SessionToolsResult> {
   const tools: StructuredToolInterface[] = []
@@ -305,33 +318,88 @@ export async function buildSessionTools(cwd: string, enabledExtensions: string[]
 
     // 3. MCP server tools
     const disabledMcpToolNames = new Set<string>(ctx?.mcpDisabledTools ?? [])
+    const agentEagerTools = Array.isArray(agentRecord?.mcpEagerTools) ? agentRecord.mcpEagerTools : null
+    const sessionPromoter = ctx?.sessionId ? getPromoter(ctx.sessionId) : null
+    let exposedAnyLazyCandidate = false
     if (ctx?.mcpServerIds?.length) {
-      const mcpConnections: Array<{ client: any; transport: any }> = []
       const allMcpServers = loadMcpServers()
       for (const serverId of ctx.mcpServerIds) {
         const config = allMcpServers[serverId]
         if (!config) continue
         try {
-          const { connectMcpServer, mcpToolsToLangChain } = await import('../mcp-client')
-          const conn = await connectMcpServer(config)
-          mcpConnections.push(conn)
+          const { mcpToolsToLangChain } = await import('../mcp-client')
+          const conn = await getOrConnectMcpClient(config)
           const mcpLcTools = await mcpToolsToLangChain(conn.client, config.name)
+          // Discovery cache — so mcp_tool_search can match even on lazy servers
+          // whose tools we don't bind. Populated each turn we connect.
+          const discovered: DiscoveredTool[] = mcpLcTools.map((t) => ({
+            name: inferBareName(t.name, config.name),
+            langChainName: t.name,
+            description: typeof t.description === 'string' ? t.description : undefined,
+            serverId,
+            serverName: config.name,
+          }))
+          recordDiscoveredTools(serverId, discovered)
           for (const t of mcpLcTools) {
-            if (!disabledMcpToolNames.has(t.name)) {
-              toolToExtensionMap[t.name] = `mcp:${serverId}`
-              tools.push(t)
-            }
+            if (disabledMcpToolNames.has(t.name)) continue
+            const bareName = inferBareName(t.name, config.name)
+            const effectiveMode = config.alwaysExpose === undefined ? true : config.alwaysExpose
+            if (effectiveMode !== true) exposedAnyLazyCandidate = true
+            const shouldBind = shouldExposeMcpTool({
+              server: config,
+              toolName: bareName,
+              langChainName: t.name,
+              agentEagerTools,
+              promoter: sessionPromoter,
+            })
+            if (!shouldBind) continue
+            toolToExtensionMap[t.name] = `mcp:${serverId}`
+            tools.push(t)
           }
         } catch (err: unknown) {
           log.warn('session-tools', `Failed to connect MCP server "${config.name}"`, { serverId, error: errorMessage(err) })
         }
       }
-      cleanupFns.push(async () => {
-        const { disconnectMcpServer } = await import('../mcp-client')
-        for (const conn of mcpConnections) {
-          await disconnectMcpServer(conn.client, conn.transport)
-        }
-      })
+      // Connection lifetimes are owned by the pool (hmrSingleton) — no per-turn
+      // cleanup here. Evictions happen on server edit/delete via the mcp-servers
+      // API routes or via the /test endpoint.
+    }
+
+    // 3a. mcp_tool_search meta-tool — bound when any configured MCP server has
+    // a non-eager exposure mode so the agent has a path to discover lazy tools.
+    if (exposedAnyLazyCandidate && sessionPromoter) {
+      const promoter = sessionPromoter
+      toolToExtensionMap['mcp_tool_search'] = '_mcp_gateway'
+      tools.push(
+        tool(
+          async (args) => {
+            const normalized = normalizeToolInputArgs((args ?? {}) as Record<string, unknown>)
+            const query = typeof normalized.query === 'string' ? normalized.query : ''
+            const limit = typeof normalized.limit === 'number' ? normalized.limit : undefined
+            const matches = searchDiscoveredTools(query, limit)
+            for (const m of matches) promoter.promote(m.name)
+            return JSON.stringify({
+              query,
+              matches,
+              note: matches.length
+                ? 'Promoted tools will appear in the tool list on subsequent turns; call them by the listed name.'
+                : 'No matches — tighten your query or check enabled MCP servers.',
+            })
+          },
+          {
+            name: 'mcp_tool_search',
+            description: [
+              'Search for tools provided by configured MCP servers that are not currently bound.',
+              'Use this when you suspect a tool exists but do not see it in your available tools.',
+              'Returns matching tool names and descriptions, and promotes the matches so they show up in subsequent turns.',
+            ].join(' '),
+            schema: z.object({
+              query: z.string().min(1).describe('Keywords to search tool names and descriptions'),
+              limit: z.number().int().min(1).max(50).optional().describe('Max results (default 8)'),
+            }),
+          },
+        ),
+      )
     }
 
     // 4. Always available: request_tool_access

@@ -17,6 +17,7 @@ import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip
 import { copyTextToClipboard } from '@/lib/clipboard'
 import { useNavigate } from '@/lib/app/navigation'
 import { getEnabledToolIds } from '@/lib/capability-selection'
+import { ContextMeterBadge } from './context-meter-badge'
 
 function Tip({ label, children, side = 'bottom' }: { label: string; children: ReactNode; side?: 'top' | 'bottom' | 'left' | 'right' }) {
   return (
@@ -80,9 +81,12 @@ interface Props {
   connectorFilter?: string | null
   onConnectorFilterChange?: (filter: string | null) => void
   hasMultipleSources?: boolean
+  messageCount?: number
+  onCompactComplete?: () => void
+  onClearRequest?: () => void
 }
 
-export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, mobile, browserActive, onStopBrowser, onVoiceToggle, voiceActive, voiceSupported, connectorSources, connectorFilter, onConnectorFilterChange, hasMultipleSources }: Props) {
+export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, mobile, browserActive, onStopBrowser, onVoiceToggle, voiceActive, voiceSupported, connectorSources, connectorFilter, onConnectorFilterChange, hasMultipleSources, messageCount = 0, onCompactComplete, onClearRequest }: Props) {
   const now = useNow()
   const agentStatus = useChatStore((s) => s.agentStatus)
   const agents = useAppStore((s) => s.agents)
@@ -418,6 +422,14 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
                 <span className="w-1.5 h-1.5 rounded-full bg-accent-bright" style={{ animation: 'pulse 1.5s ease infinite' }} />
                 Responding
               </HeaderChip>
+            )}
+            {messageCount > 0 && onCompactComplete && onClearRequest && (
+              <ContextMeterBadge
+                sessionId={session.id}
+                messageCount={messageCount}
+                onCompactComplete={onCompactComplete}
+                onClearRequest={onClearRequest}
+              />
             )}
           </div>
           {liveStatus?.status && (

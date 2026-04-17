@@ -6,7 +6,9 @@ import { useAppStore } from '@/stores/use-app-store'
 import { selectActiveSessionId } from '@/stores/slices/session-slice'
 import { useWs } from '@/hooks/use-ws'
 import { useChatStore } from '@/stores/use-chat-store'
-import { fetchMessages, fetchMessagesPaginated, clearMessages, deleteChat, devServer, checkBrowser, stopBrowser } from '@/lib/chat/chats'
+import { fetchMessages, fetchMessagesPaginated, clearMessages, undoClearMessages, deleteChat, devServer, checkBrowser, stopBrowser } from '@/lib/chat/chats'
+import { toast } from 'sonner'
+import { errorMessage } from '@/lib/shared-utils'
 import { uploadImage } from '@/lib/upload'
 import { deleteAgent } from '@/lib/agents'
 import { useMediaQuery } from '@/hooks/use-media-query'
@@ -432,10 +434,58 @@ export function ChatArea() {
   const handleClear = useCallback(async () => {
     setConfirmClear(false)
     if (!sessionId) return
-    await clearMessages(sessionId)
-    setMessages([], { startIndex: 0, totalMessages: 0 })
-    await refreshSession(sessionId)
+    const targetSessionId = sessionId
+    let result
+    try {
+      result = await clearMessages(targetSessionId)
+    } catch (err) {
+      toast.error(`Clear failed: ${errorMessage(err)}`)
+      return
+    }
+    if (selectActiveSessionId(useAppStore.getState()) === targetSessionId) {
+      setMessages([], { startIndex: 0, totalMessages: 0 })
+    }
+    await refreshSession(targetSessionId)
+    const { undoToken, cleared } = result
+    if (!undoToken) return
+    const clearedLabel = cleared === 1 ? '1 message cleared' : `${cleared.toLocaleString()} messages cleared`
+    toast(clearedLabel, {
+      duration: 10_000,
+      action: {
+        label: 'Undo',
+        onClick: async () => {
+          try {
+            await undoClearMessages(targetSessionId, undoToken)
+            const restored = await fetchMessages(targetSessionId)
+            if (selectActiveSessionId(useAppStore.getState()) === targetSessionId) {
+              setMessages(restored, { startIndex: 0, totalMessages: restored.length })
+            }
+            await refreshSession(targetSessionId)
+            toast.success('Chat restored.')
+          } catch (err) {
+            toast.error(`Undo failed: ${errorMessage(err)}`)
+          }
+        },
+      },
+    })
   }, [refreshSession, sessionId, setMessages])
+
+  const handleCompactComplete = useCallback(async () => {
+    if (!sessionId) return
+    const targetSessionId = sessionId
+    try {
+      const refreshed = await fetchMessages(targetSessionId)
+      if (selectActiveSessionId(useAppStore.getState()) === targetSessionId) {
+        setMessages(refreshed, { startIndex: 0, totalMessages: refreshed.length })
+      }
+    } catch {
+      // silent — next poll will catch up
+    }
+  }, [sessionId, setMessages])
+
+  const handleClearRequest = useCallback(() => {
+    setConfirmClear(true)
+  }, [])
 
   const handleDelete = useCallback(async () => {
     setConfirmDelete(false)
@@ -515,6 +565,9 @@ export function ChatArea() {
           connectorFilter={connectorFilter}
           onConnectorFilterChange={setConnectorFilter}
           hasMultipleSources={hasMultipleSources}
+          messageCount={messages.length}
+          onCompactComplete={handleCompactComplete}
+          onClearRequest={handleClearRequest}
         />
       )}
       {!isDesktop && (
@@ -533,6 +586,9 @@ export function ChatArea() {
           connectorFilter={connectorFilter}
           onConnectorFilterChange={setConnectorFilter}
           hasMultipleSources={hasMultipleSources}
+          messageCount={messages.length}
+          onCompactComplete={handleCompactComplete}
+          onClearRequest={handleClearRequest}
         />
       )}
       <DevServerBar status={devServerStatus} onStop={handleStopDevServer} />
@@ -660,8 +716,8 @@ export function ChatArea() {
 
       <ConfirmDialog
         open={confirmClear}
-        title="Clear History"
-        message="This will delete all messages in this chat. This cannot be undone."
+        title="Clear chat"
+        message="Clear every message in this chat. Long-term memory, skills, and facts are preserved. You'll have 10 seconds to undo."
         confirmLabel="Clear"
         danger
         onConfirm={handleClear}
