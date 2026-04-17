@@ -67,6 +67,12 @@ export interface Agent {
   delegationEnabled?: boolean
   delegationTargetMode?: DelegationTargetMode
   delegationTargetAgentIds?: string[]
+  /**
+   * Cap on sibling subagents this agent may dispatch concurrently via
+   * `spawn_subagent` swarm/batch actions. Resolves after the mission-level
+   * cap and before the system default (4). Hard-capped at 16.
+   */
+  maxParallelDelegations?: number | null
   tools?: string[]
   // When 'scoped', the chat turn restricts enabled extensions to the
   // intersection of the universal core list and agent.tools (plus a small

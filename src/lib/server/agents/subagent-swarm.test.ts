@@ -2,8 +2,11 @@ import assert from 'node:assert/strict'
 import { afterEach, describe, it } from 'node:test'
 
 import {
+  _clampSwarmConcurrency,
   _clearSwarmRegistry,
   _resolveSwarmExecutionMode,
+  SWARM_DEFAULT_PARALLEL_CONCURRENCY,
+  SWARM_MAX_CONCURRENCY_HARD_LIMIT,
   getSwarm,
   getSwarmSnapshot,
   listSwarms,
@@ -13,6 +16,7 @@ import {
   type SwarmMember,
   type SwarmSnapshot,
 } from '@/lib/server/agents/subagent-swarm'
+import { collectAncestorAgentIds } from '@/lib/server/agents/subagent-runtime'
 
 /**
  * Unit tests for the swarm layer. Since spawnSubagent depends on storage,
@@ -22,6 +26,17 @@ import {
  */
 
 function fakeSwarmHandle(overrides?: Partial<SwarmHandle>): SwarmHandle {
+  const allSettled = Promise.resolve({
+    swarmId: 'swarm-test-1',
+    parentSessionId: 'parent-sess-1',
+    totalSpawned: 0,
+    totalCompleted: 0,
+    totalFailed: 0,
+    totalCancelled: 0,
+    totalSpawnErrors: 0,
+    durationMs: 0,
+    results: [],
+  })
   const base: SwarmHandle = {
     swarmId: 'swarm-test-1',
     parentSessionId: 'parent-sess-1',
@@ -29,18 +44,10 @@ function fakeSwarmHandle(overrides?: Partial<SwarmHandle>): SwarmHandle {
     status: 'running',
     createdAt: Date.now() - 5000,
     completedAt: null,
-    allSettled: Promise.resolve({
-      swarmId: 'swarm-test-1',
-      parentSessionId: 'parent-sess-1',
-      totalSpawned: 0,
-      totalCompleted: 0,
-      totalFailed: 0,
-      totalCancelled: 0,
-      totalSpawnErrors: 0,
-      durationMs: 0,
-      results: [],
-    }),
+    maxConcurrency: 4,
+    allSettled,
     firstSettled: Promise.resolve({ index: -1, result: null as any }),
+    quorumSettled: async () => allSettled,
     cancelAll: () => {},
     ...overrides,
   }
@@ -356,6 +363,92 @@ describe('subagent-swarm', () => {
   // ---------------------------------------------------------------------------
   // Reliability fix: firstSettled with zero memberPromises (#15)
   // ---------------------------------------------------------------------------
+
+  // ---------------------------------------------------------------------------
+  // Concurrency cap (v1.5.62+)
+  // ---------------------------------------------------------------------------
+
+  describe('clampSwarmConcurrency', () => {
+    it('returns 1 when task count is 0 or 1', () => {
+      assert.equal(_clampSwarmConcurrency(8, 0), 1)
+      assert.equal(_clampSwarmConcurrency(8, 1), 1)
+    })
+
+    it('uses the default when no explicit cap is given', () => {
+      assert.equal(_clampSwarmConcurrency(undefined, 10), SWARM_DEFAULT_PARALLEL_CONCURRENCY)
+    })
+
+    it('honors an explicit finite positive cap', () => {
+      assert.equal(_clampSwarmConcurrency(2, 10), 2)
+      assert.equal(_clampSwarmConcurrency(7, 10), 7)
+    })
+
+    it('enforces the hard limit', () => {
+      assert.equal(_clampSwarmConcurrency(100, 50), SWARM_MAX_CONCURRENCY_HARD_LIMIT)
+    })
+
+    it('rounds and floors the cap to an integer >= 1', () => {
+      assert.equal(_clampSwarmConcurrency(3.9, 10), 3)
+      assert.equal(_clampSwarmConcurrency(0, 10), SWARM_DEFAULT_PARALLEL_CONCURRENCY)
+      assert.equal(_clampSwarmConcurrency(-4, 10), SWARM_DEFAULT_PARALLEL_CONCURRENCY)
+      assert.equal(_clampSwarmConcurrency(Number.NaN, 10), SWARM_DEFAULT_PARALLEL_CONCURRENCY)
+    })
+  })
+
+  // ---------------------------------------------------------------------------
+  // Cycle detection via ancestor agentIds (v1.5.62+)
+  // ---------------------------------------------------------------------------
+
+  describe('collectAncestorAgentIds', () => {
+    it('returns empty when the session is unknown', () => {
+      assert.deepEqual(collectAncestorAgentIds('missing', {}), [])
+      assert.deepEqual(collectAncestorAgentIds(undefined, {}), [])
+    })
+
+    it('walks parent chain and collects agentIds', () => {
+      const sessions: Record<string, unknown> = {
+        root: { id: 'root', agentId: 'agent-root', parentSessionId: null },
+        mid: { id: 'mid', agentId: 'agent-mid', parentSessionId: 'root' },
+        leaf: { id: 'leaf', agentId: 'agent-leaf', parentSessionId: 'mid' },
+      }
+      assert.deepEqual(
+        collectAncestorAgentIds('leaf', sessions),
+        ['agent-leaf', 'agent-mid', 'agent-root'],
+      )
+    })
+
+    it('terminates on a self-loop without infinite recursion', () => {
+      const sessions: Record<string, unknown> = {
+        a: { id: 'a', agentId: 'agent-a', parentSessionId: 'a' },
+      }
+      assert.deepEqual(collectAncestorAgentIds('a', sessions), ['agent-a'])
+    })
+
+    it('detects a cycle candidate (A → B → A is visible in the chain)', () => {
+      const sessions: Record<string, unknown> = {
+        root: { id: 'root', agentId: 'agent-a', parentSessionId: null },
+        child: { id: 'child', agentId: 'agent-b', parentSessionId: 'root' },
+      }
+      const chain = collectAncestorAgentIds('child', sessions)
+      // Attempting to spawn agent-a again would be caught by the cycle check:
+      assert.ok(chain.includes('agent-a'))
+    })
+  })
+
+  // ---------------------------------------------------------------------------
+  // quorumSettled (v1.5.62+)
+  // ---------------------------------------------------------------------------
+
+  describe('quorumSettled shape', () => {
+    it('fakeSwarmHandle exposes the new quorumSettled and maxConcurrency fields', async () => {
+      const swarm = fakeSwarmHandle({ maxConcurrency: 3 })
+      assert.equal(swarm.maxConcurrency, 3)
+      assert.equal(typeof swarm.quorumSettled, 'function')
+      const agg = await swarm.quorumSettled(1)
+      assert.ok(agg)
+      assert.equal(agg.totalSpawned, 0)
+    })
+  })
 
   describe('firstSettled — all spawn errors (zero promises)', () => {
     it('firstSettled resolves with a valid SubagentResult, not null', async () => {

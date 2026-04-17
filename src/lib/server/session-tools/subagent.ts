@@ -34,7 +34,11 @@ import {
   listSwarms,
   aggregateResults,
   waitForAll,
+  SWARM_MAX_CONCURRENCY_HARD_LIMIT,
+  SWARM_DEFAULT_PARALLEL_CONCURRENCY,
 } from '@/lib/server/agents/subagent-swarm'
+import { getSession } from '@/lib/server/sessions/session-repository'
+import { getMission } from '@/lib/server/missions/mission-repository'
 
 const SUBAGENT_ACTIONS = [
   'start',
@@ -73,6 +77,10 @@ const subagentToolSchema = z.object({
   jobIds: z.union([z.array(z.string()), z.string()]).optional(),
   tasks: z.union([z.array(subagentTaskSchema), z.string()]).optional(),
   executionMode: z.enum(['auto', 'parallel', 'serial']).optional(),
+  maxConcurrency: z.union([z.number(), z.string()]).optional(),
+  joinPolicy: z.enum(['all', 'first', 'quorum']).optional(),
+  quorum: z.union([z.number(), z.string()]).optional(),
+  cancelRemaining: z.boolean().optional(),
   waitForCompletion: z.boolean().optional(),
   background: z.boolean().optional(),
   timeoutSec: z.union([z.number(), z.string()]).optional(),
@@ -150,10 +158,12 @@ export function coerceSubagentActionArgs(rawArgs: Record<string, unknown>): Reco
   const normalized = normalizeToolInputArgs(rawArgs)
   const coerced: Record<string, unknown> = { ...normalized }
 
-  for (const key of ['waitForCompletion', 'background', 'shareBrowserProfile'] as const) {
+  for (const key of ['waitForCompletion', 'background', 'shareBrowserProfile', 'cancelRemaining'] as const) {
     coerced[key] = parseBooleanLike(coerced[key])
   }
   coerced.timeoutSec = parseNumberLike(coerced.timeoutSec)
+  coerced.maxConcurrency = parseNumberLike(coerced.maxConcurrency)
+  coerced.quorum = parseNumberLike(coerced.quorum)
 
   const parsedTasks = parseJsonLike(coerced.tasks)
   if (Array.isArray(parsedTasks)) {
@@ -237,6 +247,76 @@ function requireString(args: Record<string, unknown>, key: string): string {
   const val = typeof args[key] === 'string' ? (args[key] as string).trim() : ''
   if (!val) throw new Error(`${key} is required.`)
   return val
+}
+
+type JoinPolicy =
+  | { type: 'all' }
+  | { type: 'first' }
+  | { type: 'quorum'; count: number; cancelRemaining: boolean }
+
+function parseJoinPolicy(args: Record<string, unknown>, taskCount: number): JoinPolicy {
+  const raw = typeof args.joinPolicy === 'string' ? args.joinPolicy.trim().toLowerCase() : ''
+  if (raw === 'first') return { type: 'first' }
+  if (raw === 'quorum') {
+    const parsed = typeof args.quorum === 'number' ? args.quorum : Number(args.quorum)
+    const count = Number.isFinite(parsed) && parsed > 0
+      ? Math.min(Math.floor(parsed), taskCount)
+      : Math.max(1, Math.ceil(taskCount / 2))
+    const cancelRemaining = args.cancelRemaining !== false
+    return { type: 'quorum', count, cancelRemaining }
+  }
+  return { type: 'all' }
+}
+
+/**
+ * Resolve the effective maxConcurrency for a swarm dispatch using the
+ * precedence: explicit arg > agent.maxParallelDelegations > mission.budget.maxParallelBranches > system default.
+ */
+function resolveSwarmMaxConcurrency(
+  args: Record<string, unknown>,
+  ctx: ActionContext,
+): number {
+  const pickFinite = (value: unknown): number | null => {
+    const n = typeof value === 'number' ? value : Number(value)
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : null
+  }
+  const explicit = pickFinite(args.maxConcurrency)
+  if (explicit !== null) return Math.min(explicit, SWARM_MAX_CONCURRENCY_HARD_LIMIT)
+
+  if (ctx.agentId) {
+    const agent = loadAgents()[ctx.agentId]
+    const agentCap = pickFinite(agent?.maxParallelDelegations)
+    if (agentCap !== null) return Math.min(agentCap, SWARM_MAX_CONCURRENCY_HARD_LIMIT)
+  }
+
+  if (ctx.sessionId) {
+    const session = getSession(ctx.sessionId) as { missionId?: string | null } | null
+    const missionId = typeof session?.missionId === 'string' && session.missionId.trim()
+      ? session.missionId.trim()
+      : null
+    if (missionId) {
+      const mission = getMission(missionId)
+      const missionCap = pickFinite(mission?.budget?.maxParallelBranches)
+      if (missionCap !== null) return Math.min(missionCap, SWARM_MAX_CONCURRENCY_HARD_LIMIT)
+    }
+  }
+
+  return SWARM_DEFAULT_PARALLEL_CONCURRENCY
+}
+
+async function awaitSwarmByPolicy(
+  swarm: Awaited<ReturnType<typeof spawnSwarm>>,
+  policy: JoinPolicy,
+): Promise<ReturnType<typeof spawnSwarm> extends Promise<infer T> ? T extends { allSettled: Promise<infer A> } ? A : never : never> {
+  if (policy.type === 'first') {
+    await swarm.firstSettled
+    swarm.cancelAll()
+    return swarm.allSettled
+  }
+  if (policy.type === 'quorum') {
+    return swarm.quorumSettled(policy.count, { cancelRemaining: policy.cancelRemaining })
+  }
+  return swarm.allSettled
 }
 
 // ---------------------------------------------------------------------------
@@ -336,9 +416,11 @@ async function handleBatch(args: Record<string, unknown>, ctx: ActionContext): P
   const executionMode = args.executionMode === 'parallel' || args.executionMode === 'serial'
     ? args.executionMode
     : 'auto'
+  const maxConcurrency = resolveSwarmMaxConcurrency(args, ctx)
+  const policy = parseJoinPolicy(args, tasks.length)
 
   // Use spawnSwarm internally — batch is a simplified interface
-  const swarm = await spawnSwarm({ tasks, executionMode }, { sessionId: ctx.sessionId, cwd: ctx.cwd })
+  const swarm = await spawnSwarm({ tasks, executionMode, maxConcurrency }, { sessionId: ctx.sessionId, cwd: ctx.cwd })
   const jobIds = swarm.members
     .filter((m) => !m.spawnError && m.handle)
     .map((m) => m.handle.jobId)
@@ -349,13 +431,16 @@ async function handleBatch(args: Record<string, unknown>, ctx: ActionContext): P
       status: 'running',
       jobIds,
       taskCount: tasks.length,
+      maxConcurrency: swarm.maxConcurrency,
     })
   }
-  const aggregate = await swarm.allSettled
+  const aggregate = await awaitSwarmByPolicy(swarm, policy)
   return JSON.stringify({
     action: 'batch',
     status: 'completed',
     jobIds,
+    maxConcurrency: swarm.maxConcurrency,
+    joinPolicy: policy.type,
     completed: aggregate.totalCompleted,
     failed: aggregate.totalFailed + aggregate.totalSpawnErrors,
     cancelled: aggregate.totalCancelled,
@@ -397,8 +482,10 @@ async function handleSwarm(args: Record<string, unknown>, ctx: ActionContext): P
   const executionMode = args.executionMode === 'parallel' || args.executionMode === 'serial'
     ? args.executionMode
     : 'auto'
+  const maxConcurrency = resolveSwarmMaxConcurrency(args, ctx)
+  const policy = parseJoinPolicy(args, tasks.length)
 
-  const swarm = await spawnSwarm({ tasks, executionMode }, { sessionId: ctx.sessionId, cwd: ctx.cwd })
+  const swarm = await spawnSwarm({ tasks, executionMode, maxConcurrency }, { sessionId: ctx.sessionId, cwd: ctx.cwd })
   if (!waitForCompletion) {
     const snapshot = getSwarmSnapshot(swarm.swarmId)
     return JSON.stringify({
@@ -406,15 +493,18 @@ async function handleSwarm(args: Record<string, unknown>, ctx: ActionContext): P
       status: 'running',
       swarmId: swarm.swarmId,
       memberCount: swarm.members.length,
+      maxConcurrency: swarm.maxConcurrency,
       snapshot,
     })
   }
-  const aggregate = await swarm.allSettled
+  const aggregate = await awaitSwarmByPolicy(swarm, policy)
   const snapshot = getSwarmSnapshot(swarm.swarmId)
   return JSON.stringify({
     action: 'swarm',
     ...aggregate,
     status: swarm.status,
+    maxConcurrency: swarm.maxConcurrency,
+    joinPolicy: policy.type,
     snapshot,
   })
 }
@@ -632,6 +722,23 @@ const SubagentExtension: Extension = {
             type: 'string',
             enum: ['auto', 'parallel', 'serial'],
             description: 'How to schedule sibling subagents. "auto" defaults to serial for Ollama-backed targets and parallel otherwise.',
+          },
+          maxConcurrency: {
+            type: 'number',
+            description: 'Max sibling branches that may run at the same time when parallel. Defaults to agent/mission policy or 4. Hard-capped at 16.',
+          },
+          joinPolicy: {
+            type: 'string',
+            enum: ['all', 'first', 'quorum'],
+            description: 'How to wait. "all" (default) waits for every branch. "first" resolves when one succeeds and cancels the rest. "quorum" resolves when `quorum` branches succeed.',
+          },
+          quorum: {
+            type: 'number',
+            description: 'Required when joinPolicy="quorum" — number of successful branches needed before resolving.',
+          },
+          cancelRemaining: {
+            type: 'boolean',
+            description: 'When joinPolicy="quorum", cancel in-flight branches after quorum is reached. Default true.',
           },
           waitForCompletion: { type: 'boolean' },
           background: { type: 'boolean' },

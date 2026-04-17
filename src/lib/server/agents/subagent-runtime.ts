@@ -73,6 +73,8 @@ export interface SpawnSubagentInput {
   timeoutSec?: number
   /** Optional shared execution lane key for serializing sibling runs. */
   executionGroupKey?: string
+  /** When true, skip the ancestor-agent cycle check (A → B → A). Default false. */
+  allowCycle?: boolean
 }
 
 export interface SubagentHandle {
@@ -183,6 +185,31 @@ export function getSessionDepth(
   return depth
 }
 
+/**
+ * Collect agentIds of every session in the parent chain including the given
+ * session. Used to detect delegation cycles (A → B → A) before spawning.
+ */
+export function collectAncestorAgentIds(
+  sessionId: string | undefined,
+  sessions: Record<string, unknown>,
+  limit = 32,
+): string[] {
+  if (!sessionId) return []
+  const ids: string[] = []
+  let current: string | undefined = sessionId
+  const visited = new Set<string>()
+  while (current && ids.length < limit && !visited.has(current)) {
+    visited.add(current)
+    const s = sessions[current] as Record<string, unknown> | undefined
+    const agentId = typeof s?.agentId === 'string' ? s.agentId.trim() : ''
+    if (agentId) ids.push(agentId)
+    const parentId = typeof s?.parentSessionId === 'string' ? s.parentSessionId : null
+    if (!parentId) break
+    current = parentId
+  }
+  return ids
+}
+
 // ---------------------------------------------------------------------------
 // Core: Spawn a Native Subagent
 // ---------------------------------------------------------------------------
@@ -214,6 +241,16 @@ async function spawnSubagentImpl(
   if (depth >= maxDepth) {
     log.warn('subagent', 'Spawn rejected: max depth exceeded', { agentId: input.agentId, depth, maxDepth })
     throw new Error(`Max subagent depth (${maxDepth}) reached.`)
+  }
+  if (input.allowCycle !== true && context.sessionId) {
+    const ancestorAgentIds = collectAncestorAgentIds(context.sessionId, sessions)
+    if (ancestorAgentIds.includes(input.agentId)) {
+      log.warn('subagent', 'Spawn rejected: delegation cycle', { agentId: input.agentId, chain: ancestorAgentIds })
+      throw new Error(
+        `Delegation cycle: agent "${input.agentId}" is already active higher in this chain. `
+        + 'Pick a different sibling agent, or pass allowCycle=true to override.',
+      )
+    }
   }
   const parent = context.sessionId ? sessions[context.sessionId] : null
   const parentExtensions = getEnabledCapabilityIds(parent as { tools?: string[] | null, extensions?: string[] | null } | null)

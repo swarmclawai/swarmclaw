@@ -23,6 +23,7 @@ const MissionUpdateSchema = z.object({
     maxToolCalls: z.number().positive().int().nullable().optional(),
     maxWallclockSec: z.number().positive().int().nullable().optional(),
     maxTurns: z.number().positive().int().nullable().optional(),
+    maxParallelBranches: z.number().positive().int().nullable().optional(),
     warnAtFractions: z.array(z.number().positive().lt(1)).max(10).optional(),
   }).partial().optional(),
   reportSchedule: z.object({

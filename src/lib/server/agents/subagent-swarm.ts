@@ -63,10 +63,19 @@ export interface SwarmHandle {
   createdAt: number
   /** When all members finished (null if still running) */
   completedAt: number | null
+  /** Effective concurrency cap used to dispatch this swarm. 0 = unbounded (non-serial). */
+  maxConcurrency: number
   /** Promise that resolves when ALL members complete */
   allSettled: Promise<SwarmAggregateResult>
   /** Promise that resolves when the FIRST member completes */
   firstSettled: Promise<{ index: number; result: SubagentResult }>
+  /**
+   * Resolve when `count` members succeed (status === 'completed').
+   * If the swarm cannot reach the quorum (enough members already failed),
+   * resolves with the current aggregate. When `cancelRemaining` is true,
+   * best-effort aborts in-flight members after the quorum is reached.
+   */
+  quorumSettled: (count: number, opts?: { cancelRemaining?: boolean }) => Promise<SwarmAggregateResult>
   /** Cancel all running members */
   cancelAll: () => void
 }
@@ -109,7 +118,28 @@ export interface BatchSpawnInput {
   onSwarmComplete?: (result: SwarmAggregateResult) => void
   /** Execution mode for sibling subagents. Auto defaults to serial for Ollama-backed targets. */
   executionMode?: 'auto' | 'parallel' | 'serial'
+  /**
+   * Maximum number of members allowed to run concurrently when `executionMode`
+   * resolves to `'parallel'`. A value of 0 or `undefined` preserves the legacy
+   * unbounded behavior. Ignored in serial mode (always 1).
+   */
+  maxConcurrency?: number
 }
+
+/** Hard cap on `maxConcurrency` regardless of caller-supplied value. */
+export const SWARM_MAX_CONCURRENCY_HARD_LIMIT = 16
+/** Default concurrency when a parallel swarm does not specify an explicit cap. */
+export const SWARM_DEFAULT_PARALLEL_CONCURRENCY = 4
+
+function clampConcurrency(requested: number | undefined, taskCount: number): number {
+  if (taskCount <= 1) return 1
+  const raw = typeof requested === 'number' && Number.isFinite(requested) && requested > 0
+    ? Math.floor(requested)
+    : SWARM_DEFAULT_PARALLEL_CONCURRENCY
+  return Math.min(SWARM_MAX_CONCURRENCY_HARD_LIMIT, Math.max(1, raw))
+}
+
+export const _clampSwarmConcurrency = clampConcurrency
 
 // ---------------------------------------------------------------------------
 // Batch types (absorbed from subagent-batch)
@@ -165,6 +195,7 @@ function persistSwarmSnapshot(swarm: SwarmHandle): void {
       parentSessionId: swarm.parentSessionId,
       status: swarm.status,
       memberCount: swarm.members.length,
+      maxConcurrency: swarm.maxConcurrency,
       createdAt: swarm.createdAt,
       completedAt: swarm.completedAt,
       updatedAt: Date.now(),
@@ -198,9 +229,20 @@ export async function spawnSwarm(
   const createdAt = Date.now()
   const members: SwarmMember[] = []
   const executionMode = _resolveSwarmExecutionMode(input.tasks, input.executionMode)
-  const executionGroupKey = executionMode === 'serial'
-    ? `swarm:${context.sessionId || 'root'}:${swarmId}`
-    : undefined
+  const effectiveConcurrency = executionMode === 'serial'
+    ? 1
+    : clampConcurrency(input.maxConcurrency, input.tasks.length)
+  const parentKey = context.sessionId || 'root'
+
+  // Concurrency is implemented by bucketing tasks across N shared execution
+  // group keys — each bucket serializes through the existing session-run-manager
+  // per-execution lock, so bucket count === effective parallelism.
+  const bucketKeyFor = (index: number): string | undefined => {
+    if (executionMode === 'serial') return `swarm:${parentKey}:${swarmId}`
+    if (effectiveConcurrency >= input.tasks.length) return undefined
+    const bucket = index % effectiveConcurrency
+    return `swarm:${parentKey}:${swarmId}:b${bucket}`
+  }
 
   // Pre-load sessions once for all spawns (avoids N SQLite reads)
   const cachedSessions = context._sessions ?? loadSessions()
@@ -218,7 +260,7 @@ export async function spawnSwarm(
           cwd: task.cwd,
           shareBrowserProfile: task.shareBrowserProfile,
           waitForCompletion: false,
-          executionGroupKey,
+          executionGroupKey: bucketKeyFor(i),
         },
         cachedContext,
       )
@@ -249,8 +291,10 @@ export async function spawnSwarm(
     status: 'running',
     createdAt,
     completedAt: null,
+    maxConcurrency: effectiveConcurrency,
     allSettled: null as unknown as Promise<SwarmAggregateResult>,
     firstSettled: null as unknown as Promise<{ index: number; result: SubagentResult }>,
+    quorumSettled: null as unknown as SwarmHandle['quorumSettled'],
     cancelAll: () => {
       for (const member of members) {
         if (member.handle && !member.result && !member.spawnError) {
@@ -329,6 +373,46 @@ export async function spawnSwarm(
           } satisfies SubagentResult,
         }
       })
+
+  // quorumSettled — resolves when `count` members succeed. If too many fail to
+  // ever reach the quorum, falls back to allSettled.
+  swarm.quorumSettled = (count, opts) => {
+    const requested = Math.max(1, Math.floor(Number.isFinite(count) ? count : 1))
+    const target = Math.min(requested, swarm.members.length)
+    const cancelRemaining = opts?.cancelRemaining !== false
+    if (target <= 0 || memberPromises.length === 0) return swarm.allSettled
+    return new Promise<SwarmAggregateResult>((resolve) => {
+      let settled = false
+      let successes = 0
+      let finalized = 0
+      const finalize = () => {
+        if (settled) return
+        settled = true
+        if (cancelRemaining) {
+          for (const member of members) {
+            if (member.handle && !member.result && !member.spawnError) {
+              try {
+                member.handle.run.abort()
+                cancelLineageNode(member.handle.lineageId)
+              } catch { /* best-effort */ }
+            }
+          }
+        }
+        swarm.allSettled.then(resolve).catch(() => resolve(buildAggregateResult(swarm)))
+      }
+      for (const p of memberPromises) {
+        p.then(({ result }) => {
+          finalized++
+          if (result.status === 'completed') successes++
+          if (successes >= target) finalize()
+          else if (finalized >= memberPromises.length) finalize()
+        }).catch(() => {
+          finalized++
+          if (finalized >= memberPromises.length) finalize()
+        })
+      }
+    })
+  }
 
   // Register in swarm registry
   swarmRegistry.set(swarmId, swarm)
@@ -575,6 +659,7 @@ export interface SwarmSnapshot {
   memberCount: number
   completedCount: number
   failedCount: number
+  maxConcurrency?: number
   members: SwarmMemberSnapshot[]
 }
 
@@ -622,6 +707,7 @@ function buildSwarmSnapshot(swarm: SwarmHandle): SwarmSnapshot {
     failedCount: members.filter((m) =>
       m.status === 'failed' || m.status === 'timed_out' || m.status === 'spawn_error',
     ).length,
+    maxConcurrency: swarm.maxConcurrency,
     members,
   }
 }

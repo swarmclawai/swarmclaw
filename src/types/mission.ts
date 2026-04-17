@@ -28,6 +28,12 @@ export interface MissionBudget {
   maxToolCalls?: number | null
   maxWallclockSec?: number | null
   maxTurns?: number | null
+  /**
+   * Cap on concurrent sub-agent branches when this mission's agents fan out
+   * via `spawn_subagent` swarm/batch actions. Overrides the system default
+   * (4) when set. Hard-capped at 16 regardless.
+   */
+  maxParallelBranches?: number | null
   warnAtFractions?: number[]
 }
 

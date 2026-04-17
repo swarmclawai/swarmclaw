@@ -399,6 +399,7 @@ function normalizeStoredAgentMissionRecord(value: unknown): unknown {
   budget.maxToolCalls = normalizeFiniteNumber(budget.maxToolCalls)
   budget.maxWallclockSec = normalizeFiniteNumber(budget.maxWallclockSec)
   budget.maxTurns = normalizeFiniteNumber(budget.maxTurns)
+  budget.maxParallelBranches = normalizeFiniteNumber(budget.maxParallelBranches)
   if (!Array.isArray(budget.warnAtFractions)) {
     budget.warnAtFractions = [0.5, 0.8, 0.95]
   } else {
@@ -620,6 +621,7 @@ function normalizeStoredRecordInner(
     if (!Array.isArray(agent.delegationTargetAgentIds)) {
       agent.delegationTargetAgentIds = legacyTargetIds
     }
+    agent.maxParallelDelegations = normalizeFiniteNumber(agent.maxParallelDelegations)
     delete agent.platformAssignScope
     delete agent.subAgentIds
     agent.sandboxConfig = normalizeAgentSandboxConfig(agent.sandboxConfig)
