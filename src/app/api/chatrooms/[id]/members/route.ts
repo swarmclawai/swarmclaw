@@ -4,7 +4,6 @@ import { notify } from '@/lib/server/ws-hub'
 import { notFound } from '@/lib/server/collection-helpers'
 import { safeParseBody } from '@/lib/server/safe-parse-body'
 import { genId } from '@/lib/id'
-import { isWorkerOnlyAgent, buildWorkerOnlyAgentMessage } from '@/lib/server/agents/agent-availability'
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -18,13 +17,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!agentId) return NextResponse.json({ error: 'agentId is required' }, { status: 400 })
 
   const agents = loadAgents()
-  if (isWorkerOnlyAgent(agents[agentId])) {
-    return NextResponse.json(
-      { error: buildWorkerOnlyAgentMessage(agents[agentId], 'join chatrooms') },
-      { status: 400 },
-    )
-  }
-
   if (!chatroom.agentIds.includes(agentId)) {
     chatroom.agentIds.push(agentId)
 
