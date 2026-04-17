@@ -4,7 +4,6 @@ import { notify } from '@/lib/server/ws-hub'
 import { notFound } from '@/lib/server/collection-helpers'
 import { safeParseBody } from '@/lib/server/safe-parse-body'
 import { genId } from '@/lib/id'
-import { isWorkerOnlyAgent } from '@/lib/server/agents/agent-availability'
 import {
   ensureChatroomRoutingGuidance,
   synthesizeRoutingGuidanceFromRules,
@@ -78,16 +77,6 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         { status: 400 },
       )
     }
-    const cliAgentNames = agentIds
-      .filter((agentId) => isWorkerOnlyAgent(agents[agentId]))
-      .map((agentId) => agents[agentId]?.name || agentId)
-    if (cliAgentNames.length > 0) {
-      return NextResponse.json(
-        { error: `CLI-based agents cannot join chatrooms: ${cliAgentNames.join(', ')}. They can only be used for direct chats and delegation.` },
-        { status: 400 },
-      )
-    }
-
     const oldIds = new Set(chatroom.agentIds)
     const newIds = new Set(agentIds)
     const added = agentIds.filter((aid: string) => !oldIds.has(aid))

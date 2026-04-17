@@ -297,3 +297,114 @@ test('chatroom route forwards tool activity and records one reply per participat
   assert.deepEqual(output.assistantCounts, { alpha: 1, beta: 1 })
   assert.deepEqual([...new Set(output.agentOrder)].sort(), ['alpha', 'beta'])
 })
+
+test('chatroom route uses direct provider runtime for CLI providers', () => {
+  const output = runWithTempDataDir<{
+    errors: string[]
+    streamedText: string
+    assistantTexts: string[]
+  }>(`
+    const storageMod = await import('./src/lib/server/storage')
+    const providersMod = await import('@/lib/providers')
+    const routeMod = await import('./src/app/api/chatrooms/[id]/chat/route')
+    const streamMod = await import('@/lib/server/chat-execution/stream-agent-chat')
+    const storage = storageMod.default || storageMod
+    const providers = providersMod.default || providersMod
+    const route = routeMod.default || routeMod
+    const stream = streamMod.default || streamMod
+
+    const originalHandler = providers.PROVIDERS['codex-cli'].handler
+
+    const now = Date.now()
+    storage.saveAgents({
+      alpha: {
+        id: 'alpha',
+        name: 'Alpha',
+        provider: 'codex-cli',
+        model: 'gpt-5.3-codex',
+        extensions: [],
+        createdAt: now,
+        updatedAt: now,
+      },
+    })
+    storage.saveChatrooms({
+      room_1: {
+        id: 'room_1',
+        name: 'CLI Room',
+        agentIds: ['alpha'],
+        messages: [],
+        createdAt: now,
+        updatedAt: now,
+        chatMode: 'sequential',
+        autoAddress: true,
+      },
+    })
+
+    async function readSse(response) {
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      const events = []
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        let idx = buffer.indexOf('\\n\\n')
+        while (idx !== -1) {
+          const chunk = buffer.slice(0, idx)
+          buffer = buffer.slice(idx + 2)
+          const line = chunk
+            .split('\\n')
+            .map((entry) => entry.trim())
+            .find((entry) => entry.startsWith('data: '))
+          if (line) {
+            events.push(JSON.parse(line.slice(6)))
+          }
+          idx = buffer.indexOf('\\n\\n')
+        }
+      }
+      return events
+    }
+
+    stream.setStreamAgentChatForTest(async () => {
+      throw new Error('streamAgentChat should not be called for codex-cli chatroom turns')
+    })
+    providers.PROVIDERS['codex-cli'].handler = {
+      streamChat: async (opts) => {
+        const reply = 'Codex CLI answered from direct provider runtime.'
+        opts.write('data: ' + JSON.stringify({ t: 'd', text: reply }) + '\\n')
+        return reply
+      },
+    }
+
+    try {
+      const response = await route.POST(
+        new Request('http://local/api/chatrooms/room_1/chat', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ senderId: 'user', text: 'Say hello to the room.' }),
+        }),
+        { params: Promise.resolve({ id: 'room_1' }) },
+      )
+
+      const events = await readSse(response)
+      const chatroom = storage.loadChatrooms().room_1
+      const assistantTexts = chatroom.messages
+        .filter((entry) => entry.role === 'assistant')
+        .map((entry) => entry.text)
+
+      console.log(JSON.stringify({
+        errors: events.filter((entry) => entry.t === 'err').map((entry) => entry.text),
+        streamedText: events.filter((entry) => entry.t === 'd').map((entry) => entry.text).join(''),
+        assistantTexts,
+      }))
+    } finally {
+      providers.PROVIDERS['codex-cli'].handler = originalHandler
+      stream.setStreamAgentChatForTest(null)
+    }
+  `, { prefix: 'swarmclaw-chatroom-route-cli-provider-' })
+
+  assert.equal(output.errors.some((text) => /streamAgentChat should not be called/i.test(text)), false)
+  assert.equal(output.streamedText.includes('Codex CLI answered from direct provider runtime.'), true)
+  assert.equal(output.assistantTexts.some((text) => text.includes('Codex CLI answered from direct provider runtime.')), true)
+})

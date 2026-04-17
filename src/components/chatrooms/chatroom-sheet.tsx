@@ -9,7 +9,6 @@ import { toast } from 'sonner'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
 import type { Agent } from '@/types'
 import { CheckIcon } from '@/components/shared/check-icon'
-import { WORKER_ONLY_PROVIDER_IDS } from '@/lib/provider-sets'
 
 export function ChatroomSheet() {
   const open = useChatroomStore((s) => s.chatroomSheetOpen)
@@ -105,9 +104,7 @@ export function ChatroomSheet() {
     )
   }
 
-  const agentList = Object.values(agents).filter(
-    (a: Agent) => !a.trashedAt && !WORKER_ONLY_PROVIDER_IDS.has(a.provider)
-  ) as Agent[]
+  const agentList = Object.values(agents).filter((a: Agent) => !a.trashedAt) as Agent[]
 
   return (
     <BottomSheet open={open} onClose={() => setChatroomSheetOpen(false)}>

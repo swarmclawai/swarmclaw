@@ -12,7 +12,6 @@ import { log } from '../logger'
 import { debug } from '../debug'
 import { logExecution } from '../execution-log'
 import { logActivity } from '../storage'
-import { WORKER_ONLY_PROVIDER_IDS } from '@/lib/provider-sets'
 
 /**
  * Core Chatroom Execution Logic
@@ -78,12 +77,6 @@ async function executeChatroomAction(args: Record<string, unknown>, context: { a
       const agents = loadAgents()
       const requestedAgentIds = agentIds || []
       const validAgentIds = requestedAgentIds.filter((aid: string) => !!agents[aid])
-      const cliAgentNames = validAgentIds
-        .filter((aid: string) => WORKER_ONLY_PROVIDER_IDS.has(agents[aid]?.provider))
-        .map((aid: string) => agents[aid]?.name || aid)
-      if (cliAgentNames.length > 0) {
-        return `Error: CLI-based agents cannot join chatrooms: ${cliAgentNames.join(', ')}. They can only be used for direct chats and delegation.`
-      }
 
       const chatroom: Chatroom = {
         id,
@@ -208,10 +201,6 @@ async function executeChatroomAction(args: Record<string, unknown>, context: { a
 
     if (action === 'add_agent') {
       if (!agentId) return 'Error: agentId required.'
-      const agents = loadAgents()
-      if (WORKER_ONLY_PROVIDER_IDS.has(agents[agentId]?.provider)) {
-        return `Error: ${agents[agentId]?.name || agentId} is a CLI-based agent and cannot join chatrooms. CLI agents can only be used for direct chats and delegation.`
-      }
       if (!chatroom.agentIds.includes(agentId)) {
         chatroom.agentIds.push(agentId)
         chatroom.updatedAt = Date.now()
