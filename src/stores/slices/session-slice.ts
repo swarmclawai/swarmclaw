@@ -10,6 +10,9 @@ const sessionRefreshDedup = createInflightDeduplicator('sessionSlice_inflightRef
 
 /** Derive the active session ID from the current agent — no stored `currentSessionId`. */
 export function selectActiveSessionId(s: AppState): string | null {
+  if (s.activeSessionIdOverride && s.sessions[s.activeSessionIdOverride]) {
+    return s.activeSessionIdOverride
+  }
   if (!s.currentAgentId) return null
   const agent = s.agents[s.currentAgentId]
   return agent?.threadSessionId ?? null
@@ -17,6 +20,8 @@ export function selectActiveSessionId(s: AppState): string | null {
 
 export interface SessionSlice {
   sessions: Sessions
+  activeSessionIdOverride: string | null
+  setActiveSessionIdOverride: (id: string | null) => void
   loadSessions: () => Promise<void>
   refreshSession: (id: string) => Promise<void>
   removeSession: (id: string) => void
@@ -27,6 +32,8 @@ export interface SessionSlice {
 
 export const createSessionSlice: StateCreator<AppState, [], [], SessionSlice> = (set, get) => ({
   sessions: {},
+  activeSessionIdOverride: null,
+  setActiveSessionIdOverride: (id) => set({ activeSessionIdOverride: id }),
   loadSessions: createLoader<AppState>(set, 'sessions', () => fetchChats()),
   refreshSession: async (id) => {
     if (!id) return
@@ -51,9 +58,10 @@ export const createSessionSlice: StateCreator<AppState, [], [], SessionSlice> = 
     invalidateFingerprint('sessions')
     const activeSessionId = selectActiveSessionId(get())
     if (activeSessionId === id) {
-      set({ sessions, currentAgentId: null })
+      set({ sessions, currentAgentId: null, activeSessionIdOverride: null })
     } else {
-      set({ sessions })
+      const overrideId = get().activeSessionIdOverride
+      set({ sessions, activeSessionIdOverride: overrideId === id ? null : overrideId })
     }
   },
   clearSessions: async (ids) => {
@@ -64,9 +72,13 @@ export const createSessionSlice: StateCreator<AppState, [], [], SessionSlice> = 
     invalidateFingerprint('sessions')
     const activeSessionId = selectActiveSessionId(get())
     if (activeSessionId && ids.includes(activeSessionId)) {
-      set({ sessions, currentAgentId: null })
+      set({ sessions, currentAgentId: null, activeSessionIdOverride: null })
     } else {
-      set({ sessions })
+      const overrideId = get().activeSessionIdOverride
+      set({
+        sessions,
+        activeSessionIdOverride: overrideId && ids.includes(overrideId) ? null : overrideId,
+      })
     }
   },
   togglePinSession: async (id) => {

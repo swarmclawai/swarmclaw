@@ -26,6 +26,7 @@ export function ChatList({ inSidebar, onSelect }: Props) {
   const currentUser = useAppStore((s) => s.currentUser)
   const currentSessionId = useAppStore(selectActiveSessionId)
   const setCurrentAgent = useAppStore((s) => s.setCurrentAgent)
+  const setActiveSessionIdOverride = useAppStore((s) => s.setActiveSessionIdOverride)
   const loadConnectors = useAppStore((s) => s.loadConnectors)
   const setAgentSheetOpen = useAppStore((s) => s.setAgentSheetOpen)
   const clearSessions = useAppStore((s) => s.clearSessions)
@@ -117,7 +118,10 @@ export function ChatList({ inSidebar, onSelect }: Props) {
 
   const handleSelect = async (id: string) => {
     const agentId = sessions[id]?.agentId
-    if (agentId) void setCurrentAgent(agentId)
+    if (agentId) {
+      await setCurrentAgent(agentId)
+      setActiveSessionIdOverride(id)
+    }
     markChatRead(id)
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('swarmclaw:scroll-bottom'))

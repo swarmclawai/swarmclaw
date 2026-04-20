@@ -903,6 +903,8 @@ function SessionsSection({ agent }: { agent: Agent }) {
   const connectors = useAppStore((s) => s.connectors)
   const agents = useAppStore((s) => s.agents)
   const setCurrentAgent = useAppStore((s) => s.setCurrentAgent)
+  const setActiveSessionIdOverride = useAppStore((s) => s.setActiveSessionIdOverride)
+  const setInspectorOpen = useAppStore((s) => s.setInspectorOpen)
 
   const agentSessions = useMemo(() => {
     return Object.values(sessions).filter((s) => s.agentId === agent.id)
@@ -922,7 +924,15 @@ function SessionsSection({ agent }: { agent: Agent }) {
             <button
               key={s.id}
               type="button"
-              onClick={() => void setCurrentAgent(agent.id)}
+              onClick={() => {
+                void setCurrentAgent(agent.id).then(() => {
+                  setActiveSessionIdOverride(s.id)
+                  setInspectorOpen(false)
+                  if (typeof window !== 'undefined') {
+                    window.dispatchEvent(new CustomEvent('swarmclaw:scroll-bottom'))
+                  }
+                }).catch(() => {})
+              }}
               className="flex items-center gap-2 w-full py-1.5 px-2 rounded-[8px] bg-transparent border-none cursor-pointer hover:bg-white/[0.04] transition-colors text-left"
             >
               {connector ? (

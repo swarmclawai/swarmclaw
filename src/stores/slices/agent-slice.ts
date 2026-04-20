@@ -27,14 +27,15 @@ export const createAgentSlice: StateCreator<AppState, [], [], AgentSlice> = (set
   currentAgentId: null,
   setCurrentAgent: async (id) => {
     if (!id) {
-      set({ currentAgentId: null })
+      set({ currentAgentId: null, activeSessionIdOverride: null })
       safeStorageRemove('sc_agent')
       return
     }
     if (get().currentAgentId === id && get().agents[id]?.threadSessionId) {
+      set({ activeSessionIdOverride: null })
       return
     }
-    set({ currentAgentId: id })
+    set({ currentAgentId: id, activeSessionIdOverride: null })
     safeStorageSet('sc_agent', id)
 
     await agentThreadDedup.dedup(id, async () => {

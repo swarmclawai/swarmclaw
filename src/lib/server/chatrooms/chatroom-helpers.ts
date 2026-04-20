@@ -13,6 +13,7 @@ import { buildRuntimeSkillPromptBlocks, resolveRuntimeSkills } from '@/lib/serve
 import { loadSkills } from '@/lib/server/skills/skill-repository'
 import { loadSession, patchSession, saveSession } from '@/lib/server/sessions/session-repository'
 import { appendMessage } from '@/lib/server/messages/message-repository'
+import { resolveChatroomSyntheticSessionId } from '@/lib/chatroom-sessions'
 import type { Chatroom, ChatroomMember, Agent, Session, Message, ChatroomMessage } from '@/types'
 import { getEnabledCapabilityIds, getEnabledToolIds } from '@/lib/capability-selection'
 
@@ -272,7 +273,7 @@ export function resolveChatroomWorkspaceDir(chatroomId: string): string {
 }
 
 export function resolveSyntheticSessionId(chatroomId: string, agentId: string): string {
-  return `chatroom-${chatroomId}-${agentId}`
+  return resolveChatroomSyntheticSessionId(chatroomId, agentId)
 }
 
 function buildEmptyDelegateResumeIds(): NonNullable<Session['delegateResumeIds']> {

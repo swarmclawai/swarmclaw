@@ -176,7 +176,7 @@ export function ChatroomInput({ agents, onSend, disabled, onBreakoutRequest }: P
         parts.push(text.slice(lastIndex, match.index))
       }
       parts.push(
-        <span key={match.index} className="bg-accent-soft/50 text-accent-bright rounded px-0.5">
+        <span key={match.index} className="bg-accent-soft/45 text-accent-bright rounded">
           {match[0]}
         </span>
       )

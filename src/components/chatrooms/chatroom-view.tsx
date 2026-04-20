@@ -9,6 +9,7 @@ import { useNavigate } from '@/lib/app/navigation'
 import { useNow } from '@/hooks/use-now'
 import { useWs } from '@/hooks/use-ws'
 import { api } from '@/lib/app/api-client'
+import { resolveChatroomSyntheticSessionId } from '@/lib/chatroom-sessions'
 import { ChatroomMessageBubble } from './chatroom-message'
 import { ChatroomInput } from './chatroom-input'
 import { ChatroomTypingBar } from './chatroom-typing-bar'
@@ -20,7 +21,7 @@ import {
   StructuredSessionLauncher,
   type StructuredSessionLaunchContext,
 } from '@/components/protocols/structured-session-launcher'
-import type { Chatroom, ChatroomMessage, ChatroomMember, Agent, ProtocolRun } from '@/types'
+import type { Chatroom, ChatroomMessage, ChatroomMember, Agent, ProtocolRun, Session, Message } from '@/types'
 
 function getRoleBadge(role: string) {
   if (role === 'admin') return { label: 'Admin', className: 'bg-purple-500/20 text-purple-400 border-purple-500/30' }
@@ -45,6 +46,13 @@ function isAgentMuted(chatroom: Chatroom, agentId: string, now: number | null): 
 }
 
 type MomentType = { kind: 'heartbeat' } | { kind: 'tool'; name: string; input: string }
+type SessionExecLogEntry = {
+  id: string
+  category: string
+  summary: string
+  detail: Record<string, unknown> | null
+  ts: number
+}
 
 function useAgentHeartbeat(agentId: string, onPulse: (id: string) => void) {
   const topic = agentId ? `heartbeat:agent:${agentId}` : ''
@@ -120,6 +128,13 @@ export function ChatroomView() {
   const [injectError, setInjectError] = useState<string | null>(null)
   const [linkedRun, setLinkedRun] = useState<ProtocolRun | null>(null)
   const [activeParentRun, setActiveParentRun] = useState<ProtocolRun | null>(null)
+  const [inspectSessionOpen, setInspectSessionOpen] = useState(false)
+  const [inspectedAgent, setInspectedAgent] = useState<Agent | null>(null)
+  const [inspectedSessionId, setInspectedSessionId] = useState<string | null>(null)
+  const [inspectedMessages, setInspectedMessages] = useState<Message[]>([])
+  const [inspectedExecLogs, setInspectedExecLogs] = useState<SessionExecLogEntry[]>([])
+  const [inspectLoading, setInspectLoading] = useState(false)
+  const [inspectError, setInspectError] = useState<string | null>(null)
 
   const handleHeartbeatPulse = useCallback((agentId: string) => {
     setAgentMoments((prev) => ({ ...prev, [agentId]: { kind: 'heartbeat' } }))
@@ -227,6 +242,8 @@ export function ChatroomView() {
 
   useEffect(() => {
     setDetailsOpen(false)
+    setInspectSessionOpen(false)
+    setInspectError(null)
   }, [chatroomId])
 
   const refreshLinkedRun = useCallback(() => {
@@ -330,6 +347,29 @@ export function ChatroomView() {
     }
   }
 
+  const handleInspectAgentSession = async (agent: Agent) => {
+    if (!chatroom) return
+    const sessionId = resolveChatroomSyntheticSessionId(chatroom.id, agent.id)
+    setInspectSessionOpen(true)
+    setInspectedAgent(agent)
+    setInspectedSessionId(sessionId)
+    setInspectLoading(true)
+    setInspectError(null)
+
+    try {
+      const session = await api<Session>('GET', `/chats/${encodeURIComponent(sessionId)}`)
+      setInspectedMessages(Array.isArray(session?.messages) ? session.messages : [])
+      const logs = await api<SessionExecLogEntry[]>('GET', `/chats/${encodeURIComponent(sessionId)}/execution-log?limit=200`)
+      setInspectedExecLogs(Array.isArray(logs) ? logs : [])
+    } catch (error) {
+      setInspectedMessages([])
+      setInspectedExecLogs([])
+      setInspectError(error instanceof Error ? error.message : 'Unable to load this agent session yet.')
+    } finally {
+      setInspectLoading(false)
+    }
+  }
+
   return (
     <div className="flex-1 flex min-h-0 min-w-0">
       <div className="min-w-0 flex-1 flex flex-col h-full">
@@ -379,7 +419,13 @@ export function ChatroomView() {
                 <Tooltip key={agent.id}>
                   <TooltipTrigger asChild>
                     <button
-                      onClick={() => navigateToAgent(agent.id)}
+                      onClick={() => {
+                        if (streamingAgents.has(agent.id)) {
+                          void handleInspectAgentSession(agent)
+                          return
+                        }
+                        navigateToAgent(agent.id)
+                      }}
                       className={`relative transition-all duration-200 hover:scale-110 hover:z-10 hover:-translate-y-0.5 cursor-pointer bg-transparent border-none p-0 ${muted ? 'opacity-40' : ''}`}
                     >
                       <AgentAvatar seed={agent.avatarSeed} avatarUrl={agent.avatarUrl} name={agent.name} size={22} status={streamingAgents.has(agent.id) ? 'busy' : 'online'} />
@@ -393,6 +439,7 @@ export function ChatroomView() {
                   <TooltipContent side="bottom" sideOffset={6}>
                     <div className="flex items-center gap-1.5">
                       <span>{agent.name}</span>
+                      {streamingAgents.has(agent.id) && <span className="text-[9px] text-sky-300">Click to inspect</span>}
                       {badge && <span className={`text-[9px] font-600 px-1 py-0.5 rounded border ${badge.className}`}>{badge.label}</span>}
                       {muted && <span className="text-[9px] text-red-400">Muted</span>}
                     </div>
@@ -635,6 +682,7 @@ export function ChatroomView() {
           now={now}
           onFocusMessage={focusMessage}
           onNavigateToAgent={navigateToAgent}
+          onInspectAgentSession={handleInspectAgentSession}
         />
       </aside>
 
@@ -652,8 +700,94 @@ export function ChatroomView() {
             setTimeout(() => focusMessage(messageId), 50)
           }}
           onNavigateToAgent={navigateToAgent}
+          onInspectAgentSession={handleInspectAgentSession}
           compact
         />
+      </BottomSheet>
+      <BottomSheet
+        open={inspectSessionOpen}
+        onClose={() => {
+          setInspectSessionOpen(false)
+          setInspectError(null)
+        }}
+        title={inspectedAgent ? `${inspectedAgent.name} session` : 'Agent session'}
+        description={inspectedSessionId ? `Inspecting ${inspectedSessionId}` : 'Inspecting active chatroom member session'}
+      >
+        {inspectLoading ? (
+          <div className="rounded-[12px] border border-white/[0.06] bg-white/[0.02] px-4 py-6 text-[13px] text-text-3">
+            Loading session activity…
+          </div>
+        ) : inspectError ? (
+          <div className="rounded-[12px] border border-red-500/20 bg-red-500/10 px-4 py-3 text-[13px] text-red-200">
+            {inspectError}
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="grid grid-cols-3 gap-2">
+              <div className="rounded-[10px] border border-white/[0.06] bg-white/[0.02] px-3 py-2.5">
+                <div className="text-[16px] font-display font-700 text-text">{inspectedMessages.length}</div>
+                <div className="mt-0.5 text-[10px] uppercase tracking-[0.08em] text-text-3/50">Messages</div>
+              </div>
+              <div className="rounded-[10px] border border-white/[0.06] bg-white/[0.02] px-3 py-2.5">
+                <div className="text-[16px] font-display font-700 text-sky-300">{inspectedExecLogs.length}</div>
+                <div className="mt-0.5 text-[10px] uppercase tracking-[0.08em] text-text-3/50">Events</div>
+              </div>
+              <div className="rounded-[10px] border border-white/[0.06] bg-white/[0.02] px-3 py-2.5">
+                <div className="text-[12px] font-mono text-text-2 truncate" title={inspectedSessionId || undefined}>
+                  {inspectedSessionId || '—'}
+                </div>
+                <div className="mt-0.5 text-[10px] uppercase tracking-[0.08em] text-text-3/50">Session ID</div>
+              </div>
+            </div>
+
+            <section>
+              <h4 className="mb-2 text-[12px] font-700 uppercase tracking-[0.08em] text-text-3/60">Recent Messages</h4>
+              <div className="max-h-[220px] space-y-2 overflow-y-auto rounded-[12px] border border-white/[0.06] bg-white/[0.02] p-3">
+                {inspectedMessages.length === 0 ? (
+                  <p className="text-[12px] text-text-3">No messages yet for this session.</p>
+                ) : (
+                  inspectedMessages.slice(-12).map((message, index) => (
+                    <div key={`${message.time}-${message.role}-${index}`} className="rounded-[10px] border border-white/[0.05] bg-black/20 px-3 py-2">
+                      <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.08em] text-text-3/60">
+                        <span>{message.role}</span>
+                        <span>·</span>
+                        <span>{new Date(message.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+                      </div>
+                      <p className="mt-1 text-[12px] leading-[1.5] text-text-2 whitespace-pre-wrap break-words">
+                        {message.text || '(empty)'}
+                      </p>
+                    </div>
+                  ))
+                )}
+              </div>
+            </section>
+
+            <section>
+              <h4 className="mb-2 text-[12px] font-700 uppercase tracking-[0.08em] text-text-3/60">Execution Log</h4>
+              <div className="max-h-[220px] space-y-2 overflow-y-auto rounded-[12px] border border-white/[0.06] bg-white/[0.02] p-3">
+                {inspectedExecLogs.length === 0 ? (
+                  <p className="text-[12px] text-text-3">No execution log entries yet.</p>
+                ) : (
+                  inspectedExecLogs
+                    .slice()
+                    .sort((a, b) => b.ts - a.ts)
+                    .map((entry) => (
+                      <div key={entry.id} className="rounded-[10px] border border-white/[0.05] bg-black/20 px-3 py-2">
+                        <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.08em] text-text-3/60">
+                          <span>{entry.category}</span>
+                          <span>·</span>
+                          <span>{new Date(entry.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+                        </div>
+                        <p className="mt-1 text-[12px] leading-[1.5] text-text-2 whitespace-pre-wrap break-words">
+                          {entry.summary}
+                        </p>
+                      </div>
+                    ))
+                )}
+              </div>
+            </section>
+          </div>
+        )}
       </BottomSheet>
       <StructuredSessionLauncher
         open={structuredSessionOpen}
@@ -721,6 +855,7 @@ function RoomDetailsPanel({
   now,
   onFocusMessage,
   onNavigateToAgent,
+  onInspectAgentSession,
   compact = false,
 }: {
   chatroom: Chatroom
@@ -732,6 +867,7 @@ function RoomDetailsPanel({
   now: number | null
   onFocusMessage: (messageId: string) => void
   onNavigateToAgent: (agentId: string) => void
+  onInspectAgentSession: (agent: Agent) => Promise<void>
   compact?: boolean
 }) {
   return (
@@ -771,7 +907,13 @@ function RoomDetailsPanel({
               return (
                 <button
                   key={agent.id}
-                  onClick={() => onNavigateToAgent(agent.id)}
+                  onClick={() => {
+                    if (streamingAgents.has(agent.id)) {
+                      void onInspectAgentSession(agent)
+                      return
+                    }
+                    onNavigateToAgent(agent.id)
+                  }}
                   className="w-full rounded-[12px] border border-white/[0.06] bg-white/[0.02] px-3 py-2.5 text-left hover:bg-white/[0.05] transition-all cursor-pointer"
                   style={{ fontFamily: 'inherit' }}
                 >

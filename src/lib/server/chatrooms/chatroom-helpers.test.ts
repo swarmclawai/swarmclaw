@@ -10,10 +10,12 @@ import {
   buildHistoryForAgent,
   buildSyntheticSession,
   resolveChatroomWorkspaceDir,
+  resolveSyntheticSessionId,
   resolveAgentApiEndpoint,
   resolveReplyTargetAgentId,
   buildAgentSystemPromptForChatroom,
 } from '@/lib/server/chatrooms/chatroom-helpers'
+import { resolveChatroomSyntheticSessionId } from '@/lib/chatroom-sessions'
 
 function makeAgents(): Record<string, Agent> {
   const now = Date.now()
@@ -232,6 +234,11 @@ describe('chatroom-helpers', () => {
     const cwd = buildSyntheticSession(makeAgents().default, 'room-safe').cwd
     assert.equal(cwd, resolveChatroomWorkspaceDir('room-safe'))
     assert.match(cwd, /chatrooms[\/\\]room-safe$/)
+  })
+
+  it('uses a stable synthetic session id convention shared with the UI', () => {
+    assert.equal(resolveChatroomSyntheticSessionId('room-1', 'agent-1'), 'chatroom-room-1-agent-1')
+    assert.equal(resolveSyntheticSessionId('room-1', 'agent-1'), 'chatroom-room-1-agent-1')
   })
 
   it('matches multi-word agent name over shorter prefix', () => {
