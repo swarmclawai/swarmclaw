@@ -60,7 +60,9 @@ export function streamOpenCodeCliChat({ session, message, imagePath, systemPromp
   const proc = spawn(binary, args, {
     cwd,
     env,
-    stdio: ['pipe', 'pipe', 'pipe'],
+    // stdin must be 'ignore' (not 'pipe'): OpenCode CLI hangs forever waiting on stdin
+    // if it's a connected pipe that's never closed, even when the prompt is passed via argv.
+    stdio: ['ignore', 'pipe', 'pipe'],
     timeout: processTimeoutMs,
   })
 
