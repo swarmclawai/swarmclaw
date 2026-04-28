@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/swarmclawai-swarmclaw-badge.png)](https://mseep.ai/app/swarmclawai-swarmclaw)
+
 # SwarmClaw
 
 [![CI](https://github.com/swarmclawai/swarmclaw/actions/workflows/ci.yml/badge.svg)](https://github.com/swarmclawai/swarmclaw/actions/workflows/ci.yml)
