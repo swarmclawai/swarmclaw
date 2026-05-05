@@ -16,11 +16,11 @@ export async function POST(req: Request) {
   }
 
   try {
-    const result = importConfig(parsed.data as PortableManifest)
+    const result = importConfig(parsed.data as unknown as PortableManifest)
     return NextResponse.json(result)
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to import manifest'
-    if (/^Unsupported format version /i.test(message)) {
+    if (message.startsWith('Unsupported format version ')) {
       return NextResponse.json({ error: message }, { status: 400 })
     }
     return NextResponse.json({ error: message }, { status: 500 })

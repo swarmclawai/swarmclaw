@@ -399,6 +399,16 @@ Operational docs: https://swarmclaw.ai/docs/observability
 
 ## Releases
 
+### v1.9.5 Highlights
+
+Bundled portability release: project-scoped workspace bundles, safer v2 imports, and preserved internal relationships for reusable teams.
+
+- **Project bundle export.** `/api/portability/export?projectId=...` now emits a scoped workspace template with the selected project, active agents, pinned skills, schedules, chatrooms, connectors, MCP servers, and goals.
+- **Downloadable project templates.** Project exports include a `scope` block and use readable `swarmclaw-project-...json` filenames for portable team handoff.
+- **v2 import preservation.** The import route now validates and preserves v2 resources instead of dropping connectors, chatrooms, MCP servers, projects, goals, extensions, or scope metadata.
+- **Reference remapping.** Imports now remap project, skill, MCP server, schedule, chatroom, connector, and goal relationships so restored bundles remain internally linked.
+- **Credential-safe bundles.** Connector credentials, MCP env values, and sensitive config keys stay scrubbed while non-secret setup hints are retained.
+
 ### v1.9.4 Highlights
 
 Bundled runtime-environment release: gateway execution visibility, task context handoff, and operator triage in one release cycle.

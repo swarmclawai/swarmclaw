@@ -54,37 +54,7 @@ export function importConfig(manifest: PortableManifest): ImportResult {
     idMap,
   }
 
-  // --- Skills first (agents may reference them) ---
-  const existingSkills = loadSkills()
-  const existingSkillNames = new Set(Object.values(existingSkills).map((s) => s.name))
-  for (const portable of manifest.skills) {
-    const name = deduplicateName(portable.name, existingSkillNames)
-    const id = genId()
-    idMap[portable.originalId] = id
-    existingSkillNames.add(name)
-    const skill: Skill = {
-      id,
-      name,
-      filename: `${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.md`,
-      content: portable.content,
-      description: portable.description,
-      tags: portable.tags,
-      scope: portable.scope || 'global',
-      author: portable.author,
-      version: portable.version,
-      primaryEnv: portable.primaryEnv,
-      capabilities: portable.capabilities,
-      toolNames: portable.toolNames,
-      frontmatter: portable.frontmatter,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    }
-    saveSkill(id, skill)
-    result.skills.created++
-    result.skills.names.push(name)
-  }
-
-  // --- Projects (agents and goals may reference them) ---
+  // --- Projects first (agents, skills, schedules, and goals may reference them) ---
   if (manifest.projects && manifest.projects.length) {
     const existingProjects = loadProjects() as Record<string, Project>
     const existingProjectNames = new Set(Object.values(existingProjects).map((p) => p.name))
@@ -118,73 +88,44 @@ export function importConfig(manifest: PortableManifest): ImportResult {
     saveProjects(existingProjects)
   }
 
-  // --- Agents ---
-  const existingAgents = loadAgents()
-  const existingAgentNames = new Set(Object.values(existingAgents).map((a) => a.name))
-  for (const portable of manifest.agents) {
-    const name = deduplicateName(portable.name, existingAgentNames)
+  // --- Skills (agents may reference them) ---
+  const existingSkills = loadSkills()
+  const existingSkillNames = new Set(Object.values(existingSkills).map((s) => s.name))
+  const pendingSkillAgentLinks: Array<{ skillId: string; originalAgentIds: string[] }> = []
+  for (const portable of manifest.skills) {
+    const name = deduplicateName(portable.name, existingSkillNames)
     const id = genId()
-    const now = Date.now()
     idMap[portable.originalId] = id
-    existingAgentNames.add(name)
-    const remappedSkillIds = (portable.skillIds || []).map((sid) => idMap[sid] || sid)
-    const remappedProjectId = portable.projectId && idMap[portable.projectId] ? idMap[portable.projectId] : portable.projectId
-    const agent: Agent = {
-      ...(portable as Omit<PortableAgent, 'originalId'>),
+    existingSkillNames.add(name)
+    const originalProjectId = portable.originalProjectId ?? (portable as { projectId?: string | null }).projectId ?? null
+    const skill: Skill = {
       id,
       name,
-      skillIds: remappedSkillIds,
-      projectId: remappedProjectId,
-      threadSessionId: null,
-      lastUsedAt: undefined,
-      totalCost: undefined,
-      trashedAt: undefined,
-      credentialId: null,
-      fallbackCredentialIds: [],
-      apiEndpoint: null,
-      createdAt: typeof portable.createdAt === 'number' ? portable.createdAt : now,
-      updatedAt: now,
-    }
-    existingAgents[id] = agent
-    result.agents.created++
-    result.agents.names.push(name)
-  }
-  saveAgents(existingAgents)
-
-  // --- Schedules (need agent ID mapping) ---
-  const existingSchedules = loadSchedules()
-  const existingScheduleNames = new Set(Object.values(existingSchedules).map((s) => s.name))
-  for (const portable of manifest.schedules) {
-    const newAgentId = idMap[portable.originalAgentId]
-    if (!newAgentId) { result.schedules.skipped++; continue }
-    const name = deduplicateName(portable.name, existingScheduleNames)
-    const id = genId()
-    idMap[portable.originalId] = id
-    existingScheduleNames.add(name)
-    const schedule: Schedule = {
-      id, name, agentId: newAgentId,
-      taskPrompt: portable.taskPrompt,
-      taskMode: portable.taskMode,
-      message: portable.message,
+      filename: `${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.md`,
+      content: portable.content,
+      projectId: originalProjectId ? idMap[originalProjectId] || originalProjectId : undefined,
       description: portable.description,
-      scheduleType: portable.scheduleType,
-      frequency: portable.frequency,
-      cron: portable.cron,
-      atTime: portable.atTime,
-      intervalMs: portable.intervalMs,
-      timezone: portable.timezone,
-      action: portable.action,
-      path: portable.path,
-      command: portable.command,
-      status: 'paused',
+      tags: portable.tags,
+      scope: portable.scope || 'global',
+      agentIds: portable.originalAgentIds ? [] : undefined,
+      author: portable.author,
+      version: portable.version,
+      primaryEnv: portable.primaryEnv,
+      capabilities: portable.capabilities,
+      toolNames: portable.toolNames,
+      frontmatter: portable.frontmatter,
       createdAt: Date.now(),
+      updatedAt: Date.now(),
     }
-    upsertSchedule(id, schedule)
-    result.schedules.created++
-    result.schedules.names.push(name)
+    saveSkill(id, skill)
+    if (portable.originalAgentIds?.length) {
+      pendingSkillAgentLinks.push({ skillId: id, originalAgentIds: portable.originalAgentIds })
+    }
+    result.skills.created++
+    result.skills.names.push(name)
   }
 
-  // --- MCP Servers ---
+  // --- MCP Servers (agents may reference them) ---
   if (manifest.mcpServers && manifest.mcpServers.length) {
     const existingMcp = loadMcpServers() as Record<string, McpServerConfig>
     const existingMcpNames = new Set(Object.values(existingMcp).map((s) => s.name))
@@ -218,42 +159,101 @@ export function importConfig(manifest: PortableManifest): ImportResult {
     saveMcpServers(existingMcp)
   }
 
-  // --- Connectors ---
-  if (manifest.connectors && manifest.connectors.length) {
-    const existingConnectors = loadConnectors()
-    const existingConnectorNames = new Set(Object.values(existingConnectors).map((c) => c.name))
-    for (const portable of manifest.connectors) {
-      const name = deduplicateName(portable.name, existingConnectorNames)
-      const id = genId()
-      idMap[portable.originalId] = id
-      existingConnectorNames.add(name)
-      const now = Date.now()
-      const remappedAgentId = portable.originalAgentId && idMap[portable.originalAgentId]
-        ? idMap[portable.originalAgentId]
-        : null
-      const remappedChatroomId = portable.originalChatroomId && idMap[portable.originalChatroomId]
-        ? idMap[portable.originalChatroomId]
-        : null
-      const connector: Connector = {
-        id, name,
-        platform: portable.platform,
-        agentId: remappedAgentId,
-        chatroomId: remappedChatroomId,
-        credentialId: null,
-        config: { ...portable.config },
-        isEnabled: false,
-        status: 'stopped',
-        lastError: null,
-        hasCredentials: false,
-        authenticated: false,
-        createdAt: now,
-        updatedAt: now,
-      }
-      upsertConnector(id, connector)
-      result.connectors.created++
-      result.connectors.names.push(name)
-      result.connectors.needsCredentials.push(name)
+  // --- Agents ---
+  const existingAgents = loadAgents()
+  const existingAgentNames = new Set(Object.values(existingAgents).map((a) => a.name))
+  const pendingAgentGoalLinks: Array<{ agentId: string; originalGoalId: string }> = []
+  for (const portable of manifest.agents) {
+    const name = deduplicateName(portable.name, existingAgentNames)
+    const id = genId()
+    const now = Date.now()
+    idMap[portable.originalId] = id
+    existingAgentNames.add(name)
+    const remappedSkillIds = (portable.skillIds || []).map((sid) => idMap[sid] || sid)
+    const remappedMcpServerIds = (portable.mcpServerIds || []).map((sid) => idMap[sid] || sid)
+    const remappedProjectId = portable.projectId && idMap[portable.projectId] ? idMap[portable.projectId] : portable.projectId
+    const originalGoalId = portable.goalId || null
+    const agent: Agent = {
+      ...(portable as Omit<PortableAgent, 'originalId'>),
+      id,
+      name,
+      skillIds: remappedSkillIds,
+      mcpServerIds: remappedMcpServerIds,
+      projectId: remappedProjectId,
+      goalId: originalGoalId && idMap[originalGoalId] ? idMap[originalGoalId] : originalGoalId,
+      threadSessionId: null,
+      lastUsedAt: undefined,
+      totalCost: undefined,
+      trashedAt: undefined,
+      credentialId: null,
+      fallbackCredentialIds: [],
+      apiEndpoint: null,
+      createdAt: typeof portable.createdAt === 'number' ? portable.createdAt : now,
+      updatedAt: now,
     }
+    existingAgents[id] = agent
+    result.agents.created++
+    result.agents.names.push(name)
+    if (originalGoalId) pendingAgentGoalLinks.push({ agentId: id, originalGoalId })
+  }
+  saveAgents(existingAgents)
+
+  if (pendingSkillAgentLinks.length) {
+    const skills = loadSkills()
+    for (const pending of pendingSkillAgentLinks) {
+      const skill = skills[pending.skillId]
+      if (!skill) continue
+      skill.agentIds = pending.originalAgentIds
+        .map((agentId) => idMap[agentId])
+        .filter((agentId): agentId is string => Boolean(agentId))
+      skill.updatedAt = Date.now()
+      saveSkill(pending.skillId, skill)
+    }
+  }
+
+  // --- Schedules (need agent ID mapping) ---
+  const existingSchedules = loadSchedules()
+  const existingScheduleNames = new Set(Object.values(existingSchedules).map((s) => s.name))
+  for (const portable of manifest.schedules) {
+    const newAgentId = idMap[portable.originalAgentId]
+    if (!newAgentId) { result.schedules.skipped++; continue }
+    const name = deduplicateName(portable.name, existingScheduleNames)
+    const id = genId()
+    idMap[portable.originalId] = id
+    existingScheduleNames.add(name)
+    const schedule: Schedule = {
+      id, name, agentId: newAgentId,
+      projectId: portable.projectId ? idMap[portable.projectId] || portable.projectId : undefined,
+      taskPrompt: portable.taskPrompt,
+      taskMode: portable.taskMode,
+      message: portable.message,
+      protocolTemplateId: portable.protocolTemplateId,
+      protocolParticipantAgentIds: (portable.protocolParticipantAgentIds || [])
+        .map((agentId) => idMap[agentId])
+        .filter((agentId): agentId is string => Boolean(agentId)),
+      protocolFacilitatorAgentId: portable.protocolFacilitatorAgentId
+        ? idMap[portable.protocolFacilitatorAgentId] || null
+        : null,
+      protocolObserverAgentIds: (portable.protocolObserverAgentIds || [])
+        .map((agentId) => idMap[agentId])
+        .filter((agentId): agentId is string => Boolean(agentId)),
+      protocolConfig: portable.protocolConfig,
+      description: portable.description,
+      scheduleType: portable.scheduleType,
+      frequency: portable.frequency,
+      cron: portable.cron,
+      atTime: portable.atTime,
+      intervalMs: portable.intervalMs,
+      timezone: portable.timezone,
+      action: portable.action,
+      path: portable.path,
+      command: portable.command,
+      status: 'paused',
+      createdAt: Date.now(),
+    }
+    upsertSchedule(id, schedule)
+    result.schedules.created++
+    result.schedules.names.push(name)
   }
 
   // --- Chatrooms ---
@@ -297,6 +297,44 @@ export function importConfig(manifest: PortableManifest): ImportResult {
     }
   }
 
+  // --- Connectors (after chatrooms so room-bound connectors can remap) ---
+  if (manifest.connectors && manifest.connectors.length) {
+    const existingConnectors = loadConnectors()
+    const existingConnectorNames = new Set(Object.values(existingConnectors).map((c) => c.name))
+    for (const portable of manifest.connectors) {
+      const name = deduplicateName(portable.name, existingConnectorNames)
+      const id = genId()
+      idMap[portable.originalId] = id
+      existingConnectorNames.add(name)
+      const now = Date.now()
+      const remappedAgentId = portable.originalAgentId && idMap[portable.originalAgentId]
+        ? idMap[portable.originalAgentId]
+        : null
+      const remappedChatroomId = portable.originalChatroomId && idMap[portable.originalChatroomId]
+        ? idMap[portable.originalChatroomId]
+        : null
+      const connector: Connector = {
+        id, name,
+        platform: portable.platform,
+        agentId: remappedAgentId,
+        chatroomId: remappedChatroomId,
+        credentialId: null,
+        config: { ...portable.config },
+        isEnabled: false,
+        status: 'stopped',
+        lastError: null,
+        hasCredentials: false,
+        authenticated: false,
+        createdAt: now,
+        updatedAt: now,
+      }
+      upsertConnector(id, connector)
+      result.connectors.created++
+      result.connectors.names.push(name)
+      result.connectors.needsCredentials.push(name)
+    }
+  }
+
   // --- Goals (after projects + agents so refs can be remapped) ---
   if (manifest.goals && manifest.goals.length) {
     // Two-pass to handle parent goal refs.
@@ -334,6 +372,18 @@ export function importConfig(manifest: PortableManifest): ImportResult {
       }
       saveGoal(id, goal)
     }
+  }
+
+  if (pendingAgentGoalLinks.length) {
+    const agents = loadAgents()
+    for (const pending of pendingAgentGoalLinks) {
+      const remappedGoalId = idMap[pending.originalGoalId]
+      const agent = agents[pending.agentId]
+      if (!agent || !remappedGoalId) continue
+      agent.goalId = remappedGoalId
+      agent.updatedAt = Date.now()
+    }
+    saveAgents(agents)
   }
 
   logActivity({

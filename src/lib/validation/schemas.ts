@@ -619,6 +619,8 @@ const PortableSkillSchema = z.object({
   originalId: z.string().min(1),
   name: z.string().min(1),
   content: z.string(),
+  originalProjectId: z.string().nullable().optional(),
+  originalAgentIds: z.array(z.string()).optional(),
 }).passthrough()
 
 const PortableScheduleSchema = z.object({
@@ -627,13 +629,64 @@ const PortableScheduleSchema = z.object({
   name: z.string().min(1),
 }).passthrough()
 
+const PortableConnectorSchema = z.object({
+  originalId: z.string().min(1),
+  name: z.string().min(1),
+  platform: z.string().min(1),
+}).passthrough()
+
+const PortableChatroomSchema = z.object({
+  originalId: z.string().min(1),
+  originalAgentIds: z.array(z.string()),
+  name: z.string().min(1),
+}).passthrough()
+
+const PortableMcpServerSchema = z.object({
+  originalId: z.string().min(1),
+  name: z.string().min(1),
+  transport: z.string().min(1),
+}).passthrough()
+
+const PortableProjectSchema = z.object({
+  originalId: z.string().min(1),
+  name: z.string().min(1),
+}).passthrough()
+
+const PortableGoalSchema = z.object({
+  originalId: z.string().min(1),
+  title: z.string().min(1),
+  level: z.string().min(1),
+  objective: z.string().min(1),
+  status: z.string().min(1),
+}).passthrough()
+
+const PortableExtensionRefSchema = z.object({
+  name: z.string().min(1),
+}).passthrough()
+
+const PortableManifestScopeSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('all') }).passthrough(),
+  z.object({
+    kind: z.literal('project'),
+    originalProjectId: z.string().min(1),
+    projectName: z.string().min(1),
+  }).passthrough(),
+])
+
 export const PortableManifestSchema = z.object({
   formatVersion: z.number().int().nonnegative(),
   exportedAt: z.string().optional(),
+  scope: PortableManifestScopeSchema.optional(),
   agents: z.array(PortableAgentSchema),
   skills: z.array(PortableSkillSchema),
   schedules: z.array(PortableScheduleSchema),
-})
+  connectors: z.array(PortableConnectorSchema).optional(),
+  chatrooms: z.array(PortableChatroomSchema).optional(),
+  mcpServers: z.array(PortableMcpServerSchema).optional(),
+  projects: z.array(PortableProjectSchema).optional(),
+  goals: z.array(PortableGoalSchema).optional(),
+  extensions: z.array(PortableExtensionRefSchema).optional(),
+}).passthrough()
 
 /** Format ZodError into a 400-friendly payload */
 export function formatZodError(err: z.ZodError) {
