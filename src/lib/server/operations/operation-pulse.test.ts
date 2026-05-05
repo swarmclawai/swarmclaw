@@ -161,4 +161,33 @@ describe('operation pulse', () => {
     assert.ok((pulse.actions[0]?.summary || '').includes('pending OpenClaw pairing'))
     assert.equal(pulse.actions[0]?.href, '/providers')
   })
+
+  it('raises gateway attention when no execution environments are available', () => {
+    const pulse = buildOperationPulse({
+      range: '24h',
+      now,
+      missions: [],
+      runs: [],
+      approvals: [],
+      connectors: [],
+      gateways: [
+        gateway({
+          status: 'healthy',
+          stats: {
+            nodeCount: 1,
+            connectedNodeCount: 1,
+            environmentCount: 2,
+            availableEnvironmentCount: 0,
+            lastTopologyCheckedAt: now - 1000,
+          },
+        }),
+      ],
+    })
+
+    assert.equal(pulse.kpis.gatewayAttention, 1)
+    assert.equal(pulse.actions[0]?.kind, 'gateway')
+    assert.equal(pulse.actions[0]?.severity, 'high')
+    assert.ok((pulse.actions[0]?.summary || '').includes('no available OpenClaw execution environments'))
+    assert.equal(pulse.actions[0]?.evidence.includes('0/2 environments'), true)
+  })
 })

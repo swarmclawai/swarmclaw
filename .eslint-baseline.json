@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "generatedAt": "2026-04-17T20:05:54.248Z",
-  "totalIssues": 355,
-  "uniqueIssues": 121,
+  "generatedAt": "2026-05-05T14:53:22.998Z",
+  "totalIssues": 352,
+  "uniqueIssues": 119,
   "issues": [
     {
       "filePath": "bin/worker-cmd.js",
@@ -299,13 +299,6 @@
       "count": 1
     },
     {
-      "filePath": "src/components/tasks/task-sheet.tsx",
-      "ruleId": "react-hooks/set-state-in-effect",
-      "severity": 2,
-      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).",
-      "count": 2
-    },
-    {
       "filePath": "src/hooks/use-speech-recognition.ts",
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
@@ -366,13 +359,6 @@
       "ruleId": "@typescript-eslint/no-unused-vars",
       "severity": 1,
       "message": "'_params' is defined but never used.",
-      "count": 1
-    },
-    {
-      "filePath": "src/lib/server/chat-execution/iteration-event-handler.ts",
-      "ruleId": "prefer-const",
-      "severity": 2,
-      "message": "'reachedExecutionBoundary' is never reassigned. Use 'const' instead.",
       "count": 1
     },
     {

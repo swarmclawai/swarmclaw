@@ -81,9 +81,13 @@ test('PUT /api/tasks/:id provisions an execution workspace and preview links', a
   assert.equal(response.status, 200)
   const body = await response.json() as BoardTask
   assert.equal(body.executionWorkspace?.sourceCwd, '/source/repo')
+  assert.equal(body.executionWorkspace?.context?.taskId, 'task-route-workspace')
+  assert.equal(body.executionWorkspace?.envHints?.some((hint) => hint.key === 'WORKSPACE_CWD'), true)
   assert.equal(body.previewLinks?.[0]?.url, 'http://127.0.0.1:3456')
   assert.equal(body.runtimeServices?.[0]?.name, 'Next dev')
   assert.equal(fs.existsSync(body.executionWorkspace?.path || ''), true)
+  assert.equal(fs.existsSync(body.executionWorkspace?.contextPath || ''), true)
+  assert.equal(fs.existsSync(body.executionWorkspace?.envPath || ''), true)
 })
 
 test('GET /api/tasks returns computed blocked liveness without persisting a task patch', async () => {

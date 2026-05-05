@@ -273,6 +273,8 @@ const COMMAND_GROUPS = [
       cmd('delete', 'DELETE', '/gateways/:id', 'Delete a gateway profile'),
       cmd('health', 'GET', '/gateways/:id/health', 'Run a gateway health check'),
       cmd('topology', 'GET', '/gateways/:id/topology', 'Refresh and return one gateway topology snapshot'),
+      cmd('environments', 'GET', '/gateways/:id/environments', 'List OpenClaw gateway execution environments'),
+      cmd('environment-status', 'GET', '/gateways/:id/environments/:environmentId', 'Get one OpenClaw gateway execution environment status'),
       cmd('fleet', 'GET', '/gateways/fleet', 'Refresh and return fleet-wide gateway topology'),
     ],
   },

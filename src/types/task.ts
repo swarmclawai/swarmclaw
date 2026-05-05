@@ -43,6 +43,32 @@ export interface TaskRuntimeService {
   updatedAt: number
 }
 
+export interface TaskRuntimeEnvHint {
+  key: string
+  value: string
+  description?: string
+}
+
+export interface TaskRuntimeContextPacket {
+  taskId: string
+  title: string
+  description?: string
+  status: BoardTaskStatus
+  agentId: string
+  projectId?: string | null
+  workspacePath: string
+  sourceCwd?: string | null
+  mode: TaskExecutionWorkspaceMode
+  preparedAt: number
+  generatedAt: number
+  previewLinks: TaskPreviewLink[]
+  runtimeServices: TaskRuntimeService[]
+  blockedBy?: string[]
+  blocks?: string[]
+  tags?: string[]
+  upstreamResults?: BoardTask['upstreamResults']
+}
+
 export interface TaskExecutionWorkspace {
   path: string
   mode: TaskExecutionWorkspaceMode
@@ -51,6 +77,10 @@ export interface TaskExecutionWorkspace {
   preparedAt: number
   preparedBy?: string | null
   readmePath?: string | null
+  contextPath?: string | null
+  envPath?: string | null
+  envHints?: TaskRuntimeEnvHint[]
+  context?: TaskRuntimeContextPacket
   previewLinks: TaskPreviewLink[]
   runtimeServices: TaskRuntimeService[]
 }

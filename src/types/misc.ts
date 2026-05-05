@@ -672,6 +672,8 @@ export interface OpenClawGatewayStats {
   externalRuntimeCount?: number
   sessionCount?: number
   presenceCount?: number
+  environmentCount?: number
+  availableEnvironmentCount?: number
   lastTopologyCheckedAt?: number
   lastTopologyErrorCount?: number
   lastTopologyError?: string | null
@@ -803,7 +805,19 @@ export interface OpenClawGatewayPresenceEntry {
   updatedAt?: number | null
 }
 
+export type OpenClawEnvironmentStatus = 'available' | 'unavailable' | 'starting' | 'stopping' | 'error'
+
+export interface OpenClawEnvironmentSummary {
+  id: string
+  type: string
+  label?: string | null
+  status: OpenClawEnvironmentStatus
+  capabilities?: string[]
+}
+
 export interface OpenClawGatewayTopologyStats extends OpenClawGatewayStats {
+  environmentCount: number
+  availableEnvironmentCount: number
   pendingPairingCount: number
   hasErrors: boolean
 }
@@ -819,6 +833,23 @@ export interface OpenClawGatewayTopology {
   pairedDevices: OpenClawPairedDevice[]
   sessions: OpenClawGatewaySession[]
   presence: OpenClawGatewayPresenceEntry[]
+  environments: OpenClawEnvironmentSummary[]
+  errors: OpenClawGatewayRpcError[]
+}
+
+export interface OpenClawGatewayEnvironmentList {
+  profile: GatewayProfile
+  connected: boolean
+  refreshedAt: number
+  environments: OpenClawEnvironmentSummary[]
+  errors: OpenClawGatewayRpcError[]
+}
+
+export interface OpenClawGatewayEnvironmentStatusSnapshot {
+  profile: GatewayProfile
+  connected: boolean
+  refreshedAt: number
+  environment: OpenClawEnvironmentSummary | null
   errors: OpenClawGatewayRpcError[]
 }
 

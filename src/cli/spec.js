@@ -221,6 +221,8 @@ const COMMAND_GROUPS = {
       delete: { description: 'Delete a gateway profile', method: 'DELETE', path: '/gateways/:id', params: ['id'] },
       health: { description: 'Run a gateway health check', method: 'GET', path: '/gateways/:id/health', params: ['id'] },
       topology: { description: 'Refresh and return one gateway topology snapshot', method: 'GET', path: '/gateways/:id/topology', params: ['id'] },
+      environments: { description: 'List OpenClaw gateway execution environments', method: 'GET', path: '/gateways/:id/environments', params: ['id'] },
+      'environment-status': { description: 'Get one OpenClaw gateway execution environment status', method: 'GET', path: '/gateways/:id/environments/:environmentId', params: ['id', 'environmentId'] },
       fleet: { description: 'Refresh and return fleet-wide gateway topology', method: 'GET', path: '/gateways/fleet' },
     },
   },

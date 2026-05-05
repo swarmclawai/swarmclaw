@@ -6,8 +6,11 @@ import {
 } from './gateway-profile-service'
 import { ensureGatewayConnected } from '@/lib/server/openclaw/gateway'
 import type {
+  OpenClawEnvironmentSummary,
   GatewayProfile,
   OpenClawDevicePairRequest,
+  OpenClawGatewayEnvironmentList,
+  OpenClawGatewayEnvironmentStatusSnapshot,
   OpenClawGatewayFleetTopology,
   OpenClawGatewayPresenceEntry,
   OpenClawGatewayRpcError,
@@ -26,6 +29,7 @@ type GatewayRpcClient = {
 
 interface GatewayTopologyDeps {
   ensureGatewayConnected?: typeof ensureGatewayConnected
+  getGatewayProfile?: typeof getGatewayProfileById
   listGatewayProfiles?: typeof listOpenClawGatewayProfiles
   now?: () => number
   persistStats?: typeof updateGatewayProfile
@@ -176,14 +180,72 @@ function normalizePresence(value: unknown): OpenClawGatewayPresenceEntry | null 
   }
 }
 
+function uniqueStrings(...items: Array<readonly string[] | undefined>): string[] {
+  const values = new Set<string>()
+  for (const item of items) {
+    for (const value of item || []) {
+      const trimmed = asString(value)
+      if (trimmed) values.add(trimmed)
+    }
+  }
+  return [...values].sort((left, right) => left.localeCompare(right))
+}
+
+function normalizeEnvironmentStatus(value: unknown): OpenClawEnvironmentSummary['status'] {
+  return value === 'available'
+    || value === 'starting'
+    || value === 'stopping'
+    || value === 'error'
+    ? value
+    : 'unavailable'
+}
+
+function normalizeEnvironment(value: unknown): OpenClawEnvironmentSummary | null {
+  const record = asObject(value)
+  const id = asString(record?.id) || asString(record?.environmentId)
+  if (!record || !id) return null
+  const capabilities = Array.isArray(record.capabilities)
+    ? uniqueStrings(record.capabilities.map(asString).filter(Boolean) as string[])
+    : undefined
+  return {
+    id,
+    type: asString(record.type) || 'local',
+    label: asString(record.label) || asString(record.name),
+    status: normalizeEnvironmentStatus(record.status),
+    capabilities: capabilities && capabilities.length > 0 ? capabilities : undefined,
+  }
+}
+
+function deriveEnvironments(profile: GatewayProfile, nodes: OpenClawNode[], connected: boolean): OpenClawEnvironmentSummary[] {
+  const gatewayEnvironment: OpenClawEnvironmentSummary = {
+    id: 'gateway',
+    type: 'local',
+    label: profile.name || 'Gateway local',
+    status: connected ? 'available' : 'unavailable',
+    capabilities: ['agent.run', 'sessions', 'tools', 'workspace'],
+  }
+  const nodeEnvironments = nodes.map((node) => {
+    const capabilities = uniqueStrings(node.caps, node.commands)
+    return {
+      id: `node:${node.nodeId}`,
+      type: 'node',
+      label: node.displayName || node.nodeId,
+      status: node.connected === true ? 'available' : 'unavailable',
+      capabilities: capabilities.length > 0 ? capabilities : undefined,
+    } satisfies OpenClawEnvironmentSummary
+  })
+  return [gatewayEnvironment, ...nodeEnvironments]
+}
+
 async function safeRpc<T>(
   gateway: GatewayRpcClient,
   method: string,
   errors: OpenClawGatewayRpcError[],
   normalize: (value: unknown) => T,
+  params: Record<string, unknown> = {},
 ): Promise<T> {
   try {
-    return normalize(await gateway.rpc(method, {}))
+    return normalize(await gateway.rpc(method, params))
   } catch (err: unknown) {
     errors.push({ method, message: errorMessage(err) })
     return normalize(null)
@@ -197,6 +259,7 @@ function topologyStats(params: {
   pairedDevices: OpenClawPairedDevice[]
   sessions: OpenClawGatewaySession[]
   presence: OpenClawGatewayPresenceEntry[]
+  environments: OpenClawEnvironmentSummary[]
   errors: OpenClawGatewayRpcError[]
   refreshedAt: number
 }): OpenClawGatewayTopologyStats {
@@ -208,6 +271,8 @@ function topologyStats(params: {
     pendingDevicePairings: params.devicePairings.length,
     sessionCount: params.sessions.length,
     presenceCount: params.presence.length,
+    environmentCount: params.environments.length,
+    availableEnvironmentCount: params.environments.filter((environment) => environment.status === 'available').length,
     pendingPairingCount: params.nodePairings.length + params.devicePairings.length,
     hasErrors: params.errors.length > 0,
     lastTopologyCheckedAt: params.refreshedAt,
@@ -235,6 +300,7 @@ export async function buildOpenClawGatewayTopology(
       pairedDevices: [],
       sessions: [],
       presence: [],
+      environments: [],
       errors,
       refreshedAt,
     })
@@ -249,11 +315,12 @@ export async function buildOpenClawGatewayTopology(
       pairedDevices: [],
       sessions: [],
       presence: [],
+      environments: [],
       errors,
     }
   }
 
-  const [nodes, nodePairingsRaw, devicePairingsRaw, sessions, presence] = await Promise.all([
+  const [nodes, nodePairingsRaw, devicePairingsRaw, sessions, presence, rpcEnvironments] = await Promise.all([
     safeRpc(gateway, 'node.list', errors, (value) =>
       extractArray(value, ['nodes']).map(normalizeNode).filter(Boolean) as OpenClawNode[],
     ),
@@ -264,6 +331,9 @@ export async function buildOpenClawGatewayTopology(
     ),
     safeRpc(gateway, 'system-presence', errors, (value) =>
       extractArray(value, ['presence']).map(normalizePresence).filter(Boolean) as OpenClawGatewayPresenceEntry[],
+    ),
+    safeRpc(gateway, 'environments.list', errors, (value) =>
+      extractArray(value, ['environments']).map(normalizeEnvironment).filter(Boolean) as OpenClawEnvironmentSummary[],
     ),
   ])
 
@@ -277,6 +347,9 @@ export async function buildOpenClawGatewayTopology(
   const pairedDevices = extractArray(devicePairingsRecord.paired)
     .map(normalizePairedDevice)
     .filter(Boolean) as OpenClawPairedDevice[]
+  const environments = rpcEnvironments.length > 0
+    ? rpcEnvironments
+    : deriveEnvironments(profile, nodes, gateway.connected)
   const stats = topologyStats({
     nodes,
     nodePairings,
@@ -284,6 +357,7 @@ export async function buildOpenClawGatewayTopology(
     pairedDevices,
     sessions,
     presence,
+    environments,
     errors,
     refreshedAt,
   })
@@ -301,6 +375,54 @@ export async function buildOpenClawGatewayTopology(
     pairedDevices,
     sessions,
     presence,
+    environments,
+    errors,
+  }
+}
+
+export async function listOpenClawGatewayEnvironments(
+  id: string,
+  deps: GatewayTopologyDeps = {},
+): Promise<OpenClawGatewayEnvironmentList | null> {
+  const topology = await getOpenClawGatewayTopology(id, deps)
+  if (!topology) return null
+  return {
+    profile: topology.profile,
+    connected: topology.connected,
+    refreshedAt: topology.refreshedAt,
+    environments: topology.environments,
+    errors: topology.errors,
+  }
+}
+
+export async function getOpenClawGatewayEnvironmentStatus(
+  id: string,
+  environmentId: string,
+  deps: GatewayTopologyDeps = {},
+): Promise<OpenClawGatewayEnvironmentStatusSnapshot | null> {
+  const profile = (deps.getGatewayProfile ?? getGatewayProfileById)(id)
+  if (!profile) return null
+  const now = deps.now ?? (() => Date.now())
+  const refreshedAt = now()
+  const ensureConnected = deps.ensureGatewayConnected ?? ensureGatewayConnected
+  const errors: OpenClawGatewayRpcError[] = []
+  const gateway = await ensureConnected({ profileId: profile.id }) as GatewayRpcClient | null
+  if (!gateway) {
+    errors.push({ method: 'gateway.connect', message: 'OpenClaw gateway not connected' })
+    return { profile, connected: false, refreshedAt, environment: null, errors }
+  }
+  const environment = await safeRpc(
+    gateway,
+    'environments.status',
+    errors,
+    (value) => normalizeEnvironment(value),
+    { environmentId },
+  )
+  return {
+    profile,
+    connected: gateway.connected,
+    refreshedAt,
+    environment,
     errors,
   }
 }
@@ -311,6 +433,8 @@ function emptyTotals(generatedAt: number): OpenClawGatewayFleetTopology['totals'
     connectedGatewayCount: 0,
     nodeCount: 0,
     connectedNodeCount: 0,
+    environmentCount: 0,
+    availableEnvironmentCount: 0,
     pendingNodePairings: 0,
     pairedDeviceCount: 0,
     pendingDevicePairings: 0,
@@ -328,7 +452,7 @@ export async function getOpenClawGatewayTopology(
   id: string,
   deps: GatewayTopologyDeps = {},
 ): Promise<OpenClawGatewayTopology | null> {
-  const profile = getGatewayProfileById(id)
+  const profile = (deps.getGatewayProfile ?? getGatewayProfileById)(id)
   if (!profile) return null
   return buildOpenClawGatewayTopology(profile, deps)
 }
@@ -355,6 +479,8 @@ export async function getOpenClawGatewayFleetTopology(
     acc.pendingDevicePairings = (acc.pendingDevicePairings || 0) + (topology.stats.pendingDevicePairings || 0)
     acc.sessionCount = (acc.sessionCount || 0) + (topology.stats.sessionCount || 0)
     acc.presenceCount = (acc.presenceCount || 0) + (topology.stats.presenceCount || 0)
+    acc.environmentCount = (acc.environmentCount || 0) + (topology.stats.environmentCount || 0)
+    acc.availableEnvironmentCount = (acc.availableEnvironmentCount || 0) + (topology.stats.availableEnvironmentCount || 0)
     acc.pendingPairingCount += topology.stats.pendingPairingCount
     acc.hasErrors = acc.hasErrors || topology.stats.hasErrors
     acc.lastTopologyErrorCount = (acc.lastTopologyErrorCount || 0) + (topology.stats.lastTopologyErrorCount || 0)

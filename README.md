@@ -399,19 +399,29 @@ Operational docs: https://swarmclaw.ai/docs/observability
 
 ## Releases
 
+### v1.9.4 Highlights
+
+Bundled runtime-environment release: gateway execution visibility, task context handoff, and operator triage in one release cycle.
+
+- **OpenClaw environments.** Gateway topology now calls `environments.list`, stores available environment counts, exposes `/api/gateways/:id/environments`, and adds CLI commands for list/status checks.
+- **Provider dashboard visibility.** The Providers screen now shows fleet-wide and per-gateway execution environment availability alongside nodes, sessions, presence, and pairings.
+- **Task context packets.** Prepared task workspaces now write `context.json` with task, preview, runtime, blocker, tag, and upstream-result context for external workers.
+- **Runtime env handoff.** Workspaces now include `.env.swarmclaw` plus SwarmClaw, portable task/workspace, and `AGENT_HOME` env hints without embedding secrets.
+- **Operations Pulse triage.** Gateway actions now surface zero-available-environment states as high-priority operator work.
+
 ### v1.9.3 Highlights
 
-Bundled extension-orchestration release: Paperclip-style managed plugin resources, Hermes-style gateway/setup declarations, and safer local folder access in one release cycle.
+Bundled extension-orchestration release: managed plugin resources, gateway/setup declarations, and safer local folder access in one release cycle.
 
-- **Managed extension resources.** Extensions can now declare provisionable agents, schedules/routines, local folders, gateway platforms, and setup checks through `managedResources` or Paperclip-compatible top-level aliases.
+- **Managed extension resources.** Extensions can now declare provisionable agents, schedules/routines, local folders, gateway platforms, and setup checks through `managedResources` or top-level manifest aliases.
 - **Deterministic reconciliation.** `/api/extensions/managed-resources` can preview and reconcile extension-owned agents and routines with stable IDs and `managedByExtension` markers.
 - **Trusted local folders.** Extension-declared local folders support root-bounded inspection and recursive listing with traversal and symlink-escape protection.
 - **Operator UI.** The Extensions screen now shows managed-resource badges and a Managed tab with totals plus per-extension reconcile controls.
-- **Extension authoring spec.** `extension_creator` now documents managed resources, gateway declarations, setup checks, and Paperclip-compatible manifest aliases.
+- **Extension authoring spec.** `extension_creator` now documents managed resources, gateway declarations, setup checks, and manifest aliases.
 
 ### v1.9.2 Highlights
 
-Bundled competitor-parity release: Hermes-style reasoning hygiene, deterministic delegation routing, Mission Control task workflow polish, OpenClaw export hardening, and Paperclip-style timeout hygiene.
+Bundled runtime-polish release: reasoning hygiene, deterministic delegation routing, task workflow polish, OpenClaw export hardening, and timeout hygiene.
 
 - **Stateful reasoning tag scrubber.** String-streamed `<think>`, `<thinking>`, `<reasoning>`, `<thought>`, and `<REASONING_SCRATCHPAD>` blocks are removed across split deltas and routed into SwarmClaw's thinking stream instead of leaking into visible answers.
 - **Deterministic delegation profiles.** `manage_tasks` now accepts explicit `workType` and `requiredCapabilities` routing hints, returns a stable `routeKey`, and can auto-assign unowned work without a classifier call when the profile is explicit.
@@ -421,7 +431,7 @@ Bundled competitor-parity release: Hermes-style reasoning hygiene, deterministic
 
 ### v1.9.1 Highlights
 
-Task execution workspace release: the first Paperclip-style work-control slice for task-scoped workspaces, preview handoffs, and liveness evidence.
+Task execution workspace release: task-scoped workspaces, preview handoffs, and liveness evidence.
 
 - **Task-scoped execution workspaces.** Tasks can now provision a deterministic workspace under the SwarmClaw workspace root, preserving source cwd and project context while creating a task-local README for artifacts and handoffs.
 - **Preview and runtime metadata.** Tasks can carry preview links and runtime services, and the task board surfaces those links directly on task cards and sheets.

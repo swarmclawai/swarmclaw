@@ -87,6 +87,7 @@ function gatewayAttentionReason(gateway: GatewayProfile, now: number): {
   const evidence = [
     `status:${gateway.status}`,
     `${gateway.stats?.connectedNodeCount || 0}/${gateway.stats?.nodeCount || 0} nodes`,
+    `${gateway.stats?.availableEnvironmentCount || 0}/${gateway.stats?.environmentCount || 0} environments`,
   ]
 
   if (gateway.status === 'offline') {
@@ -110,6 +111,14 @@ function gatewayAttentionReason(gateway: GatewayProfile, now: number): {
       severity: 'medium',
       summary: `${gateway.name} topology refresh reported ${errorCount} error${errorCount === 1 ? '' : 's'}.`,
       evidence: [...evidence, gateway.stats?.lastTopologyError || 'topology error'].filter(Boolean),
+    }
+  }
+
+  if ((gateway.stats?.environmentCount || 0) > 0 && (gateway.stats?.availableEnvironmentCount || 0) === 0) {
+    return {
+      severity: 'high',
+      summary: `${gateway.name} has no available OpenClaw execution environments.`,
+      evidence,
     }
   }
 

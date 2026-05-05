@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
-import { buildOpenClawGatewayTopology, getOpenClawGatewayFleetTopology } from './gateway-topology'
+import {
+  buildOpenClawGatewayTopology,
+  getOpenClawGatewayEnvironmentStatus,
+  getOpenClawGatewayFleetTopology,
+} from './gateway-topology'
 import type { GatewayProfile, OpenClawGatewayStats } from '@/types'
 
 const now = 1_800_000_000_000
@@ -60,6 +64,25 @@ describe('OpenClaw gateway topology', () => {
         },
         'sessions.list': { sessions: [{ sessionId: 'session_1', title: 'Release room' }] },
         'system-presence': { presence: [{ deviceId: 'phone_1', mode: 'active' }] },
+        'environments.list': {
+          environments: [
+            {
+              id: 'gateway',
+              type: 'local',
+              label: 'Gateway local',
+              status: 'available',
+              capabilities: ['agent.run', 'sessions', 'tools', 'workspace'],
+            },
+            {
+              id: 'node:node_1',
+              type: 'node',
+              label: 'Mac Studio',
+              status: 'available',
+              capabilities: ['shell.exec'],
+            },
+            { id: 'node:node_2', type: 'node', label: 'Builder', status: 'unavailable' },
+          ],
+        },
       }) as never,
       persistStats: (id, input) => {
         assert.equal(id, 'gateway_1')
@@ -77,6 +100,10 @@ describe('OpenClaw gateway topology', () => {
     assert.equal(topology.stats.pairedDeviceCount, 1)
     assert.equal(topology.stats.sessionCount, 1)
     assert.equal(topology.stats.presenceCount, 1)
+    assert.equal(topology.stats.environmentCount, 3)
+    assert.equal(topology.stats.availableEnvironmentCount, 2)
+    assert.equal(topology.environments[0]?.id, 'gateway')
+    assert.equal(topology.environments[1]?.capabilities?.[0], 'shell.exec')
     assert.equal(topology.stats.pendingPairingCount, 2)
     assert.equal(topology.stats.hasErrors, false)
     assert.equal(topology.stats.lastTopologyCheckedAt, now)
@@ -92,15 +119,17 @@ describe('OpenClaw gateway topology', () => {
         'device.pair.list': { pending: [], paired: [] },
         'sessions.list': new Error('sessions unavailable'),
         'system-presence': new Error('presence unavailable'),
+        'environments.list': new Error('environments unavailable'),
       }) as never,
       persistStats: (id, input) => ({ ...profile({ id }), stats: input.stats as OpenClawGatewayStats }),
     })
 
     assert.equal(topology.nodes.length, 1)
     assert.equal(topology.sessions.length, 0)
-    assert.deepEqual(topology.errors.map((error) => error.method), ['sessions.list', 'system-presence'])
+    assert.equal(topology.environments.length, 2)
+    assert.deepEqual(topology.errors.map((error) => error.method), ['sessions.list', 'system-presence', 'environments.list'])
     assert.equal(topology.stats.hasErrors, true)
-    assert.equal(topology.stats.lastTopologyErrorCount, 2)
+    assert.equal(topology.stats.lastTopologyErrorCount, 3)
     assert.equal(topology.stats.lastTopologyError, 'sessions unavailable')
   })
 
@@ -113,6 +142,7 @@ describe('OpenClaw gateway topology', () => {
     assert.equal(topology.connected, false)
     assert.equal(topology.stats.hasErrors, true)
     assert.equal(topology.stats.nodeCount, 0)
+    assert.equal(topology.stats.environmentCount, 0)
     assert.equal(topology.errors[0]?.method, 'gateway.connect')
   })
 
@@ -132,6 +162,11 @@ describe('OpenClaw gateway topology', () => {
         'device.pair.list': { pending: [], paired: [] },
         'sessions.list': { sessions: target?.profileId === 'gateway_a' ? [{ id: 'session_a' }] : [] },
         'system-presence': { presence: [] },
+        'environments.list': {
+          environments: target?.profileId === 'gateway_a'
+            ? [{ id: 'gateway', type: 'local', status: 'available' }]
+            : [{ id: 'gateway', type: 'local', status: 'available' }, { id: 'node:node_b', type: 'node', status: 'unavailable' }],
+        },
       }) as never,
       persistStats: (id, input) => ({
         ...(id === 'gateway_a' ? first : second),
@@ -144,8 +179,29 @@ describe('OpenClaw gateway topology', () => {
     assert.equal(fleet.totals.connectedGatewayCount, 2)
     assert.equal(fleet.totals.nodeCount, 2)
     assert.equal(fleet.totals.connectedNodeCount, 1)
+    assert.equal(fleet.totals.environmentCount, 3)
+    assert.equal(fleet.totals.availableEnvironmentCount, 2)
     assert.equal(fleet.totals.pendingNodePairings, 1)
     assert.equal(fleet.totals.sessionCount, 1)
     assert.equal(fleet.gateways.length, 2)
+  })
+
+  it('returns direct environment status through the gateway protocol', async () => {
+    const calls: Array<{ method: string; params?: Record<string, unknown> }> = []
+    const status = await getOpenClawGatewayEnvironmentStatus('gateway_1', 'node:node_1', {
+      now: () => now,
+      getGatewayProfile: () => profile(),
+      ensureGatewayConnected: async () => ({
+        connected: true,
+        rpc: async (method: string, params?: Record<string, unknown>) => {
+          calls.push({ method, params })
+          return { id: 'node:node_1', type: 'node', label: 'Mac Studio', status: 'available', capabilities: ['shell.exec'] }
+        },
+      }) as never,
+    })
+
+    assert.equal(status?.environment?.id, 'node:node_1')
+    assert.equal(status?.environment?.status, 'available')
+    assert.deepEqual(calls, [{ method: 'environments.status', params: { environmentId: 'node:node_1' } }])
   })
 })

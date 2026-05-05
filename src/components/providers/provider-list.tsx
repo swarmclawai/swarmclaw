@@ -475,10 +475,14 @@ export function ProviderList({ inSidebar }: { inSidebar?: boolean }) {
               <div className="text-[12px] font-800 text-text">Gateway fleet topology</div>
               <div className="mt-1 text-[11px] text-text-3/70">
                 {gatewayFleetTopology.totals.connectedGatewayCount}/{gatewayFleetTopology.totals.gatewayCount} gateways connected ·{' '}
-                {gatewayFleetTopology.totals.connectedNodeCount}/{gatewayFleetTopology.totals.nodeCount} nodes connected
+                {gatewayFleetTopology.totals.connectedNodeCount}/{gatewayFleetTopology.totals.nodeCount} nodes connected ·{' '}
+                {gatewayFleetTopology.totals.availableEnvironmentCount || 0}/{gatewayFleetTopology.totals.environmentCount || 0} environments available
               </div>
             </div>
             <div className="flex flex-wrap gap-2 text-[11px] text-text-3/70">
+              <span className="rounded-full border border-white/[0.06] bg-white/[0.03] px-2.5 py-1">
+                {gatewayFleetTopology.totals.environmentCount || 0} environments
+              </span>
               <span className="rounded-full border border-white/[0.06] bg-white/[0.03] px-2.5 py-1">
                 {gatewayFleetTopology.totals.sessionCount || 0} sessions
               </span>
@@ -536,6 +540,7 @@ export function ProviderList({ inSidebar }: { inSidebar?: boolean }) {
             const topologyErrors = topology?.errors || []
             const pendingPairings = (stats?.pendingNodePairings || 0) + (stats?.pendingDevicePairings || 0)
             const topologyErrorCount = topologyErrors.length || stats?.lastTopologyErrorCount || 0
+            const environments = topology?.environments || []
             return (
           <div
             key={gateway.id}
@@ -603,6 +608,12 @@ export function ProviderList({ inSidebar }: { inSidebar?: boolean }) {
                   </div>
                 </div>
                 <div className="rounded-[10px] border border-white/[0.05] bg-white/[0.02] px-3 py-2">
+                  <div className="uppercase tracking-[0.08em] text-text-3/50">Environments</div>
+                  <div className="mt-1 text-text-2">
+                    {stats?.availableEnvironmentCount ?? 0}/{stats?.environmentCount ?? 0} available
+                  </div>
+                </div>
+                <div className="rounded-[10px] border border-white/[0.05] bg-white/[0.02] px-3 py-2">
                   <div className="uppercase tracking-[0.08em] text-text-3/50">Sessions</div>
                   <div className="mt-1 text-text-2">
                     {stats?.sessionCount ?? 0} sessions · {stats?.presenceCount ?? 0} presence
@@ -614,6 +625,28 @@ export function ProviderList({ inSidebar }: { inSidebar?: boolean }) {
                     {runtimeStats.active}/{runtimeStats.total} active
                   </div>
                 </div>
+              </div>
+            )}
+            {!inSidebar && environments.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {environments.slice(0, 4).map((environment) => (
+                  <span
+                    key={`${gateway.id}-${environment.id}`}
+                    className={`rounded-full border px-2 py-0.5 text-[10px] font-700 uppercase tracking-[0.08em] ${
+                      environment.status === 'available'
+                        ? 'border-emerald-400/20 bg-emerald-400/[0.06] text-emerald-300'
+                        : 'border-white/[0.06] bg-white/[0.03] text-text-3/70'
+                    }`}
+                    title={environment.capabilities?.join(', ') || environment.id}
+                  >
+                    {environment.label || environment.id}
+                  </span>
+                ))}
+                {environments.length > 4 && (
+                  <span className="rounded-full border border-white/[0.06] bg-white/[0.03] px-2 py-0.5 text-[10px] font-700 uppercase tracking-[0.08em] text-text-3/70">
+                    +{environments.length - 4}
+                  </span>
+                )}
               </div>
             )}
             {!inSidebar && (pendingPairings > 0 || topologyErrorCount > 0) && (

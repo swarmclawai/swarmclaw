@@ -3,6 +3,7 @@ import { api } from '@/lib/app/api-client'
 import { credentialQueryKeys } from '@/features/credentials/queries'
 import type {
   GatewayProfile,
+  OpenClawEnvironmentSummary,
   OpenClawDevicePairRequest,
   OpenClawGatewayFleetTopology,
   OpenClawGatewayPresenceEntry,
@@ -60,6 +61,7 @@ export interface RefreshGatewayTopologyResult {
   pairedDevices: OpenClawPairedDevice[]
   sessions: OpenClawGatewaySession[]
   presence: OpenClawGatewayPresenceEntry[]
+  environments: OpenClawEnvironmentSummary[]
   errors: OpenClawGatewayRpcError[]
   topology: OpenClawGatewayTopology
 }
@@ -190,6 +192,7 @@ export function useRefreshGatewayTopologyMutation() {
         pairedDevices: topology.pairedDevices,
         sessions: topology.sessions,
         presence: topology.presence,
+        environments: topology.environments,
         errors: topology.errors,
         topology,
       }

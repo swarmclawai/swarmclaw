@@ -462,6 +462,31 @@ export function TaskSheet() {
             {editing.executionWorkspace?.path && (
               <code className="block text-[12px] text-text-3 font-mono break-all">{editing.executionWorkspace.path}</code>
             )}
+            {(editing.executionWorkspace?.contextPath || editing.executionWorkspace?.envPath) && (
+              <div className="grid grid-cols-1 gap-2 text-[11px] text-text-3/70">
+                {editing.executionWorkspace.contextPath && (
+                  <div className="rounded-[10px] border border-white/[0.05] bg-white/[0.02] px-3 py-2">
+                    <div className="uppercase tracking-[0.08em] text-text-3/50">Context</div>
+                    <code className="mt-1 block break-all text-text-2">{editing.executionWorkspace.contextPath}</code>
+                  </div>
+                )}
+                {editing.executionWorkspace.envPath && (
+                  <div className="rounded-[10px] border border-white/[0.05] bg-white/[0.02] px-3 py-2">
+                    <div className="uppercase tracking-[0.08em] text-text-3/50">Env</div>
+                    <code className="mt-1 block break-all text-text-2">{editing.executionWorkspace.envPath}</code>
+                  </div>
+                )}
+              </div>
+            )}
+            {editing.executionWorkspace?.envHints?.length ? (
+              <div className="flex flex-wrap gap-1.5">
+                {editing.executionWorkspace.envHints.slice(0, 8).map((hint) => (
+                  <InfoChip key={hint.key} tone="neutral" title={hint.value}>
+                    <span className="max-w-[220px] truncate">{hint.key}</span>
+                  </InfoChip>
+                ))}
+              </div>
+            ) : null}
             {previewLinks.length > 0 && (
               <div className="flex flex-wrap gap-2">
                 {previewLinks.map((link) => (
@@ -942,6 +967,31 @@ export function TaskSheet() {
             {editing.executionWorkspace?.path && (
               <code className="block text-[12px] text-text-3 font-mono break-all">{editing.executionWorkspace.path}</code>
             )}
+            {(editing.executionWorkspace?.contextPath || editing.executionWorkspace?.envPath) && (
+              <div className="grid grid-cols-1 gap-2 text-[11px] text-text-3/70">
+                {editing.executionWorkspace.contextPath && (
+                  <div className="rounded-[10px] border border-white/[0.05] bg-white/[0.02] px-3 py-2">
+                    <div className="uppercase tracking-[0.08em] text-text-3/50">Context</div>
+                    <code className="mt-1 block break-all text-text-2">{editing.executionWorkspace.contextPath}</code>
+                  </div>
+                )}
+                {editing.executionWorkspace.envPath && (
+                  <div className="rounded-[10px] border border-white/[0.05] bg-white/[0.02] px-3 py-2">
+                    <div className="uppercase tracking-[0.08em] text-text-3/50">Env</div>
+                    <code className="mt-1 block break-all text-text-2">{editing.executionWorkspace.envPath}</code>
+                  </div>
+                )}
+              </div>
+            )}
+            {editing.executionWorkspace?.envHints?.length ? (
+              <div className="flex flex-wrap gap-1.5">
+                {editing.executionWorkspace.envHints.slice(0, 8).map((hint) => (
+                  <InfoChip key={hint.key} tone="neutral" title={hint.value}>
+                    <span className="max-w-[220px] truncate">{hint.key}</span>
+                  </InfoChip>
+                ))}
+              </div>
+            ) : null}
             {previewLinks.length > 0 && (
               <div className="flex flex-wrap gap-2">
                 {previewLinks.map((link) => (
