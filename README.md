@@ -694,6 +694,62 @@ Older releases: https://swarmclaw.ai/docs/release-notes
 - npm package: https://www.npmjs.com/package/@swarmclawai/swarmclaw
 - Historical release notes: https://swarmclaw.ai/docs/release-notes
 
+
+## FAQ
+
+### General
+
+**What is SwarmClaw?**
+SwarmClaw is an open-source, self-hosted AI agent runtime and multi-agent framework. It lets you run autonomous AI agents, agent swarms, and orchestrators with durable memory, MCP tools, skills, delegation, schedules, and support for 23+ LLM providers — serving as a practical alternative to Claude Code and LangChain for self-hosted workflows.
+
+**How does SwarmClaw differ from LangChain or CrewAI?**
+SwarmClaw is a self-hosted runtime rather than a code library. It provides a persistent dashboard, durable agent memory, real-time org chart visualization, and built-in multi-agent orchestration with delegation — all running on your own infrastructure. LangChain and CrewAI are code frameworks you embed in your applications; SwarmClaw is the platform your agents run on.
+
+**Is SwarmClaw production-ready?**
+Yes. SwarmClaw is used in production by teams running autonomous agent swarms. It includes security features like approval-gated actions, TLS support, and access key management.
+
+### Setup & Configuration
+
+**How do I install SwarmClaw?**
+Install via npm: `npm install -g @swarmclawai/swarmclaw`, then run `swarmclaw init` to create your configuration. Docker deployment is also available via the provided Docker Compose setup.
+
+**Which LLM providers are supported?**
+SwarmClaw supports 23+ providers including OpenAI, Anthropic (Claude), Google Gemini, OpenRouter, Ollama (local), DeepSeek, Groq, Together AI, and more. Configure your API keys in the `.env` file or via the dashboard.
+
+**Can I use local models?**
+Yes. SwarmClaw integrates with Ollama and other local LLM backends for fully offline agent operation.
+
+### Agent Development
+
+**What is an agent swarm?**
+An agent swarm is a group of AI agents working together under an orchestrator. Each agent has its own role, tools, and memory. The orchestrator delegates tasks, agents execute in parallel, and results are aggregated — mimicking a real organizational structure.
+
+**What are MCP tools?**
+MCP (Model Context Protocol) tools let agents interact with external systems — databases, APIs, file systems, browsers, and more. SwarmClaw provides a marketplace of pre-built MCP tools at SwarmDock.
+
+**How does agent memory work?**
+SwarmClaw provides durable agent memory that persists across sessions. Each agent maintains its own conversation history, learned skills, and context — enabling long-running autonomous workflows.
+
+### Deployment
+
+**How do I deploy SwarmClaw?**
+Options include: local npm installation, Docker Compose for containerized deployment, or cloud VPS with reverse proxy and TLS. See the [deployment docs](https://swarmclaw.ai/docs/deployment) for detailed guides.
+
+**Can I run SwarmClaw in the cloud?**
+Yes. SwarmClaw runs on any Linux server with Node.js 18+. Popular options include AWS EC2, DigitalOcean, Hetzner, and self-hosted on home servers.
+
+### Troubleshooting
+
+**Agent is not responding. What should I check?**
+Verify your LLM API key is valid, check the agent's configuration in the dashboard, and review the agent chat logs for error messages. Common issues include rate limiting and invalid model names.
+
+**How do I update SwarmClaw?**
+Run `npm update -g @swarmclawai/swarmclaw` or pull the latest Docker image. Check the [release notes](https://swarmclaw.ai/docs/release-notes) for breaking changes.
+
+**Where can I get help?**
+- Documentation: https://swarmclaw.ai/docs
+- Discord community: https://discord.gg/sbEavS8cPV
+- GitHub Issues: https://github.com/swarmclawai/swarmclaw/issues
 ## Security Notes
 
 - First run creates an access key; keep it private.
