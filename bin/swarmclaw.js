@@ -80,7 +80,13 @@ function buildLegacyTsCliArgs(cliPath, argv, options = {}) {
 }
 
 function resolveLegacyTsCliPath() {
-  return path.join(__dirname, '..', 'src', 'cli', 'index.ts')
+  // Prefer the bundled compiled .js. The shipped .ts entrypoint requires either
+  // Node's type-stripping (disabled under node_modules) or a tsx runtime
+  // resolvable from the *spawned* process's CWD — both fragile when the CLI is
+  // invoked from a project directory that doesn't itself depend on tsx. The
+  // compiled .js is shipped right next to the .ts and is bytewise identical
+  // functionality (runMappedCli already imports it).
+  return path.join(__dirname, '..', 'src', 'cli', 'index.js')
 }
 
 function normalizeLegacyTsCliArgv(argv) {
