@@ -59,8 +59,13 @@ export function parseTlsRejectUnauthorized(value: unknown): boolean {
   return true
 }
 
-export function buildEmailTlsOptions(config: Pick<EmailConfig, 'tlsRejectUnauthorized'>): { rejectUnauthorized: boolean } {
-  return { rejectUnauthorized: config.tlsRejectUnauthorized !== false }
+export function buildEmailTlsOptions(config: Pick<EmailConfig, 'tlsRejectUnauthorized'>): { rejectUnauthorized: boolean; checkServerIdentity?: () => undefined } {
+  const reject = config.tlsRejectUnauthorized !== false
+  // When the user opts out of cert verification, also bypass hostname/altname
+  // matching. Otherwise self-signed-cert servers like Proton Mail Bridge still
+  // fail with "Hostname/IP does not match certificate's altnames" even though
+  // rejectUnauthorized:false is set — defeating the purpose of the option.
+  return reject ? { rejectUnauthorized: true } : { rejectUnauthorized: false, checkServerIdentity: () => undefined }
 }
 
 export function attachImapErrorHandler(imap: ImapErrorEmitter, onDisconnected: () => void): void {
