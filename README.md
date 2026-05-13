@@ -220,6 +220,7 @@ SwarmClaw is built for OpenClaw operators who need more than one agent or one ga
 - Deploy official-image OpenClaw runtimes locally, via VPS bundles, or over SSH.
 - Edit OpenClaw agent files such as `SOUL.md`, `IDENTITY.md`, `USER.md`, `TOOLS.md`, and `AGENTS.md`.
 - Import OpenClaw `SKILL.md` files and use them in SwarmClaw's runtime skill system.
+- Use OpenClaw plugins for domain workflows. For example, `openclaw plugins install @xquik/tweetclaw` installs [TweetClaw](https://github.com/Xquik-dev/tweetclaw) via [ClawHub](https://clawhub.ai/kriptoburak/xquik-tweetclaw) for X/Twitter search, follower export, monitors, webhooks, and approval-gated post/reply actions.
 
 ## Use Cases
 
