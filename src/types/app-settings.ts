@@ -27,6 +27,14 @@ export interface AppSettings {
   embeddingModel?: string | null
   embeddingCredentialId?: string | null
   embeddingEndpoint?: string | null
+  // Optional model override for memory consolidation / dream cycles. If unset,
+  // consolidation falls back to the target agent's configured generation model.
+  // Useful for routing periodic compaction/summarization to a small local model
+  // (e.g. ollama + gemma) to keep that workload off the agent's primary.
+  dreamProvider?: string | null
+  dreamModel?: string | null
+  dreamCredentialId?: string | null
+  dreamEndpoint?: string | null
   loopMode?: LoopMode
   agentLoopRecursionLimit?: number
   delegationMaxDepth?: number

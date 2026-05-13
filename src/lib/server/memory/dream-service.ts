@@ -149,7 +149,19 @@ ${memoryLines.join('\n')}`
 
   try {
     const { buildLLM } = await import('@/lib/server/build-llm')
-    const { llm } = await buildLLM({ agentId })
+    const { loadSettings } = await import('@/lib/server/settings/settings-repository')
+    const settings = loadSettings()
+    // If dreamProvider is set in app settings, route consolidation to it (e.g.
+    // a small local model) instead of the agent's primary generation model.
+    const preferred = settings.dreamProvider
+      ? {
+          provider: settings.dreamProvider,
+          model: settings.dreamModel ?? undefined,
+          credentialId: settings.dreamCredentialId ?? undefined,
+          apiEndpoint: settings.dreamEndpoint ?? undefined,
+        }
+      : undefined
+    const { llm } = await buildLLM({ agentId, preferred })
     const { HumanMessage } = await import('@langchain/core/messages')
 
     const response = await llm.invoke([new HumanMessage(prompt)])

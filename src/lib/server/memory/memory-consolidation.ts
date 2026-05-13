@@ -109,9 +109,20 @@ export async function runDailyConsolidation(): Promise<{
         ...memoryLines,
       ].join('\n')
 
-      // Use the target agent's configured generation provider
+      // If dreamProvider is set in app settings, route consolidation to it;
+      // otherwise fall back to the target agent's configured generation model.
       const { buildLLM } = await import('@/lib/server/build-llm')
-      const { llm } = await buildLLM({ agentId })
+      const { loadSettings } = await import('@/lib/server/settings/settings-repository')
+      const settings = loadSettings()
+      const preferred = settings.dreamProvider
+        ? {
+            provider: settings.dreamProvider,
+            model: settings.dreamModel ?? undefined,
+            credentialId: settings.dreamCredentialId ?? undefined,
+            apiEndpoint: settings.dreamEndpoint ?? undefined,
+          }
+        : undefined
+      const { llm } = await buildLLM({ agentId, preferred })
 
       const response = await llm.invoke([new HumanMessage(prompt)])
       const digestContent = typeof response.content === 'string'
