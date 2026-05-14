@@ -48,7 +48,7 @@ export function canCreateDailyDigestForAgent(
   try {
     resolveGenerationModelConfig({
       agentId,
-      preferred: resolveDreamGenerationPreference(settings),
+      preferred: resolveDreamGenerationPreference(settings, agent.dreamConfig),
     })
     return true
   } catch (err: unknown) {
@@ -118,10 +118,11 @@ export async function runDailyConsolidation(): Promise<{
       ].join('\n')
 
       // Use an optional dream-model override before the target agent's generation provider.
+      // Precedence: per-agent dreamConfig override → global dream* settings → agent's primary.
       const { buildLLM } = await import('@/lib/server/build-llm')
       const { llm } = await buildLLM({
         agentId,
-        preferred: resolveDreamGenerationPreference(settings),
+        preferred: resolveDreamGenerationPreference(settings, agents[agentId]?.dreamConfig),
       })
 
       const response = await llm.invoke([new HumanMessage(prompt)])

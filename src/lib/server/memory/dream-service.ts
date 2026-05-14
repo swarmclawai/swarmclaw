@@ -216,7 +216,9 @@ ${memoryLines.join('\n')}`
   try {
     const { buildLLM } = await import('@/lib/server/build-llm')
     const { loadSettings } = await import('@/lib/server/settings/settings-repository')
-    const preferred = resolveDreamGenerationPreference(loadSettings())
+    // `config` is the resolved per-agent dream config (defaults + overrides);
+    // pass it so a per-agent provider/model takes precedence over global settings.
+    const preferred = resolveDreamGenerationPreference(loadSettings(), config)
     const { llm } = await buildLLM({ agentId, preferred, responseFormat: 'json_object' })
     const { HumanMessage } = await import('@langchain/core/messages')
 
