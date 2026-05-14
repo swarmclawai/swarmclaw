@@ -12,10 +12,10 @@ The `swarmclaw` skill lets OpenClaw agents manage a SwarmClaw instance via CLI f
 ## Install
 
 ```bash
-clawhub install swarmclaw
+openclaw skills install swarmclaw
 ```
 
 ## Source
 
 - Skill definition: [`swarmclaw/SKILL.md`](swarmclaw/SKILL.md)
-- Registry page: https://clawhub.ai/skills/swarmclaw
+- Registry page: https://clawhub.ai/waydelyle/swarmclaw
