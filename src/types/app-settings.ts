@@ -32,6 +32,14 @@ export interface AppSettings {
   dreamModel?: string | null
   dreamCredentialId?: string | null
   dreamEndpoint?: string | null
+  // Optional model override for auto-compaction (live-loop conversation
+  // summarization triggered when context usage hits the auto-compact
+  // threshold). Lets the user route the summarizer to a cheaper or faster
+  // model than the agent's primary generation model.
+  compactionProvider?: string | null
+  compactionModel?: string | null
+  compactionCredentialId?: string | null
+  compactionEndpoint?: string | null
   loopMode?: LoopMode
   agentLoopRecursionLimit?: number
   delegationMaxDepth?: number

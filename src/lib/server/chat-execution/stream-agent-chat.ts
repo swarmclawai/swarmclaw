@@ -682,8 +682,29 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
       reserveTokens,
       includeToolEvents: false,
     })) {
+      // Resolve compaction model: if app settings opt into an override, build
+      // a separate LLM for the summarizer (cheap/local model); otherwise reuse
+      // the session's primary llm. Mirrors the dream-model override path.
+      const { resolveCompactionGenerationPreference } = await import('@/lib/server/chat-execution/compaction-generation-preference')
+      const { buildLLM } = await import('@/lib/server/build-llm')
+      // loadSettings is imported at the top of this file.
+      const settings = loadSettings()
+      const compactionPref = resolveCompactionGenerationPreference(settings)
+      let summarizerLlm = llm
+      let summarizerProvider = session.provider
+      let summarizerModel = session.model
+      if (compactionPref) {
+        try {
+          const built = await buildLLM({ preferred: compactionPref, sessionId: session.id, agentId: session.agentId || null })
+          summarizerLlm = built.llm
+          summarizerProvider = built.provider
+          summarizerModel = built.model
+        } catch (overrideErr) {
+          log.warn(TAG, `Compaction override LLM build failed for ${session.id}; falling back to session model:`, overrideErr)
+        }
+      }
       const summarize = async (prompt: string): Promise<string> => {
-        const response = await llm.invoke([new HumanMessage(prompt)])
+        const response = await summarizerLlm.invoke([new HumanMessage(prompt)])
         if (typeof response.content === 'string') return response.content
         if (Array.isArray(response.content)) {
           return response.content
@@ -694,8 +715,8 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
       }
       const result = await llmCompact({
         messages: recentHistory,
-        provider: session.provider,
-        model: session.model,
+        provider: summarizerProvider,
+        model: summarizerModel,
         agentId: session.agentId || null,
         sessionId: session.id,
         summarize,
@@ -704,6 +725,7 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
       log.info(TAG,
         `Auto-compacted ${session.id}: ${recentHistory.length} → ${effectiveHistory.length} msgs` +
         ` (prompt history ${promptHistoryTokens} tokens)` +
+        (compactionPref ? ` (override ${summarizerProvider}/${summarizerModel})` : '') +
         (result.summaryAdded ? ' (LLM summary)' : ' (sliding window fallback)'),
       )
     }
