@@ -36,7 +36,7 @@ export function buildCredentialEnv(credentialIds: string[]): CredentialEnv {
   const env: Record<string, string> = {}
   const secrets: string[] = []
 
-  const allCredentials = loadCredentials() as Record<string, Credential & { encrypted?: string }>
+  const allCredentials = loadCredentials() as Record<string, Credential & { encryptedKey?: string }>
 
   for (const credId of credentialIds) {
     const cred = allCredentials[credId]
@@ -45,8 +45,12 @@ export function buildCredentialEnv(credentialIds: string[]): CredentialEnv {
       continue
     }
 
-    // Decrypt the stored key
-    const encrypted = cred.encrypted
+    // Decrypt the stored key — credentials persist the ciphertext under
+    // `encryptedKey` (see createCredentialRecord in storage.ts; matching
+    // reads in connector-lifecycle, chatroom-helpers, daemon-state, etc.).
+    // Previously this file read `cred.encrypted`, which is never set, so
+    // credential injection silently no-op'd for every execute tool call.
+    const encrypted = cred.encryptedKey
     if (!encrypted || typeof encrypted !== 'string') {
       log.warn(TAG, `Credential has no encrypted value: ${credId}`)
       continue
