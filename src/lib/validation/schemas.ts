@@ -140,6 +140,18 @@ export const AgentCreateSchema = z.object({
   projectId: z.string().optional(),
   avatarSeed: z.string().optional(),
   avatarUrl: z.string().nullable().optional().default(null),
+  /** Per-agent working directory. Used as the cwd for execute tool calls and
+   *  as the root for workspace-scoped file operations. */
+  workspace: z.string().nullable().optional().default(null),
+  /** When 'workspace', the structured file tool's reads/writes are confined to
+   *  the agent's workspace directory; 'machine' allows the whole host. */
+  filesystemScope: z.enum(['workspace', 'machine']).nullable().optional().default(null),
+  /** Per-agent filesystem allow/block lists enforced by the file tool. Globs
+   *  are matched against fully-resolved absolute paths. */
+  fileAccessPolicy: z.object({
+    allowedPaths: z.array(z.string()).optional(),
+    blockedPaths: z.array(z.string()).optional(),
+  }).nullable().optional().default(null),
   sandboxConfig: AgentSandboxConfigSchema,
   executeConfig: AgentExecuteConfigSchema,
   autoRecovery: z.boolean().optional().default(false),
