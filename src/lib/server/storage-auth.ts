@@ -11,6 +11,13 @@ const TAG = 'storage-auth'
 // because DATA_DIR is volume-mounted, unlike process.cwd()/.env.local.
 const GENERATED_ENV_PATH = path.join(DATA_DIR, '.env.generated')
 
+// Dedicated single-purpose file for the credential-encryption secret. Lives in
+// DATA_DIR so it survives both Docker volume mounts AND npm-global upgrades
+// (the latter changes process.cwd() per version, which made .env.local-only
+// persistence regenerate the secret every upgrade and orphan every credential
+// encrypted under the old value).
+const CREDENTIAL_SECRET_FILE = path.join(DATA_DIR, 'credential-secret')
+
 // --- .env loading ---
 function loadEnvFile(filePath: string): void {
   if (!fs.existsSync(filePath)) return
@@ -59,12 +66,69 @@ function persistEnvKey(key: string, value: string): void {
   }
 }
 
-// Auto-generate CREDENTIAL_SECRET if missing
-if (!IS_BUILD_BOOTSTRAP && !process.env.CREDENTIAL_SECRET) {
-  const secret = crypto.randomBytes(32).toString('hex')
-  process.env.CREDENTIAL_SECRET = secret
-  persistEnvKey('CREDENTIAL_SECRET', secret)
-  log.info(TAG, 'Generated CREDENTIAL_SECRET')
+/** Read CREDENTIAL_SECRET from the dedicated file in DATA_DIR.
+ *  Returns the trimmed contents, or empty string if absent / unreadable. */
+function readCredentialSecretFile(): string {
+  try {
+    if (!fs.existsSync(CREDENTIAL_SECRET_FILE)) return ''
+    return fs.readFileSync(CREDENTIAL_SECRET_FILE, 'utf-8').trim()
+  } catch (err) {
+    log.warn(TAG, `Could not read CREDENTIAL_SECRET from ${CREDENTIAL_SECRET_FILE}`, {
+      error: err instanceof Error ? err.message : String(err),
+    })
+    return ''
+  }
+}
+
+/** Write CREDENTIAL_SECRET to the dedicated file with restrictive permissions. */
+function writeCredentialSecretFile(secret: string): boolean {
+  try {
+    fs.mkdirSync(path.dirname(CREDENTIAL_SECRET_FILE), { recursive: true })
+    fs.writeFileSync(CREDENTIAL_SECRET_FILE, secret, { encoding: 'utf-8', mode: 0o600 })
+    return true
+  } catch (err) {
+    log.warn(TAG, `Could not persist CREDENTIAL_SECRET to ${CREDENTIAL_SECRET_FILE}`, {
+      error: err instanceof Error ? err.message : String(err),
+    })
+    return false
+  }
+}
+
+// Resolve CREDENTIAL_SECRET in this precedence order:
+//   1. process.env (already set externally, e.g. by orchestrator)
+//   2. DATA_DIR/credential-secret (the stable home — survives upgrades)
+//   3. .env files (legacy — values loaded into process.env by loadEnv() above)
+//   4. Generate new secret + persist to DATA_DIR/credential-secret
+//
+// Step 2 is the key change: previously the secret only lived in a per-version
+// .env.local (cwd changes on npm-global upgrade), so each upgrade
+// silently regenerated it and orphaned every encrypted credential.
+if (!IS_BUILD_BOOTSTRAP) {
+  // If a previous version wrote the secret to .env.local / .env.generated,
+  // loadEnv() above already placed it on process.env. Treat that as the
+  // authoritative value AND migrate it into the dedicated file so future
+  // upgrades read from there.
+  const envSecret = process.env.CREDENTIAL_SECRET?.trim() || ''
+  const fileSecret = readCredentialSecretFile()
+  if (envSecret && !fileSecret) {
+    if (writeCredentialSecretFile(envSecret)) {
+      log.info(TAG, `Migrated CREDENTIAL_SECRET from .env to ${CREDENTIAL_SECRET_FILE}`)
+    }
+  } else if (fileSecret && !envSecret) {
+    process.env.CREDENTIAL_SECRET = fileSecret
+  } else if (fileSecret && envSecret && fileSecret !== envSecret) {
+    // Both are set and disagree — trust the dedicated file (the stable home)
+    // and warn loudly. This usually means a fresh .env.local got generated
+    // during install and contains a stale value; the file is authoritative.
+    log.warn(TAG, `CREDENTIAL_SECRET mismatch between env and ${CREDENTIAL_SECRET_FILE}; using the file value (older credentials encrypted under that secret are recoverable, the env value would orphan them).`)
+    process.env.CREDENTIAL_SECRET = fileSecret
+  } else if (!envSecret && !fileSecret) {
+    // First-ever launch on this DATA_DIR. Generate.
+    const secret = crypto.randomBytes(32).toString('hex')
+    process.env.CREDENTIAL_SECRET = secret
+    writeCredentialSecretFile(secret)
+    log.info(TAG, `Generated CREDENTIAL_SECRET and persisted to ${CREDENTIAL_SECRET_FILE}`)
+  }
 }
 
 // Auto-generate ACCESS_KEY if missing (used for simple auth)
