@@ -1085,7 +1085,21 @@ export async function observeAutonomyRunOutcome(
   if (parsed.skip) return { incidents, reflection: null }
 
   const reflectionId = genId()
-  const autoMemoryIds = settings.reflectionAutoWriteMemory
+  // Quality gate: if reflectionMinQuality is set above 0, only write memories
+  // when the reflection's qualityScore meets or exceeds it. Null/undefined
+  // qualityScore is admitted (we don't want a model that omits the score to
+  // silently lose all memory writes).
+  const minQuality = typeof settings.reflectionMinQuality === 'number' ? settings.reflectionMinQuality : 0
+  const qualityScore = parsed.qualityScore
+  const qualityGateOpen = minQuality <= 0
+    || qualityScore == null
+    || qualityScore >= minQuality
+  if (!qualityGateOpen) {
+    log.info(TAG,
+      `Reflection ${reflectionId} below quality gate (score=${qualityScore?.toFixed(2) ?? 'null'}, threshold=${minQuality.toFixed(2)}); skipping memory writes`,
+    )
+  }
+  const autoMemoryIds = settings.reflectionAutoWriteMemory && qualityGateOpen
     ? writeReflectionMemories({
         reflectionId,
         runId: input.runId,

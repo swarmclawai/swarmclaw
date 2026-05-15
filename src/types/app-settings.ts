@@ -103,6 +103,15 @@ export interface AppSettings {
   autonomyResumeApprovalsEnabled?: boolean
   reflectionEnabled?: boolean
   reflectionAutoWriteMemory?: boolean
+  /** Minimum reflection quality score (0-1, as emitted by the reflection
+   *  classifier in `parsed.qualityScore`) required to auto-write memories.
+   *  Defaults to 0 (no gating, behavior unchanged). When raised, low-quality
+   *  reflections still produce a RunReflection record but skip the per-kind
+   *  memory writes — reducing the bloat where 95%+ of memory rows are
+   *  routine reflection/* entries that never get retrieved.
+   *  Reflections with a null qualityScore are admitted regardless (so an
+   *  upstream parse failure can't silently lose all memory writes). */
+  reflectionMinQuality?: number
   memoryReferenceDepth?: number
   maxMemoriesPerLookup?: number
   maxLinkedMemoriesExpanded?: number
