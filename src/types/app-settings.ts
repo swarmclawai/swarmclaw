@@ -103,6 +103,17 @@ export interface AppSettings {
   autonomyResumeApprovalsEnabled?: boolean
   reflectionEnabled?: boolean
   reflectionAutoWriteMemory?: boolean
+  /** Enable embedding-based dedup on reflection memory writes — when set,
+   *  each new reflection note is embedded and compared against recent
+   *  reflection memories in the cross-run window; notes with cosine
+   *  similarity above the threshold are skipped. Complements the existing
+   *  text-equality cross-run dedup. Default false (opt-in).
+   *  Requires an embedding provider to be configured (embeddingProvider). */
+  reflectionSemanticDedupEnabled?: boolean
+  /** Cosine threshold above which a candidate reflection is considered
+   *  semantically duplicate. Range 0-1; 0.85-0.92 is a sane band for
+   *  near-duplicate detection on nomic-embed-text. Default 0.88. */
+  reflectionSemanticDedupThreshold?: number
   memoryReferenceDepth?: number
   maxMemoriesPerLookup?: number
   maxLinkedMemoriesExpanded?: number

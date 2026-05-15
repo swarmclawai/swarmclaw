@@ -1270,6 +1270,30 @@ function initDb() {
       return (stmts.listByAgent.all(agentId, safeLimit) as any[]).map(rowToEntry)
     },
 
+    /** Return recent reflection/* memories with their embeddings deserialized
+     *  for semantic dedup. Memories without an embedding (older rows, or
+     *  embedding still being computed in background) are included with a
+     *  null embedding so callers can fall back to text dedup. */
+    recentReflectionEmbeddings(
+      agentId: string,
+      sinceMs: number,
+      limit = 200,
+    ): Array<{ id: string; content: string; embedding: number[] | null }> {
+      const safeLimit = Math.max(1, Math.min(500, Math.trunc(limit)))
+      const rows = db.prepare(
+        `SELECT id, content, embedding FROM memories
+         WHERE (agentId = ? OR sharedWith LIKE ?)
+           AND category LIKE 'reflection/%'
+           AND updatedAt >= ?
+         ORDER BY updatedAt DESC LIMIT ?`,
+      ).all(agentId, `%"${agentId}"%`, sinceMs, safeLimit) as Array<{ id: string; content: string; embedding: Buffer | null }>
+      return rows.map((row) => ({
+        id: row.id,
+        content: row.content || '',
+        embedding: row.embedding ? deserializeEmbedding(row.embedding) : null,
+      }))
+    },
+
     getFrequentlyAccessedByAgent(agentId: string, minAccessCount = 3, sinceDays = 7): MemoryEntry[] {
       const cutoff = Date.now() - sinceDays * 86_400_000
       const rows = stmts.frequentlyAccessedByAgent.all(agentId, minAccessCount, cutoff) as Record<string, unknown>[]

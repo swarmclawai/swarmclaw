@@ -744,7 +744,7 @@ function inferFollowUpAt(note: string, createdAt: number): number {
   return createdAt + 7 * 24 * 3600_000
 }
 
-function writeReflectionMemories(params: {
+async function writeReflectionMemories(params: {
   reflectionId: string
   runId: string
   sessionId: string
@@ -761,7 +761,7 @@ function writeReflectionMemories(params: {
   profile: string[]
   boundaries: string[]
   openLoops: string[]
-}): string[] {
+}): Promise<string[]> {
   const memoryDb = getMemoryDb()
   const memoryIds: string[] = []
   const incidentIds = params.incidents.map((incident) => incident.id)
@@ -809,11 +809,53 @@ function writeReflectionMemories(params: {
     // dedup only rather than blocking the reflection write.
   }
 
+  // Semantic dedup (opt-in): on top of the text-equality cross-run dedup
+  // above, compare each candidate note's embedding against recent reflection
+  // memories' embeddings. Catches near-duplicates the LLM re-derives in
+  // different words ("Always verify before acting" / "Confirm state first").
+  // Falls back gracefully when embeddings aren't configured.
+  let appSettings: AppSettings | null = null
+  try { appSettings = loadSettings() } catch { appSettings = null }
+  const semanticDedupEnabled = Boolean(appSettings?.reflectionSemanticDedupEnabled)
+  const semanticDedupThreshold = typeof appSettings?.reflectionSemanticDedupThreshold === 'number'
+    ? appSettings.reflectionSemanticDedupThreshold
+    : 0.88
+  const semanticSkip = new Set<string>()
+  if (semanticDedupEnabled && params.agentId) {
+    try {
+      const recentEmb = memoryDb.recentReflectionEmbeddings(params.agentId, crossRunDedupCutoff, 500)
+        .filter((r) => Array.isArray(r.embedding) && r.embedding.length > 0) as Array<{ id: string; content: string; embedding: number[] }>
+      if (recentEmb.length > 0) {
+        const { getEmbedding, cosineSimilarity } = await import('@/lib/server/embeddings')
+        for (const group of groups) {
+          for (const note of group.notes) {
+            const trimmed = (note || '').trim()
+            if (!trimmed) continue
+            const norm = normalizeNote(trimmed)
+            if (!norm || seenNormalized.has(norm) || semanticSkip.has(norm)) continue
+            const emb = await getEmbedding(trimmed)
+            if (!emb) continue
+            for (const r of recentEmb) {
+              if (cosineSimilarity(emb, r.embedding) >= semanticDedupThreshold) {
+                semanticSkip.add(norm)
+                break
+              }
+            }
+          }
+        }
+      }
+    } catch {
+      // Best-effort: any failure (embedder offline, DB blip) falls through to
+      // the existing text-equality dedup. Never block the write.
+    }
+  }
+
   for (const group of groups) {
     for (const note of group.notes) {
       const norm = normalizeNote(note)
       if (!norm) continue
       if (seenNormalized.has(norm)) continue
+      if (semanticSkip.has(norm)) continue
       seenNormalized.add(norm)
       const metadata: Record<string, unknown> = {
         origin: 'autonomy-reflection',
@@ -1086,7 +1128,7 @@ export async function observeAutonomyRunOutcome(
 
   const reflectionId = genId()
   const autoMemoryIds = settings.reflectionAutoWriteMemory
-    ? writeReflectionMemories({
+    ? await writeReflectionMemories({
         reflectionId,
         runId: input.runId,
         sessionId: input.sessionId,
