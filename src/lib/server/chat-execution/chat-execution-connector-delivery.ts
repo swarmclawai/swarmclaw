@@ -65,12 +65,23 @@ export function looksLikePositiveConnectorDeliveryText(
 
 export function reconcileConnectorDeliveryText(text: string, events: MessageToolEvent[]): string {
   const trimmed = text.trim()
-  const connectorEvents = dedupeConsecutiveToolEvents(events).filter((event) => event.name === 'connector_message_tool')
+  const dedupedEvents = dedupeConsecutiveToolEvents(events)
+  const connectorEvents = dedupedEvents.filter((event) => event.name === 'connector_message_tool')
   if (!looksLikePositiveConnectorDeliveryText(trimmed, {
     requireConnectorContext: connectorEvents.length === 0,
   })) return text
   if (connectorEvents.some((event) => connectorToolEventSucceeded(event))) return text
   if (connectorEvents.length === 0) {
+    // No connector_message_tool event was recorded for this turn, but the
+    // agent may have legitimately delivered the message through another tool
+    // — typically `execute` running nodemailer / smtp / curl against an
+    // outbound HTTP endpoint, or a future connector that doesn't route
+    // through connector_message_tool. If *any* tool ran this turn, the agent
+    // did real work; trust them rather than overwriting their response with
+    // a false-negative. Only reconcile (with the overwrite below) when there
+    // is genuine evidence of a failed send — i.e., a connector_message_tool
+    // event exists but didn't succeed.
+    if (dedupedEvents.length > 0) return text
     return `I couldn't confirm that the configured connector actually sent anything. No connector delivery tool call was recorded for this response.`
   }
 
