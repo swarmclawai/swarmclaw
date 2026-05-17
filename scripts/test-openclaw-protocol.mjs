@@ -19,7 +19,7 @@ import { mkdtempSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 
-const PROTOCOL_VERSION = 3
+const PROTOCOL_VERSION = 4
 const TEST_TOKEN = 'test-token-abc123'
 const MOCK_PORT = 0 // random available port
 const PASS = '\x1b[32m✓\x1b[0m'
@@ -165,7 +165,7 @@ function testConnect(port, token) {
         ws.send(JSON.stringify({
           type: 'req', id: randomUUID(), method: 'connect',
           params: {
-            minProtocol: 1, maxProtocol: 3,
+            minProtocol: PROTOCOL_VERSION, maxProtocol: PROTOCOL_VERSION,
             auth: { token },
             client: { id: 'gateway-client', version: '1.0.0', platform: process.platform, mode: 'backend', instanceId: randomUUID() },
             caps: [], role: 'operator', scopes: ['operator.admin'],
@@ -194,7 +194,7 @@ function testAgentRequest(port, token, message) {
         ws.send(JSON.stringify({
           type: 'req', id: randomUUID(), method: 'connect',
           params: {
-            minProtocol: 1, maxProtocol: 1, auth: { token },
+            minProtocol: PROTOCOL_VERSION, maxProtocol: PROTOCOL_VERSION, auth: { token },
             client: { id: 'swarmclaw', version: '1.0.0', mode: 'cli', instanceId: randomUUID() },
             caps: [], role: 'operator', scopes: ['operator.admin'],
           },
@@ -244,7 +244,7 @@ function testConnectFrameFormat(port, token) {
         ws.send(JSON.stringify({
           type: 'req', id: randomUUID(), method: 'connect',
           params: {
-            minProtocol: 1, maxProtocol: 1, auth: { token },
+            minProtocol: PROTOCOL_VERSION, maxProtocol: PROTOCOL_VERSION, auth: { token },
             client: { id: 'swarmclaw', version: '1.0.0', mode: 'cli', instanceId: randomUUID() },
             caps: [], role: 'operator', scopes: ['operator.admin'],
           },

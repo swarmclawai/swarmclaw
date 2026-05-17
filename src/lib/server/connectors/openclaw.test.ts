@@ -114,13 +114,15 @@ async function bootstrapConnector(params?: {
 async function performHandshake(ws: MockWebSocket, helloPayload?: WsFrame) {
   ws.emit({ type: 'event', event: 'connect.challenge', payload: { nonce: 'test-nonce' } })
   const connectReq = await waitFor(() => findReq(ws, 'connect'), 1_500)
+  assert.equal((connectReq.params as any)?.minProtocol, 4)
+  assert.equal((connectReq.params as any)?.maxProtocol, 4)
   ws.emit({
     type: 'res',
     id: connectReq.id as string,
     ok: true,
     payload: helloPayload || {
       type: 'hello-ok',
-      protocol: 3,
+      protocol: 4,
       auth: { deviceToken: 'device-token-test' },
       policy: { tickIntervalMs: 15_000 },
     },
@@ -362,7 +364,7 @@ test('openclaw connector reconnects when tick watchdog detects stale connection'
   try {
     await performHandshake(ws, {
       type: 'hello-ok',
-      protocol: 3,
+      protocol: 4,
       policy: { tickIntervalMs: 200 },
     })
 

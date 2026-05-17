@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { afterEach, test } from 'node:test'
 
-import { buildOpenClawSessionKey, resolveGatewayAgentId } from './openclaw'
+import { buildOpenClawConnectParams, buildOpenClawSessionKey, resolveGatewayAgentId } from './openclaw'
 import { loadAgents, saveAgents } from '../server/storage'
 import type { Agent } from '@/types'
 
@@ -71,4 +71,11 @@ test('buildOpenClawSessionKey honors explicit OpenClaw session keys when provide
   })
 
   assert.equal(sessionKey, 'agent:ops:benchmark:fixed-key')
+})
+
+test('buildOpenClawConnectParams advertises the current gateway protocol', () => {
+  const params = buildOpenClawConnectParams('test-token', 'test-nonce')
+
+  assert.equal(params.minProtocol, 4)
+  assert.equal(params.maxProtocol, 4)
 })

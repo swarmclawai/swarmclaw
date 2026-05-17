@@ -113,6 +113,8 @@ export function getDeviceId(): string {
 
 // --- Protocol helpers ---
 
+export const OPENCLAW_GATEWAY_PROTOCOL_VERSION = 4
+
 /**
  * Build connect params for the OpenClaw gateway protocol.
  *
@@ -132,8 +134,8 @@ export function buildOpenClawConnectParams(
   const scopes = ['operator.admin']
 
   const params: Record<string, unknown> = {
-    minProtocol: 3,
-    maxProtocol: 3,
+    minProtocol: OPENCLAW_GATEWAY_PROTOCOL_VERSION,
+    maxProtocol: OPENCLAW_GATEWAY_PROTOCOL_VERSION,
     auth: token ? { token } : undefined,
     client: {
       id: clientId,
