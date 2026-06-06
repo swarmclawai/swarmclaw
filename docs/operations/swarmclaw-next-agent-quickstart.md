@@ -62,8 +62,8 @@ Use this path for normal worker work:
 1. Open `/tasks`.
 2. Draft a bounded title, description, agent, project, tags, allowed scope, non-goals, and evidence marker.
 3. Create the task with the exact stored agent selected. New Task creates a backlog item by default.
-4. Close the sheet and use the task card's `Queue` button to run it.
-5. Verify the stored task status moved to `queued`, `running`, or `completed`.
+4. Close the sheet and use the task card's exact `Queue` button to run it. Avoid broad `Queue` selectors because `Queued` controls can also match.
+5. Verify the stored task status moved to `queued`, `running`, or `completed`, and verify the stored `agentId` matches the intended worker before counting the run as evidence.
 6. Monitor `/tasks`, `/runs`, `/quality`, and sanitized `/logs`.
 7. Do not retry, cancel, archive, mark complete, edit gates, or repair state without checkpoint.
 
@@ -86,6 +86,12 @@ Expected output:
 - Risks/follow-up
 - Evidence marker: SWARMCLAW_[AREA]_[ROLE]_[GOAL]_OK
 ```
+
+Prompt hygiene for task validators:
+
+- Do not let workers echo the prompt or announce that they are starting.
+- For planning/review tasks that mention app delivery or feature work, include source-path evidence and an explicit `Verification: ... ok` line.
+- If the GUI agent picker does not persist the intended worker, use a title/body mention such as `@Reviewer` or `@Reviewer QA`, then verify the stored `agentId` before queueing.
 
 ## Parallel Agenting
 

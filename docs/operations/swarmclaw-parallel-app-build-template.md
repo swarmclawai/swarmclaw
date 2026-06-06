@@ -71,6 +71,8 @@ Verified clean drill: task `52cbb9bd` (`2026-06-07`) ran as Coordinator `default
 
 Verified QA drill: task `88367b90` (`2026-06-07`) ran as Reviewer QA `c2cd6ff9` with quality gate enabled and marker `SWARMCLAW_REVIEWER_QA_OPERATOR_DRILL_OK`; it found the date-convention ambiguity. Task `8906baf8` confirmed the Europe/Sofia date convention fix with marker `SWARMCLAW_REVIEWER_QA_DATE_CONVENTION_OK` and `validation.ok=true`.
 
+Verified parallel drill: task `eab3d1f4` (`2026-06-07`) ran as Coordinator `default` and passed with marker `SWARMCLAW_PARALLEL_DRILL_PLANNER_CORRECTED_OK`; task `263bc7b8` ran as Builder `92b8cd6c` and passed with marker `SWARMCLAW_PARALLEL_DRILL_BUILDER_CORRECTED_OK`; task `834c0b94` ran as Reviewer QA `c2cd6ff9` and passed with marker `SWARMCLAW_PARALLEL_DRILL_REVIEWER_EXACT_AGENT_OK`. Failed/misassigned learning artifacts: `9beeb223` exposed validator evidence wording, and `652d6e28` passed but ran as Coordinator, so it is not Reviewer QA evidence.
+
 ## Operator Intake
 
 Before creating tasks, write a one-paragraph target:
@@ -117,14 +119,22 @@ Create tasks through the GUI when possible:
 2. Select the exact stored worker in the task form.
 3. Create the task as backlog.
 4. Close the sheet.
-5. Queue with the task card's `Queue` button.
-6. Verify stored status and worker metadata.
+5. Queue with the task card's exact `Queue` button. Use exact accessible-name matching or a scoped card action; broad `Queue` text can match `Queued` controls.
+6. Verify stored status and worker metadata, especially `agentId`, before counting the task as evidence.
 
 If browser automation cannot type into form fields because the virtual clipboard is unavailable, use a checkpointed app service/API path, not raw DB writes. Create backlog, update to queued through the app path, then self-monitor to terminal status.
 
 Avoid assignment-looking text inside the task body. Do not write `agent:`, `agent id:`, `assigned to`, `for agent`, or `@agent` in the prompt body. Set the worker in task metadata instead.
 
+Exception: if GUI picker selection does not persist, a leading `@Reviewer` or `@Reviewer QA` mention can resolve Reviewer QA through the task mention parser. Verify the stored `agentId` is `c2cd6ff9` before queueing. Treat a passed review task with the wrong `agentId` as useful context only, not Reviewer QA evidence.
+
 For pure reasoning/planning tasks, explicitly disable or relax the per-task quality gate and manually verify the marker, required sections, and constraints. The default GUI quality gate may require two evidence categories and can dead-letter useful planning output. Keep quality gates enabled for implementation and QA tasks.
+
+Prompt hygiene:
+
+- Do not let workers echo the prompt or say they are starting.
+- For planning tasks that mention app delivery or feature slices, require `Source paths considered: docs/operations/...` and `Verification: ... ok`.
+- Keep evidence markers in the first line and planning/review outputs short enough to avoid result truncation.
 
 ## Phase Plan
 
