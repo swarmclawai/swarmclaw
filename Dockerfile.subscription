@@ -1,0 +1,92 @@
+FROM node:22-slim AS base
+
+# Install git (needed for update checker) and build essentials (needed for better-sqlite3)
+RUN apt-get update && apt-get install -y git python3 make g++ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Install dependencies
+COPY package.json package-lock.json ./
+COPY scripts/postinstall.mjs ./scripts/postinstall.mjs
+RUN npm config set fetch-retries 5 \
+    && npm config set fetch-retry-factor 2 \
+    && npm config set fetch-retry-mintimeout 10000 \
+    && npm config set fetch-retry-maxtimeout 120000 \
+    && attempt=1 \
+    && until npm ci; do \
+      if [ "$attempt" -ge 3 ]; then \
+        exit 1; \
+      fi; \
+      echo "npm ci failed on attempt ${attempt}; retrying..." >&2; \
+      sleep $((attempt * 5)); \
+      attempt=$((attempt + 1)); \
+    done
+
+# Copy source
+COPY . .
+
+# Build
+RUN SWARMCLAW_BUILD_MODE=1 npm run build:ci
+
+# Production
+FROM node:22-slim AS runner
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+      bash \
+      ca-certificates \
+      curl \
+      git \
+      jq \
+      openssh-client \
+      unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=docker:29-cli /usr/local/bin/docker /usr/local/bin/docker
+
+# Install subscription-backed CLIs. Authentication is performed at runtime into
+# the mounted /home/swarm volume; do not bake account tokens into the image.
+RUN npm config set fetch-retries 5 \
+    && npm config set fetch-retry-factor 2 \
+    && npm config set fetch-retry-mintimeout 10000 \
+    && npm config set fetch-retry-maxtimeout 120000 \
+    && npm install -g \
+      @openai/codex \
+      @anthropic-ai/claude-code \
+      @github/copilot \
+      opencode-ai \
+    && command -v codex \
+    && command -v claude \
+    && command -v copilot \
+    && command -v opencode \
+    && command -v docker
+
+WORKDIR /app
+
+COPY --from=base /app/.next/standalone ./
+COPY --from=base /app/.next/static ./.next/static
+COPY --from=base /app/public ./public
+COPY --from=base /app/node_modules ./node_modules
+COPY --from=base /app/package.json ./
+
+ENV PLAYWRIGHT_BROWSERS_PATH=/home/node/.cache/ms-playwright
+
+RUN npx playwright install-deps chromium \
+    && npx playwright install chromium \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p /app/state /app/data /home/node/.cache \
+    && chown -R node:node /app /home/node
+
+ENV NODE_ENV=production
+ENV PORT=3456
+ENV HOSTNAME=0.0.0.0
+ENV HOME=/home/node
+ENV SWARMCLAW_HOME=/app/state
+
+EXPOSE 3456
+EXPOSE 3457
+
+USER node
+
+CMD ["node", "server.js"]

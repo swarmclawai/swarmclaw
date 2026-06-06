@@ -11,9 +11,11 @@ import { loadMcpServers } from '@/lib/server/storage'
 
 const TAG = 'provider-codex'
 
-function codexModelRequiresReasoningDowngrade(model: string | null | undefined): boolean {
+function resolveCodexReasoningEffort(model: string | null | undefined): string | null {
   const value = String(model || '').trim().toLowerCase()
-  return value === 'gpt-5-codex' || value === 'gpt-5-codex-mini'
+  if (value === 'gpt-5.5') return 'xhigh'
+  if (value === 'gpt-5-codex' || value === 'gpt-5-codex-mini') return 'high'
+  return null
 }
 
 export function streamCodexCliChat({ session, message, imagePath, systemPrompt, write, active, signal }: StreamChatOptions): Promise<string> {
@@ -42,8 +44,9 @@ export function streamCodexCliChat({ session, message, imagePath, systemPrompt, 
   args.push('--json', '--dangerously-bypass-approvals-and-sandbox', '--skip-git-repo-check')
 
   if (session.model) args.push('-m', session.model)
-  if (codexModelRequiresReasoningDowngrade(session.model)) {
-    args.push('-c', 'model_reasoning_effort="high"')
+  const reasoningEffort = resolveCodexReasoningEffort(session.model)
+  if (reasoningEffort) {
+    args.push('-c', 'model_reasoning_effort="' + reasoningEffort + '"')
   }
 
   // Attach images via native -i flag

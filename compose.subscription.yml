@@ -1,0 +1,33 @@
+services:
+  swarmclaw:
+    image: swarmclaw-subscription:1.9.36
+    build:
+      context: .
+      dockerfile: Dockerfile.subscription
+    ports:
+      - "127.0.0.1:3456:3456"
+      - "127.0.0.1:3457:3457"
+    volumes:
+      - ./state:/app/state
+      - swarmclaw-cli-home:/home/node
+      - /var/run/docker.sock:/var/run/docker.sock
+    group_add:
+      - "${DOCKER_GID:-973}"
+    env_file:
+      - path: ./.env.local
+        required: false
+    environment:
+      NODE_ENV: production
+      PORT: "3456"
+      HOSTNAME: 0.0.0.0
+      SWARMCLAW_HOME: /app/state
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3456/api/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  swarmclaw-cli-home:

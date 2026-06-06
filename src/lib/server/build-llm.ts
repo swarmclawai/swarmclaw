@@ -16,6 +16,7 @@ import type { Agent } from '@/types'
 
 const OLLAMA_CLOUD_URL = 'https://ollama.com/v1'
 const OLLAMA_LOCAL_URL = 'http://localhost:11434/v1'
+const MISSING_GENERATION_MODEL_MESSAGE = 'No generation-compatible model is configured'
 export const OPENAI_COMPAT_MODEL_TIMEOUT_MS = 180_000
 export const OPENAI_COMPAT_MODEL_MAX_RETRIES = 2
 export type GenerationResponseFormat = 'json_object'
@@ -170,6 +171,10 @@ function normalizePreferenceValue(value: string | null | undefined): string {
   return typeof value === 'string' ? value.trim() : ''
 }
 
+export function isMissingGenerationModelError(error: unknown): boolean {
+  return error instanceof Error && error.message.includes(MISSING_GENERATION_MODEL_MESSAGE)
+}
+
 function getAgentGenerationPreferences(agent: Agent | null | undefined): GenerationModelPreference[] {
   if (!agent) return []
   const preferences: GenerationModelPreference[] = [{
@@ -272,7 +277,7 @@ export function resolveGenerationModelConfig(options?: {
   const providerHint = excludeProviders.size > 0
     ? ` Available providers excluded for this request: ${Array.from(excludeProviders).join(', ')}.`
     : ''
-  throw new Error(`No generation-compatible model is configured for ${label}. Use a non-CLI provider or add a routed model target to the owning agent.${providerHint}`)
+  throw new Error(`${MISSING_GENERATION_MODEL_MESSAGE} for ${label}. Use a non-CLI provider or add a routed model target to the owning agent.${providerHint}`)
 }
 
 /**

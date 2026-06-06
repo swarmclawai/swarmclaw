@@ -48,6 +48,7 @@ daemon.log
 /data/*
 !/data/.gitkeep
 !/data/skills/
+/state/
 /.legacy-browser-profiles/
 
 # user config backup

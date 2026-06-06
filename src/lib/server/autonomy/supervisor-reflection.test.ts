@@ -202,6 +202,86 @@ describe('supervisor-reflection', () => {
     ])
   })
 
+  it('keeps incidents but skips optional reflection when no generation model is configured', () => {
+    const output = runWithTempDataDir(`
+      const storageMod = await import('@/lib/server/storage')
+      const storage = storageMod.default || storageMod['module.exports'] || storageMod
+      const reflectionMod = await import('@/lib/server/autonomy/supervisor-reflection')
+      const mod = reflectionMod.default || reflectionMod['module.exports'] || reflectionMod
+
+      storage.saveAgents({
+        'agent-cli': {
+          id: 'agent-cli',
+          name: 'CLI Agent',
+          provider: 'codex-cli',
+          model: 'gpt-5.5',
+        },
+      })
+
+      storage.saveSessions({
+        s1: {
+          id: 's1',
+          name: 'CLI Autonomy Session',
+          cwd: process.cwd(),
+          user: 'tester',
+          provider: 'codex-cli',
+          model: 'gpt-5.5',
+          claudeSessionId: null,
+          messages: [
+            { role: 'user', text: 'Repair the deployment workflow.', time: 1 },
+            { role: 'assistant', text: 'I retried the same shell path and nothing changed.', time: 2 },
+          ],
+          createdAt: 1,
+          lastActiveAt: 2,
+          sessionType: 'task',
+          agentId: 'agent-cli',
+        },
+      })
+
+      storage.saveSettings({
+        supervisorEnabled: true,
+        supervisorRuntimeScope: 'both',
+        supervisorNoProgressLimit: 2,
+        supervisorRepeatedToolLimit: 3,
+        reflectionEnabled: true,
+        reflectionAutoWriteMemory: true,
+      })
+
+      const result = await mod.observeAutonomyRunOutcome({
+        runId: 'run-cli-reflection',
+        sessionId: 's1',
+        agentId: 'agent-cli',
+        source: 'task',
+        status: 'completed',
+        resultText: 'I retried the same shell path and nothing changed.',
+        toolEvents: [
+          { name: 'shell', input: '{"cmd":"npm test"}' },
+          { name: 'shell', input: '{"cmd":"npm test"}' },
+          { name: 'shell', input: '{"cmd":"npm test"}' },
+        ],
+        mainLoopState: {
+          followupChainCount: 2,
+          summary: 'I retried the same shell path and nothing changed.',
+        },
+        sourceMessage: 'Repair the deployment workflow.',
+      }, {
+        generateText: async () => {
+          throw new Error('No generation-compatible model is configured for session "s1" / agent "agent-cli". Use a non-CLI provider or add a routed model target to the owning agent.')
+        },
+      })
+
+      console.log(JSON.stringify({
+        incidentKinds: result.incidents.map((incident) => incident.kind).sort(),
+        reflectionSummary: result.reflection?.summary ?? null,
+        reflectionCount: mod.listRunReflections({ sessionId: 's1' }).length,
+      }))
+    `)
+
+    assert.deepEqual(output.incidentKinds, ['no_progress', 'repeated_tool'])
+    assert.equal(output.reflectionSummary, null)
+    assert.equal(output.reflectionCount, 0)
+  })
+
   it('persists low-quality reflections while skipping auto-written memory', () => {
     const output = runWithTempDataDir(`
       const storageMod = await import('@/lib/server/storage')

@@ -1,7 +1,7 @@
 import { HumanMessage } from '@langchain/core/messages'
 
 import { genId } from '@/lib/id'
-import { buildLLM } from '@/lib/server/build-llm'
+import { buildLLM, isMissingGenerationModelError } from '@/lib/server/build-llm'
 import { log } from '@/lib/server/logger'
 import { cleanText, cleanMultiline, normalizeList } from '@/lib/server/text-normalization'
 import type {
@@ -556,6 +556,7 @@ export async function extractWorkingStatePatch(
       })()
     return parseWorkingStatePatchResponse(responseText)
   } catch (error: unknown) {
+    if (isMissingGenerationModelError(error)) return null
     log.warn(TAG, 'Working-state extraction failed', {
       sessionId: input.sessionId,
       error: error instanceof Error ? error.message : String(error),

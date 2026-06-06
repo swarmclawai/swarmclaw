@@ -88,7 +88,7 @@ export const PROVIDERS: Record<string, BuiltinProviderConfig> = {
   'codex-cli': {
     id: 'codex-cli',
     name: 'OpenAI Codex CLI',
-    models: ['gpt-5.4-codex', 'gpt-5.3-codex', 'gpt-5.2-codex', 'gpt-5.1-codex', 'gpt-5-codex-mini'],
+    models: ['gpt-5.5', 'gpt-5.4-codex', 'gpt-5.3-codex', 'gpt-5.2-codex', 'gpt-5.1-codex', 'gpt-5-codex-mini'],
     requiresApiKey: false,
     requiresEndpoint: false,
     handler: { streamChat: streamCodexCliChat },

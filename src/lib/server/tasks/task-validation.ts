@@ -63,14 +63,24 @@ const COMMAND_EVIDENCE_HINT = /\b(npm|pnpm|yarn|bun|node|npx|pytest|vitest|jest|
 const FILE_PATH_EVIDENCE_HINT = /\b[\w./-]+\.(ts|tsx|js|jsx|mjs|cjs|json|md|css|scss|html|yml|yaml|sh|py|go|rs|java|kt|swift|rb|php|sql|txt)\b/i
 const ARTIFACT_EVIDENCE_HINT = /(?:sandbox:)?\/api\/uploads\/[^\s)\]]+|https?:\/\/[^\s)\]]+\.(?:png|jpe?g|webp|gif|pdf|zip)\b/i
 const VERIFICATION_EVIDENCE_HINT = /\b(test|tests|lint|typecheck|build)\b[^.]{0,40}\b(pass(?:ed)?|fail(?:ed)?|ok|success)\b/i
-const SCREENSHOT_HINT = /\b(screenshot|screen shot|snapshot|capture)\b/i
-const DELIVERY_HINT = /\b(send|deliver|return|share|upload|post|message)\b/i
+const BROWSER_RUNTIME_HINT = /\b(playwright|chromium|browser|page|route|url)\b/i
+const BROWSER_HTTP_SUCCESS_HINT = /\b(?:http status|status|response)\s*:?\s*(?:2\d\d|ok|success)\b/i
+const BROWSER_READY_HINT = /\b(?:ready signal|rendered|visible|final url|title)\b/i
+const BROWSER_NO_FAILURE_HINT = /\b(?:page errors?|request failures?)\s*:?\s*(?:none|0)\b/i
+const SCREENSHOT_HINT = /\b(screenshot|screen shot|snapshot|screen\s+capture)\b/i
+const SCREENSHOT_DELIVERY_REQUEST_HINT = /\b(?:send|deliver|share|upload|post|message)\b[^.]{0,80}\b(?:screenshot|screen shot|snapshot|screen\s+capture|image)\b|\b(?:screenshot|screen shot|snapshot|screen\s+capture|image)\b[^.]{0,80}\b(?:send|deliver|share|upload|post|message)\b|\breturn\b[^.]{0,40}\b(?:screenshot|screen shot|snapshot|screen\s+capture|image)\b/i
 const SCREENSHOT_ARTIFACT_HINT = /(?:sandbox:)?\/api\/uploads\/[^\s)\]]+|https?:\/\/[^\s)\]]+\.(?:png|jpe?g|webp|gif|pdf)\b/i
 const SENT_SCREENSHOT_HINT = /\b(sent|shared|uploaded|returned)\b[^.]*\b(screenshot|snapshot|image)\b/i
 
 function normalizeText(value: unknown): string {
   if (typeof value !== 'string') return ''
   return value.replace(/\s+/g, ' ').trim()
+}
+
+function hasBrowserVerificationEvidence(result: string): boolean {
+  if (!BROWSER_RUNTIME_HINT.test(result)) return false
+  if (BROWSER_HTTP_SUCCESS_HINT.test(result)) return true
+  return BROWSER_READY_HINT.test(result) && BROWSER_NO_FAILURE_HINT.test(result)
 }
 
 export function validateTaskCompletion(
@@ -126,7 +136,7 @@ export function validateTaskCompletion(
   }
 
   const screenshotTask = SCREENSHOT_HINT.test(title) || SCREENSHOT_HINT.test(description)
-  const screenshotDeliveryTask = screenshotTask && (DELIVERY_HINT.test(title) || DELIVERY_HINT.test(description))
+  const screenshotDeliveryTask = screenshotTask && (SCREENSHOT_DELIVERY_REQUEST_HINT.test(title) || SCREENSHOT_DELIVERY_REQUEST_HINT.test(description))
   if (screenshotDeliveryTask) {
     const hasScreenshotArtifact = SCREENSHOT_ARTIFACT_HINT.test(result) || SENT_SCREENSHOT_HINT.test(result)
     if (!hasScreenshotArtifact) {
@@ -141,7 +151,9 @@ export function validateTaskCompletion(
 
     const hasCommandEvidence = COMMAND_EVIDENCE_HINT.test(result) || (report?.evidence.commandsRun.length || 0) > 0
     const hasFileEvidence = FILE_PATH_EVIDENCE_HINT.test(result) || (report?.evidence.changedFiles.length || 0) > 0
-    const hasVerificationEvidence = VERIFICATION_EVIDENCE_HINT.test(result) || (report?.evidence.verification.length || 0) > 0
+    const hasVerificationEvidence = VERIFICATION_EVIDENCE_HINT.test(result)
+      || hasBrowserVerificationEvidence(result)
+      || (report?.evidence.verification.length || 0) > 0
     const hasArtifactEvidence = ARTIFACT_EVIDENCE_HINT.test(result) || ((task.artifacts?.length || 0) > 0)
 
     const evidenceSignals = [

@@ -6,6 +6,20 @@ import { resolveCliBinary, buildCliEnv, probeCliAuth, attachAbortHandler, isStde
 
 export const OPENCODE_CLI_STDIO: ['ignore', 'pipe', 'pipe'] = ['ignore', 'pipe', 'pipe']
 
+export function buildOpenCodeCliNoOutputMessage(code: number | null, sig: NodeJS.Signals | null, stderrText: string, eventCount: number): string {
+  const codeText = code ?? 'unknown'
+  const signalText = sig ? ` (${sig})` : ''
+  const stderr = stderrText.trim()
+  if (stderr) {
+    return `OpenCode CLI exited with code ${codeText}${signalText}: ${stderr.slice(0, 1200)}`
+  }
+  if (eventCount > 0) {
+    const eventWord = eventCount === 1 ? 'event' : 'events'
+    return `OpenCode CLI exited with code ${codeText}${signalText} after ${eventCount} ${eventWord} but returned no text output.`
+  }
+  return `OpenCode CLI exited with code ${codeText}${signalText} and returned no output.`
+}
+
 /**
  * OpenCode CLI provider — spawns `opencode run <message> --format json` for non-interactive usage.
  * Tracks `session.opencodeSessionId` from streamed JSON events to support multi-turn continuity.
@@ -135,10 +149,8 @@ export function streamOpenCodeCliChat({ session, message, imagePath, systemPromp
     proc.on('close', (code, sig) => {
       log.info('opencode-cli', `Process closed: code=${code} signal=${sig} events=${eventCount} response=${fullResponse.length}chars`)
       active.delete(session.id)
-      if ((code ?? 0) !== 0 && !fullResponse.trim() && eventErrors.length === 0) {
-        const msg = stderrText.trim()
-          ? `OpenCode CLI exited with code ${code ?? 'unknown'}${sig ? ` (${sig})` : ''}: ${stderrText.trim().slice(0, 1200)}`
-          : `OpenCode CLI exited with code ${code ?? 'unknown'}${sig ? ` (${sig})` : ''} and returned no output.`
+      if (!fullResponse.trim() && eventErrors.length === 0) {
+        const msg = buildOpenCodeCliNoOutputMessage(code, sig, stderrText, eventCount)
         write(`data: ${JSON.stringify({ t: 'err', text: msg })}\n\n`)
       }
       resolve(fullResponse.trim())

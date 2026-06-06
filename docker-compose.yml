@@ -3,8 +3,12 @@ services:
     image: ghcr.io/swarmclawai/swarmclaw:latest
     build: .
     ports:
-      - "3456:3456"
-      - "3457:3457"
+      - "127.0.0.1:3456:3456"
+      - "127.0.0.1:3457:3457"
+    environment:
+      DATA_DIR: /app/data
+      WORKSPACE_DIR: /app/data/workspace
+      BROWSER_PROFILES_DIR: /app/data/browser-profiles
     volumes:
       - ./data:/app/data
     env_file:

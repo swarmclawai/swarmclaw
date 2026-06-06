@@ -26,6 +26,31 @@ test('validateTaskCompletion accepts screenshot delivery tasks with upload artif
   assert.equal(validation.ok, true)
 })
 
+test('validateTaskCompletion does not treat planning prompts with capture language as screenshot delivery', () => {
+  const validation = validateTaskCompletion({
+    title: 'Planning dry run',
+    description: [
+      'Plan a local productivity app with quick-capture notes.',
+      'Browser QA may include screenshot evidence when available.',
+      'Return exactly these sections: Product Scope, Evidence Ledger, Verification.',
+    ].join(' '),
+    result: [
+      'Product scope documented.',
+      'Future write scopes include src/app/page.tsx and src/features/board/index.tsx.',
+      'Verification: read-only planning dry-run completed with no files changed and no commands run.',
+      'Evidence marker: SWARMCLAW_APPBUILD_PLAN_DRYRUN_OK.',
+    ].join(' '),
+    qualityGate: {
+      enabled: true,
+      minResultChars: 80,
+      minEvidenceItems: 1,
+    },
+    error: null,
+  } as Partial<BoardTask>)
+
+  assert.equal(validation.ok, true, validation.reasons.join('; '))
+})
+
 test('validateTaskCompletion accepts concise non-implementation result summaries', () => {
   const validation = validateTaskCompletion({
     title: 'Answer greeting',
@@ -188,4 +213,48 @@ test('validateTaskCompletion passes explicit quality gate when evidence checks a
   } as Partial<BoardTask>)
 
   assert.equal(validation.ok, true)
+})
+
+test('validateTaskCompletion counts concrete browser smoke details as verification evidence', () => {
+  const validation = validateTaskCompletion({
+    title: 'Run rebuilt image browser smoke',
+    description: 'Use Playwright Chromium to verify the local SwarmClaw Knowledge route.',
+    result: [
+      'Ran an inline node Playwright script with Chromium.',
+      'Target route: /knowledge.',
+      'HTTP status: 200.',
+      'Final URL: http://127.0.0.1:3456/login.',
+      'Ready signal: access-key gate rendered and visible.',
+      'Page errors: none.',
+      'Request failures: none.',
+    ].join(' '),
+    qualityGate: {
+      enabled: true,
+      minResultChars: 20,
+      minEvidenceItems: 2,
+      requireVerification: true,
+    },
+    error: null,
+  } as Partial<BoardTask>)
+
+  assert.equal(validation.ok, true)
+})
+
+test('validateTaskCompletion rejects vague browser claims without concrete verification details', () => {
+  const validation = validateTaskCompletion({
+    title: 'Run rebuilt image browser smoke',
+    description: 'Use a browser to verify the local SwarmClaw Knowledge route.',
+    result: 'Opened the browser and the page seemed okay.',
+    qualityGate: {
+      enabled: true,
+      minResultChars: 20,
+      minEvidenceItems: 2,
+      requireVerification: true,
+    },
+    error: null,
+  } as Partial<BoardTask>)
+
+  assert.equal(validation.ok, false)
+  assert.ok(validation.reasons.some((reason) => reason.includes('insufficient completion evidence')))
+  assert.ok(validation.reasons.some((reason) => reason.includes('verification evidence is required')))
 })

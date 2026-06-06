@@ -162,6 +162,77 @@ describe('working-state service', () => {
     assert.match(String(output.prompt), /approval apr-123/i)
   })
 
+  it('skips optional structured extraction without warning when no generation model is configured', () => {
+    const output = runWithTempDataDir(`
+      const fs = await import('node:fs')
+      const path = await import('node:path')
+      const storageMod = await import('@/lib/server/storage')
+      const storage = storageMod.default || storageMod['module.exports'] || storageMod
+      const serviceMod = await import('@/lib/server/working-state/service')
+      const service = serviceMod.default || serviceMod['module.exports'] || serviceMod
+
+      storage.saveAgents({
+        'agent-cli': {
+          id: 'agent-cli',
+          name: 'CLI Agent',
+          provider: 'codex-cli',
+          model: 'gpt-5.5',
+        },
+      })
+
+      storage.saveSessions({
+        main: {
+          id: 'main',
+          name: 'CLI Task',
+          cwd: process.cwd(),
+          user: 'tester',
+          provider: 'codex-cli',
+          model: 'gpt-5.5',
+          claudeSessionId: null,
+          messages: [
+            { role: 'user', text: 'Run a read-only verification and report docs/result.md.', time: 1 },
+          ],
+          createdAt: 1,
+          lastActiveAt: 1,
+          sessionType: 'task',
+          agentId: 'agent-cli',
+        },
+      })
+
+      const state = await service.synchronizeWorkingStateForTurn({
+        sessionId: 'main',
+        agentId: 'agent-cli',
+        source: 'task',
+        runId: 'run-cli',
+        message: 'Run a read-only verification and report docs/result.md.',
+        assistantText: 'Read-only verification complete. Artifact: docs/result.md.',
+        toolEvents: [
+          {
+            name: 'files',
+            input: JSON.stringify({ action: 'write', files: [{ path: 'docs/result.md', content: '# result' }] }),
+            output: JSON.stringify({ ok: true, files: [{ path: 'docs/result.md' }] }),
+          },
+        ],
+      }, {
+        generateText: async () => {
+          throw new Error('No generation-compatible model is configured for session "main" / agent "agent-cli". Use a non-CLI provider or add a routed model target to the owning agent.')
+        },
+      })
+
+      const logPath = path.join(process.env.DATA_DIR, 'app.log')
+      const logText = fs.existsSync(logPath) ? fs.readFileSync(logPath, 'utf8') : ''
+      console.log(JSON.stringify({
+        evidenceCount: state.evidenceRefs.length,
+        artifacts: state.artifacts.map((artifact) => artifact.path || artifact.url || artifact.label),
+        warned: logText.includes('Working-state extraction failed'),
+      }))
+    `)
+
+    assert.equal(output.warned, false)
+    assert.ok(Number(output.evidenceCount) > 0)
+    assert.ok(Array.isArray(output.artifacts) && output.artifacts.some((artifact) => /docs\/result\.md/i.test(String(artifact))))
+  })
+
   it('keeps the main loop hydrated from working state and mirrors main-loop updates back', () => {
     const output = runWithTempDataDir(`
       const storageMod = await import('@/lib/server/storage')

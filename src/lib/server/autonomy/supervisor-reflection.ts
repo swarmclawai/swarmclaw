@@ -2,7 +2,7 @@ import crypto from 'node:crypto'
 import { HumanMessage } from '@langchain/core/messages'
 
 import { genId } from '@/lib/id'
-import { buildLLM } from '@/lib/server/build-llm'
+import { buildLLM, isMissingGenerationModelError } from '@/lib/server/build-llm'
 import { getMemoryDb } from '@/lib/server/memory/memory-db'
 import {
   loadRunReflections,
@@ -1102,19 +1102,27 @@ export async function observeAutonomyRunOutcome(
     incidents,
     sourceMessage: input.sourceMessage,
   })
-  const responseText = options?.generateText
-    ? await options.generateText(prompt)
-    : await (async () => {
-      const { llm } = await buildLLM({ sessionId: input.sessionId, agentId: input.agentId || session.agentId || null })
-      const response = await llm.invoke([new HumanMessage(prompt)])
-      if (typeof response.content === 'string') return response.content
-      if (Array.isArray(response.content)) {
-        return response.content
-          .map((part) => (part && typeof part === 'object' && 'text' in part && typeof part.text === 'string') ? part.text : '')
-          .join('')
-      }
-      return ''
-    })()
+  let responseText: string
+  try {
+    responseText = options?.generateText
+      ? await options.generateText(prompt)
+      : await (async () => {
+        const { llm } = await buildLLM({ sessionId: input.sessionId, agentId: input.agentId || session.agentId || null })
+        const response = await llm.invoke([new HumanMessage(prompt)])
+        if (typeof response.content === 'string') return response.content
+        if (Array.isArray(response.content)) {
+          return response.content
+            .map((part) => (part && typeof part === 'object' && 'text' in part && typeof part.text === 'string') ? part.text : '')
+            .join('')
+        }
+        return ''
+      })()
+  } catch (error: unknown) {
+    if (isMissingGenerationModelError(error)) {
+      return { incidents, reflection: null }
+    }
+    throw error
+  }
   let parsed: ReturnType<typeof parseReflectionResponse>
   try {
     parsed = parseReflectionResponse(responseText)
