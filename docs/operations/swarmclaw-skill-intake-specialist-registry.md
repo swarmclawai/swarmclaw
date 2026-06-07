@@ -236,6 +236,8 @@ These are intake candidates from `ComposioHQ/awesome-claude-skills`. Status is c
 
 Future specialist agents should be created only when recurring work justifies a durable role. Until then, use task prompts assigned to existing agents.
 
+First real app-build pilot recommendation (`2026-06-07`): do not create new durable specialist agents yet. Use existing agents plus scoped prompts: Coordinator `default` for product scope, Builder `92b8cd6c` for architecture/implementation planning, Reviewer QA `c2cd6ff9` for QA/release gates and browser review, and only split to OpenCode Builder `a0f79bad` after file scopes are disjoint and contracts are stable. Public skill sources still support later audit candidates such as `software-architecture`, `test-driven-development`, `systematic-debugging`, `review-implementing`, and `test-fixing`, but they should be adapted one at a time after the pilot exposes repeated pain.
+
 | Specialist | When To Use | First Artifact | Likely Worker |
 |---|---|---|---|
 | Product Architect | Vague product/app ideas need scope, milestones, and acceptance criteria. | Task prompt; later product-planning skill. | Builder or Reviewer QA, depending on read/write scope. |

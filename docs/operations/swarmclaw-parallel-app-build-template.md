@@ -75,6 +75,8 @@ Verified parallel drill: task `eab3d1f4` (`2026-06-07`) ran as Coordinator `defa
 
 Verified app-build rehearsal: on `2026-06-07`, `Builder app-build rehearsal blueprint corrected 2026-06-07` completed with marker `SWARMCLAW_PARALLEL_APPBUILD_BUILDER_REHEARSAL_OK`, and `Reviewer QA app-build rehearsal review corrected 2026-06-07` completed with marker `SWARMCLAW_PARALLEL_APPBUILD_REVIEWER_REHEARSAL_OK`. Both used direct GUI assignment and explicit first-ten-line evidence labels. Observed local runtime behavior was serialized execution: Builder ran first while Reviewer QA stayed queued, then Reviewer QA started after Builder completed.
 
+Verified real app-build pilot: on `2026-06-07`, task `f6dc5a7f` (`Builder real app-build pilot plan 2026-06-07`) completed with marker `SWARMCLAW_REAL_APPBUILD_PILOT_BUILDER_PLAN_OK` after one validator retry for unfinished-language phrasing. Task `3a489b28` (`Reviewer QA real app-build pilot gate 2026-06-07`) completed with marker `SWARMCLAW_REAL_APPBUILD_PILOT_REVIEW_GATE_OK`. Both used direct worker assignment and first-ten-line evidence labels.
+
 ## Operator Intake
 
 Before creating tasks, write a one-paragraph target:
@@ -96,6 +98,8 @@ If any of these are unclear, create a read-only planning task first. Do not star
 ## Safe Parallelism Rule
 
 Run work in parallel only when scopes are independent.
+
+Source audit note: the queue source defaults board-task concurrency to `3` and clamps `taskQueueConcurrency` to `1..10`, but live behavior may appear serial if settings override concurrency, dependencies/retry delays apply, or provider/runtime constraints bottleneck execution. Do not assume queued task order. Use explicit dependencies/blockers for ordering-sensitive work, and disjoint scopes for parallel work.
 
 Good parallel splits:
 
