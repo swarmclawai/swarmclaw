@@ -93,6 +93,7 @@ Prompt hygiene for task validators:
 - For planning/review tasks that mention app delivery or feature work, include source-path evidence and an explicit `Verification: ... ok` line.
 - If the GUI agent picker does not persist the intended worker, use a title/body mention such as `@Reviewer` or `@Reviewer QA`, then verify the stored `agentId` before queueing.
 - For reasoning-only tasks, disabled quality gates must persist as `qualityGate.enabled=false`; `qualityGate:null` can still fall back to the default gate when the prompt contains implementation-like wording.
+- If a retrying task has a valid marker/result but fails on `Task has a non-empty error field`, treat it as F025 stale retry-error hygiene. Use a corrected single-attempt task or rebuild after the source patch; do not blame the worker output until validation with the stale error cleared has been checked.
 
 ## Parallel Agenting
 

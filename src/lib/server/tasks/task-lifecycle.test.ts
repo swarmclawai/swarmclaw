@@ -9,6 +9,7 @@ import {
   markInvalidCompletedTaskFailed,
   markValidatedTaskCompleted,
   prepareScheduledTaskRun,
+  recordCurrentTaskRunError,
   resetTaskForRerun,
 } from '@/lib/server/tasks/task-lifecycle'
 
@@ -169,6 +170,28 @@ describe('task lifecycle helpers', () => {
 
     markValidatedTaskCompleted(task, { now: 75 })
     assert.equal(task.completedAt, 75)
+  })
+
+  it('recordCurrentTaskRunError clears stale retry errors before completion validation', () => {
+    const task = makeTask({
+      status: 'running',
+      error: 'Completion validation failed: previous attempt had unfinished language.',
+    })
+
+    recordCurrentTaskRunError(task, null)
+
+    assert.equal(task.error, null)
+  })
+
+  it('recordCurrentTaskRunError preserves the current run error', () => {
+    const task = makeTask({
+      status: 'running',
+      error: 'Completion validation failed: previous attempt had unfinished language.',
+    })
+
+    recordCurrentTaskRunError(task, 'Current runtime failure')
+
+    assert.equal(task.error, 'Current runtime failure')
   })
 
   it('markInvalidCompletedTaskFailed records failure state and comment', () => {

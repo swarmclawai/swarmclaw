@@ -212,6 +212,19 @@ export function markValidatedTaskCompleted(
   return task
 }
 
+export function recordCurrentTaskRunError(task: BoardTask, runError: unknown): BoardTask {
+  const errorText = runError instanceof Error
+    ? runError.message.trim()
+    : typeof runError === 'string'
+      ? runError.trim()
+      : runError == null
+        ? ''
+        : String(runError).trim()
+
+  task.error = errorText ? errorText.slice(0, 500) : null
+  return task
+}
+
 export function markInvalidCompletedTaskFailed(
   task: BoardTask,
   validation: TaskCompletionValidation,

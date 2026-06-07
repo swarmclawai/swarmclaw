@@ -51,6 +51,7 @@ import {
   didTaskValidationChange,
   markInvalidCompletedTaskFailed,
   markValidatedTaskCompleted,
+  recordCurrentTaskRunError,
   refreshTaskCompletionValidation,
 } from '@/lib/server/tasks/task-lifecycle'
 
@@ -1442,6 +1443,7 @@ export async function processNext() {
           t2[taskId].result = enrichedResult.slice(0, 4000) || null
           t2[taskId].artifacts = taskResult.artifacts.slice(0, 24)
           t2[taskId].outputFiles = extractLikelyOutputFiles(enrichedResult).slice(0, 24)
+          recordCurrentTaskRunError(t2[taskId], taskRun.error || null)
           t2[taskId].updatedAt = Date.now()
           const { validation } = refreshTaskCompletionValidation(t2[taskId], settings)
 
