@@ -282,16 +282,14 @@ export function TaskSheet() {
   }
 
   const handleSave = async () => {
-    const qualityGate: TaskQualityGateConfig | null = qualityGateEnabled
-      ? {
-          enabled: true,
-          minResultChars: qualityGateMinResultChars,
-          minEvidenceItems: qualityGateMinEvidenceItems,
-          requireVerification: qualityGateRequireVerification,
-          requireArtifact: qualityGateRequireArtifact,
-          requireReport: qualityGateRequireReport,
-        }
-      : null
+    const qualityGate: TaskQualityGateConfig = {
+      enabled: qualityGateEnabled,
+      minResultChars: qualityGateMinResultChars,
+      minEvidenceItems: qualityGateMinEvidenceItems,
+      requireVerification: qualityGateRequireVerification,
+      requireArtifact: qualityGateRequireArtifact,
+      requireReport: qualityGateRequireReport,
+    }
     const executionPolicy = buildExecutionPolicy(executionPolicyEnabled, {
       review: executionPolicyReview,
       approval: executionPolicyApproval,

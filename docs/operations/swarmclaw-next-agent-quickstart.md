@@ -31,7 +31,7 @@ Date convention: operator doc dates use Zmey's local Europe/Sofia calendar date 
 
 ## Current Operating Baseline
 
-Current local setup as of 2026-06-06:
+Current local setup as of 2026-06-07:
 
 | Item | Value |
 |---|---|
@@ -92,6 +92,7 @@ Prompt hygiene for task validators:
 - Do not let workers echo the prompt or announce that they are starting.
 - For planning/review tasks that mention app delivery or feature work, include source-path evidence and an explicit `Verification: ... ok` line.
 - If the GUI agent picker does not persist the intended worker, use a title/body mention such as `@Reviewer` or `@Reviewer QA`, then verify the stored `agentId` before queueing.
+- For reasoning-only tasks, disabled quality gates must persist as `qualityGate.enabled=false`; `qualityGate:null` can still fall back to the default gate when the prompt contains implementation-like wording.
 
 ## Parallel Agenting
 
@@ -122,6 +123,8 @@ For browser-visible work, require concrete evidence:
 - unique evidence marker
 
 Worker browsers may be unauthenticated. For protected SwarmClaw GUI routes, reaching `/login` and seeing the access gate can be valid evidence. Do not read `.env.local` or enter an access key without checkpoint.
+
+If browser automation reports that the virtual clipboard is not installed while filling New Task fields, stop retrying text entry. Close the unsaved dialog, verify no partial task was created, and use manual entry or a checkpointed app service/API path only if the smoke still requires a state change.
 
 ## Knowledge, Skills, And Memory
 

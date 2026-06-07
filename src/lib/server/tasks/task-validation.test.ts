@@ -162,6 +162,23 @@ test('validateTaskCompletion enforces explicit quality gate evidence requirement
   assert.ok(validation.reasons.some((reason) => reason.includes('artifact evidence is required')))
 })
 
+test('validateTaskCompletion respects explicitly disabled quality gates for implementation-hint reviews', () => {
+  const validation = validateTaskCompletion({
+    title: 'Review app build orchestration readiness',
+    description: 'Read-only review of implementation planning readiness.',
+    result: 'Review completed. Verified source reference src/lib/server/tasks/task-validation.test.ts. No commands run.',
+    qualityGate: {
+      enabled: false,
+      minResultChars: 20,
+      minEvidenceItems: 2,
+      requireArtifact: true,
+    },
+    error: null,
+  } as Partial<BoardTask>)
+
+  assert.equal(validation.ok, true, validation.reasons.join('; '))
+})
+
 test('validateTaskCompletion accepts short replies when prompt explicitly asks for one', () => {
   const cases = [
     { description: 'Reply with the word PONG only.', result: 'PONG' },
