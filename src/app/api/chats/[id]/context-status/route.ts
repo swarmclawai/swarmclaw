@@ -3,6 +3,7 @@ import { getSession } from '@/lib/server/sessions/session-repository'
 import { getMessages } from '@/lib/server/messages/message-repository'
 import { getContextStatus } from '@/lib/server/context-manager'
 import { notFound } from '@/lib/server/collection-helpers'
+import { ensureOpenRouterModelContextCache } from '@/lib/server/openrouter-model-context'
 
 const SYSTEM_PROMPT_TOKEN_ESTIMATE = 2000
 
@@ -11,6 +12,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const session = getSession(id)
   if (!session) return notFound()
   const messages = getMessages(id)
+  await ensureOpenRouterModelContextCache(session.provider as string)
   const status = getContextStatus(
     messages,
     SYSTEM_PROMPT_TOKEN_ESTIMATE,

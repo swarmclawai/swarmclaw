@@ -2,6 +2,7 @@ import type { Message, Session } from '@/types'
 import { getMemoryDb } from '@/lib/server/memory/memory-db'
 import { extractFactsFromMessages, ensureRunContext, pruneRunContext } from '@/lib/server/run-context'
 import { getSession, saveSession } from '@/lib/server/sessions/session-repository'
+import { getCachedOpenRouterContextWindow } from '@/lib/server/openrouter-model-context'
 
 import { repairTranscriptConsistency } from './transcript-repair'
 
@@ -97,6 +98,9 @@ const PROVIDER_DEFAULT_WINDOWS: Record<string, number> = {
 
 /** Get context window size for a model, falling back to provider default */
 export function getContextWindowSize(provider: string, model: string): number {
+  const openRouterContext = getCachedOpenRouterContextWindow(provider, model)
+  if (openRouterContext) return openRouterContext
+
   return PROVIDER_CONTEXT_WINDOWS[model]
     || PROVIDER_DEFAULT_WINDOWS[provider]
     || 8_192
