@@ -63,20 +63,18 @@ RUN npm config set fetch-retries 5 \
 
 WORKDIR /app
 
-COPY --from=base /app/.next/standalone ./
-COPY --from=base /app/.next/static ./.next/static
-COPY --from=base /app/public ./public
-COPY --from=base /app/node_modules ./node_modules
-COPY --from=base /app/package.json ./
+COPY --chown=node:node --from=base /app/.next/standalone ./
+COPY --chown=node:node --from=base /app/.next/static ./.next/static
+COPY --chown=node:node --from=base /app/public ./public
+COPY --chown=node:node --from=base /app/package.json ./
 
 ENV PLAYWRIGHT_BROWSERS_PATH=/home/node/.cache/ms-playwright
 
-RUN npx playwright install-deps chromium \
-    && npx playwright install chromium \
+RUN node ./node_modules/playwright/cli.js install-deps chromium \
     && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir -p /app/state /app/data /home/node/.cache \
-    && chown -R node:node /app /home/node
+    && chown -R node:node /app/state /app/data /home/node
 
 ENV NODE_ENV=production
 ENV PORT=3456
@@ -88,5 +86,7 @@ EXPOSE 3456
 EXPOSE 3457
 
 USER node
+
+RUN node ./node_modules/playwright/cli.js install chromium
 
 CMD ["node", "server.js"]
