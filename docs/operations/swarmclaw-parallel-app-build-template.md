@@ -73,6 +73,8 @@ Verified QA drill: task `88367b90` (`2026-06-07`) ran as Reviewer QA `c2cd6ff9` 
 
 Verified parallel drill: task `eab3d1f4` (`2026-06-07`) ran as Coordinator `default` and passed with marker `SWARMCLAW_PARALLEL_DRILL_PLANNER_CORRECTED_OK`; task `263bc7b8` ran as Builder `92b8cd6c` and passed with marker `SWARMCLAW_PARALLEL_DRILL_BUILDER_CORRECTED_OK`; task `834c0b94` ran as Reviewer QA `c2cd6ff9` and passed with marker `SWARMCLAW_PARALLEL_DRILL_REVIEWER_EXACT_AGENT_OK`. Failed/misassigned learning artifacts: `9beeb223` exposed validator evidence wording, and `652d6e28` passed but ran as Coordinator, so it is not Reviewer QA evidence.
 
+Verified app-build rehearsal: on `2026-06-07`, `Builder app-build rehearsal blueprint corrected 2026-06-07` completed with marker `SWARMCLAW_PARALLEL_APPBUILD_BUILDER_REHEARSAL_OK`, and `Reviewer QA app-build rehearsal review corrected 2026-06-07` completed with marker `SWARMCLAW_PARALLEL_APPBUILD_REVIEWER_REHEARSAL_OK`. Both used direct GUI assignment and explicit first-ten-line evidence labels. Observed local runtime behavior was serialized execution: Builder ran first while Reviewer QA stayed queued, then Reviewer QA started after Builder completed.
+
 ## Operator Intake
 
 Before creating tasks, write a one-paragraph target:
@@ -116,11 +118,13 @@ Default to fewer, larger high-quality tasks. Split only when the split reduces r
 Create tasks through the GUI when possible:
 
 1. Open `/tasks`.
-2. Select the exact stored worker in the task form.
-3. Create the task as backlog.
-4. Close the sheet.
-5. Queue with the task card's exact `Queue` button. Use exact accessible-name matching or a scoped card action; broad `Queue` text can match `Queued` controls.
-6. Verify stored status and worker metadata, especially `agentId`, before counting the task as evidence.
+2. Click the unique `+ New Task` control.
+3. Confirm the sheet heading is `New Task`, not `Edit Task`, and confirm title/description are blank before typing.
+4. Select the exact stored worker in the task form.
+5. Create the task as backlog.
+6. Close the sheet.
+7. Queue with the task card's exact `Queue` button. Use exact accessible-name matching or a scoped card action; broad `Queue` text can match `Queued` controls.
+8. Verify stored status and worker metadata, especially `agentId`, before counting the task as evidence.
 
 If browser automation cannot type into form fields because the virtual clipboard is unavailable, use a checkpointed app service/API path, not raw DB writes. Create backlog, update to queued through the app path, then self-monitor to terminal status.
 
@@ -133,7 +137,8 @@ For pure reasoning/planning tasks, explicitly disable or relax the per-task qual
 Prompt hygiene:
 
 - Do not let workers echo the prompt or say they are starting.
-- For planning tasks that mention app delivery or feature slices, require `Source paths considered: docs/operations/...` and `Verification: ... ok`.
+- For planning tasks that mention app delivery or feature slices, require first-ten-line evidence labels such as `File/path evidence: docs/operations/... considered; files changed: none` and `Verification evidence: app-build plan OK; test plan OK; disjoint scopes OK`.
+- For browser/runtime smoke tasks with quality gates enabled, require `Command/tool evidence`, `File/path evidence`, and `Browser verification evidence` lines in the first ten result lines.
 - Keep evidence markers in the first line and planning/review outputs short enough to avoid result truncation.
 
 ## Phase Plan
