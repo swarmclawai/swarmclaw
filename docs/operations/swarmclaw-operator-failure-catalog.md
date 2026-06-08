@@ -1,6 +1,6 @@
 # SwarmClaw Operator Failure Catalog
 
-Last verified: 2026-06-07
+Last verified: 2026-06-08
 
 Audience: Codex and future agents operating Zmey's local SwarmClaw instance.
 
@@ -49,6 +49,7 @@ When a task, run, browser check, or GUI action fails:
 | F025 | A retrying task returns a valid marker/result, then dead-letters because validation reports a non-empty error field. | Older queue retry path could preserve a previous validation error into the next completion validation. | Current source clears the task error from the current run before completion validation, preserving real current-run errors while removing stale retry errors. If this returns, verify the live image contains `recordCurrentTaskRunError`. | Builder task `45f50512` exposed this: its result validated when the stale error was cleared. Corrected Builder task `baff42eb` completed with `validation.ok=true`. Rebuild/recreate on 2026-06-07 verified the patched live image. |
 | F026 | Subscription Docker rebuild pauses for many minutes at a silent ownership layer. | Older `Dockerfile.subscription` copied full runner `node_modules` and ran `chown -R node:node /app /home/node`, touching about 3.4GB and 143k files. | Current source uses standalone runtime dependencies, `COPY --chown`, targeted writable-dir ownership, direct Playwright CLI calls, and ignores `state` in build context. Do not reintroduce the full runner `node_modules` copy unless a runtime smoke proves it is required. | Commit `71b363cd` reduced the live image to 5.21GB; targeted chown layer was 0.1s in the throwaway build, and the rebuilt live app passed health on localhost-only bindings. |
 | F027 | Corrected task text appears inside an existing `Edit Task` sheet instead of a fresh task. | Automation clicked a generic `Task`/text target while a failed task context was active, opening the edit sheet. Unsaved typing can concatenate with the existing title/description. | Use the unique `+ New Task` control. Before typing, assert the sheet heading is `New Task`, not `Edit Task`, and that title/description fields are blank. | Click `Cancel` without saving, verify the concatenated text is gone, then reopen through `+ New Task`. This recovery was verified on 2026-06-07 before creating the corrected smoke task. |
+| F028 | OpenCode task fails with `permission requested: external_directory (...); auto-rejecting` while inspecting a project under `/app/state/workspace/projects/...`. | The task session cwd defaulted outside the target repo, so OpenCode treated absolute project paths or wildcard reads as external-directory access. | For OpenCode project-inspection tasks, set task `cwd` to the target repo and phrase the prompt to stay inside `.` without absolute project paths. Verify stored `cwd` before queueing. | Smoke `736cb7d4` passed after setting `cwd`; replacement tasks `99237f05` and `3b7dd0b8` completed with validation ok. Failed tasks `181fd208` and `812dffc6` should be treated as superseded. |
 
 ## Current Known Failure Signals
 
@@ -65,6 +66,7 @@ When a task, run, browser check, or GUI action fails:
 | `Parallel app-build drill Builder plan` | Returned a useful marker/result but dead-lettered on stale retry error. | Use F025; count corrected Builder task `baff42eb`, not failed task `45f50512`, as clean Builder evidence. |
 | `Reviewer QA optimized image browser smoke 2026-06-07` | First prompt retried and dead-lettered on 1/2 quality-gate evidence signals. | Use F002/F027 corrected pattern: create a fresh task through `+ New Task`, then require command/tool evidence, file/path evidence, and browser/HTTP verification evidence in the first ten result lines. Corrected smoke completed with marker `SWARMCLAW_OPTIMIZED_IMAGE_REVIEWER_QA_SMOKE_CORRECTED_OK`. |
 | `SwarmClaw live worker Python runtime smoke` | Passed after subscription runner Python fix. | Task `a0c4a84d` completed with `validation.ok=true`; Builder `92b8cd6c` verified `command -v python3` -> `/usr/bin/python3` and `python3 --version` -> `Python 3.11.2`. |
+| `Crypto cleanpub OpenCode external-directory failures` | Fixed operationally. | Use F028. The corrected fan-in ledger `1a40de9a` completed with marker `CRYPTO_CLEANPUB_FANIN_LEDGER_OK`; failed OpenCode attempts `181fd208` and `812dffc6` are superseded by cwd-scoped replacements. |
 
 ## After A New Failure
 
