@@ -401,6 +401,7 @@ All observed heartbeat flags were off.
 
 - Read-only browser sweep: all 29 top-level `AppView` routes loaded in safe-shell mode.
 - Direct managed task assignment: Builder, Reviewer QA, Copilot Mini Worker, OpenCode Builder, and OpenCode Go Helper have completed direct-assignment smokes with safe evidence markers.
+- Worker runtime smoke: after `Dockerfile.subscription` added `python3` to the runner image and the container was recreated, task `a0c4a84d` completed with `validation.ok=true`; Builder `92b8cd6c` verified `/usr/bin/python3` and `Python 3.11.2`.
 - Coordinator: soft/manual planning coordinator only. The current Codex CLI stored agent remains worker-only and does not provide true stored `spawn_subagent` orchestration.
 - Current attention items: the known failed Builder smoke task, Quality's blocked eval gate for `Prime Number Function`, historical Autonomy incidents related to task/quality failures, and a sanitized Logs warning about mismatched credential-secret sources.
 
@@ -412,6 +413,7 @@ All observed heartbeat flags were off.
 | Quality gate: `Prime Number Function` | Expected unrun eval blocker | `state/data/eval-runs.db` currently has 0 eval runs and 0 eval baselines; source gate fails when no completed eval runs are available. | Checkpoint before running evals or setting baselines. |
 | Autonomy incidents | Known historical incidents | 8 incidents: validation/dead-letter entries for `d11bcc7c` and `bldsmk01`, plus 2 older user-stopped runs; no active estop observed. | Read-only monitor unless Zmey wants incident cleanup or remediation. |
 | Logs: working-state/autonomy observation warnings | Fixed and live-verified | Source logs previously reported no generation-compatible model for CLI-backed agent sessions. Patch added in `src/lib/server/working-state/extraction.ts` and `src/lib/server/autonomy/supervisor-reflection.ts`; focused tests passed, image `8042f32119f4` contains the patch, and smoke task `4c4cd367` produced no new matching warnings after line 947 of `state/data/app.log`. | Continue monitoring future CLI tasks. |
+| Worker Python runtime missing | Fixed and live-verified | `Dockerfile.subscription` runner stage now installs `python3`; recreated image `swarmclaw-subscription:1.9.36` ran task `a0c4a84d` successfully with `Python 3.11.2`. | Keep `python3` in runner image; after future image changes, rerun a safe worker runtime smoke before Python-dependent project work. |
 | Logs: `CREDENTIAL_SECRET` mismatch warning | Credential-source warning | Source code uses the environment value when it differs from the persisted credential-secret file. No values inspected. | Checkpoint and backup before any credential/env alignment. |
 
 ### Memory

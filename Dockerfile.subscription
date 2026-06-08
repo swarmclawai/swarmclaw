@@ -39,6 +39,7 @@ RUN apt-get update \
       git \
       jq \
       openssh-client \
+      python3 \
       unzip \
     && rm -rf /var/lib/apt/lists/*
 
