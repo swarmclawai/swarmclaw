@@ -1,6 +1,6 @@
 # SwarmClaw Skill Intake And Specialist Registry
 
-Last verified: 2026-06-06
+Last verified: 2026-06-08
 
 Audience: Codex and future agents operating Zmey's local SwarmClaw instance.
 
@@ -237,6 +237,23 @@ These are intake candidates from `ComposioHQ/awesome-claude-skills`. Status is c
 Future specialist agents should be created only when recurring work justifies a durable role. Until then, use task prompts assigned to existing agents.
 
 First real app-build pilot recommendation (`2026-06-07`): do not create new durable specialist agents yet. Use existing agents plus scoped prompts: Coordinator `default` for product scope, Builder `92b8cd6c` for architecture/implementation planning, Reviewer QA `c2cd6ff9` for QA/release gates and browser review, and only split to OpenCode Builder `a0f79bad` after file scopes are disjoint and contracts are stable. Public skill sources still support later audit candidates such as `software-architecture`, `test-driven-development`, `systematic-debugging`, `review-implementing`, and `test-fixing`, but they should be adapted one at a time after the pilot exposes repeated pain.
+
+Project orchestration update (`2026-06-08`): use `docs/operations/swarmclaw-project-onboarding-template.md` to plug SwarmClaw into a project and `docs/operations/swarmclaw-parallel-wave-template.md` to run task waves. These are task-template-first operating artifacts. They do not install runtime skills, create agents, sync Knowledge, enable worktrees, or change SwarmClaw configuration by themselves.
+
+## Project Orchestration Specialist Layer
+
+Use these as task templates first. Promote any role to a managed skill or durable agent only after repeated successful use and a separate checkpoint.
+
+| Specialist Layer | Use It For | First Artifact | Default Worker | Runtime Promotion Gate |
+|---|---|---|---|---|
+| Product Architect | Vague goals, target audience, scope, milestones, acceptance criteria. | Project onboarding prompt. | Coordinator `default` or Builder `92b8cd6c`. | Promote only if product-scoping tasks recur across projects. |
+| Software Architect | Architecture, module boundaries, data flow, API contracts, workstream split. | Architecture/wave-plan prompt. | Builder `92b8cd6c`, with Reviewer QA critique. | Promote after several accepted architecture plans. |
+| TDD Builder | Implementation slices that need tests first or regression locks. | Implementation slice prompt with test-first requirement. | Builder `92b8cd6c`. | Promote after repo-specific test workflow is stable. |
+| Debugger | Failed task/test triage, root-cause analysis, retry planning. | Debug/risk review prompt. | Reviewer QA `c2cd6ff9` for diagnosis, Builder for fixes. | Promote after repeated failures show a reusable debug routine. |
+| Browser QA | Browser-visible behavior, local UI smoke, route checks, page/request failures. | Browser QA prompt or existing webapp-testing skill. | Reviewer QA `c2cd6ff9`. | Existing runtime skill may be reused; new role requires checkpoint. |
+| Release Gate | Final verification, evidence ledger, risks, deploy/release readiness. | Fan-in review and final operator summary. | Reviewer QA `c2cd6ff9`, then main Codex. | Promote only when releases become frequent and checklist-stable. |
+
+Do not create durable specialist agents during initial project onboarding. A specialist identity is justified only when a task prompt or skill is not enough because the role needs stable tools, model settings, project binding, or repeated independent ownership.
 
 | Specialist | When To Use | First Artifact | Likely Worker |
 |---|---|---|---|

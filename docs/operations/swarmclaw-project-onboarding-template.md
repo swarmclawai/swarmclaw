@@ -1,0 +1,451 @@
+# SwarmClaw Project Onboarding Template
+
+Last verified: 2026-06-08
+
+Audience: Codex and future agents operating Zmey's local SwarmClaw instance.
+
+Purpose: make SwarmClaw easy to plug into any project, understand the project safely, form a goal plan, and launch a direct-assignment parallel wave without product code changes or external orchestration frameworks.
+
+This template is repo-local guidance. It does not create projects, tasks, Knowledge, skills, agents, schedules, autonomy, credentials, provider changes, state DB changes, or public exposure by itself.
+
+Date convention: operator doc dates use Zmey's local Europe/Sofia calendar date unless a timestamp explicitly says UTC. Docker, task, and API timestamps may display UTC or epoch milliseconds.
+
+## Truth Sources
+
+Use these sources in order:
+
+1. Live local runtime at `http://127.0.0.1:3456`.
+2. Current handoff at `/home/zmey/2. Personal/Codex/swarmclaw-agent-handoff.md`.
+3. Repo operator docs in `docs/operations/`.
+4. Local UI/source mappings for Projects, Tasks, Knowledge, Skills, and workers.
+5. agentmemory for verified durable lessons.
+
+If sources conflict, prefer local runtime behavior for Zmey's instance and record the conflict.
+
+## Operating Model
+
+SwarmClaw should treat each external project as a project pack:
+
+1. SwarmClaw Project metadata for the durable operating brief.
+2. Sanitized Knowledge candidates for source material.
+3. Read-only discovery tasks for current project truth.
+4. A planning task that turns the goal into disjoint workstreams.
+5. A Reviewer QA fan-in gate before implementation.
+6. An evidence ledger and concise final handoff.
+
+Default routing remains direct managed task assignment by exact stored worker ID. Do not rely on the stored Coordinator as a true automatic `spawn_subagent` coordinator in Zmey's current CLI-provider setup.
+
+## Preflight
+
+Before onboarding or operating a project:
+
+- Search agentmemory for recent project and SwarmClaw lessons.
+- Read the current handoff at `/home/zmey/2. Personal/Codex/swarmclaw-agent-handoff.md` if readable.
+- Confirm SwarmClaw is local-only and healthy:
+  - `docker compose -f compose.subscription.yml ps`
+  - expected binding: `127.0.0.1:3456-3457->3456-3457/tcp`
+  - `curl -fsS http://127.0.0.1:3456/api/healthz` when reachable
+- If Docker reports healthy but the shell cannot reach the health endpoint, do not restart. Report the mismatch and use the GUI/browser if available.
+- Confirm the external project repo path before any task that inspects project files.
+- Do not inspect secrets, auth JSON, full env files, tokens, credential files, private keys, wallet files, exchange keys, cookies, or raw credential output.
+
+## Project Metadata
+
+Use the Projects page fields as the durable project brief.
+
+| Field | What To Put There |
+|---|---|
+| Name | Short project name, for example `Crypto Trading Bot` or `MMA Sports Pipelines`. |
+| Description | One-paragraph summary of the project and current state. |
+| Objective | The durable outcome SwarmClaw is helping drive. |
+| Audience | Primary user or stakeholder. |
+| Pilot Priorities | Current top priorities, one per line. |
+| Open Objectives | Durable next outcomes, not one-off chat prompts. |
+| Capability Hints | Needed capabilities such as code review, data pipelines, backtests, browser QA, docs. |
+| Credential Requirements | Names of required credential classes only, never values. |
+| Success Metrics | How Zmey will judge progress. |
+| Heartbeat Prompt | Optional recurring review prompt; do not enable schedules/autonomy without checkpoint. |
+
+Keep values concise. Project metadata is an operating brief, not a transcript or full specification.
+
+Example metadata for a high-risk financial project:
+
+```markdown
+Name: Crypto Trading Bot
+Description: Local project for improving trading signals and strategy discipline.
+Objective: Improve signal quality, backtest validity, observability, and risk controls before any live-trading change.
+Audience: Zmey as operator and maintainer.
+Pilot Priorities:
+- Map current signal pipeline read-only.
+- Identify weak strategy/risk assumptions.
+- Propose safe parallel workstreams.
+Open Objectives:
+- Produce a read-only project discovery report.
+- Produce a trading-risk safety review.
+- Produce a checkpointed orchestration plan.
+Capability Hints:
+- Repo analysis
+- Backtest review
+- Data pipeline review
+- Risk-control review
+- Test planning
+Credential Requirements:
+- Exchange API access exists outside agent scope unless separately approved.
+- Market data credentials exist outside agent scope unless separately approved.
+Success Metrics:
+- No secret exposure.
+- No live order or exchange action.
+- Clear next parallel wave with blocked/high-risk actions separated.
+Heartbeat Prompt:
+- Review stale project tasks, unresolved safety blockers, unverified trading assumptions, and the next safest read-only action.
+```
+
+## Knowledge Candidates
+
+Knowledge should contain source material, not secrets.
+
+Good candidates:
+
+- README and architecture notes.
+- Sanitized strategy notes.
+- Test and backtest command notes.
+- Data schema docs.
+- Pipeline diagrams.
+- Runbooks.
+- Known-issue lists.
+- Non-secret sample reports.
+
+Blocked by default:
+
+- `.env` or full environment files.
+- Credential files, auth JSON, tokens, cookies, private keys, wallet files.
+- Raw exchange account exports.
+- Secret-bearing logs.
+- Private API responses that include account identifiers or keys.
+- Any file whose sensitivity is unclear.
+
+Adding or syncing Knowledge is a runtime change and requires a checkpoint after Zmey reviews the sanitized content.
+
+## Artifact Decision Table
+
+Choose the lightest artifact that makes the project operable.
+
+| Need | Use | Notes |
+|---|---|---|
+| Durable operating brief | Project | Stores objective, audience, priorities, objectives, capabilities, metrics. |
+| One-off work item | Task | Direct assign by exact stored worker ID. |
+| Shared source material | Knowledge | Add only sanitized sources after checkpoint. |
+| Repeated checklist or role behavior | Skill | Draft in repo docs first; runtime install/pin later only after checkpoint. |
+| Stable specialist identity | Agent | Create only after repeated proof that a skill or task prompt is insufficient. |
+| Recurring automation | Schedule or Mission | High-impact; checkpoint required. |
+| Structured workflow | Session/Protocol | Use only after the sequence is known and safe. |
+| External system capability | Connector, MCP server, Extension, Wallet | High-impact; checkpoint required. |
+| Durable learned fact | agentmemory | Save only verified, non-secret decisions and outcomes. |
+
+## Onboarding Phases
+
+| Phase | Owner | Action | Write Scope | Completion Gate |
+|---|---|---|---|---|
+| 0 | Main Codex helper | Confirm repo path, project metadata, and safety constraints. | None | Zmey confirms source path or Knowledge-only mode. |
+| 1 | Builder `92b8cd6c` | Read-only project discovery. | None | Structure, key files, tests, risks, unknowns. |
+| 2 | Reviewer QA `c2cd6ff9` | Read-only domain/risk review. | None | Safety risks and checkpoint-required actions listed. |
+| 3 | Coordinator `default` or Builder `92b8cd6c` | Orchestration plan. | None | Goal, workstreams, dependencies, first wave. |
+| 4 | Reviewer QA `c2cd6ff9` | Fan-in review of plan and risks. | None | Accept, request changes, or block. |
+| 5 | Main Codex helper | Final operator summary and next checkpoint. | Repo docs only if approved | Evidence ledger complete. |
+
+Use `docs/operations/swarmclaw-parallel-wave-template.md` once the fan-in review accepts the first wave.
+
+## Generic Intake
+
+Use this before task creation:
+
+```markdown
+Project name:
+Project repo path or Knowledge-only source:
+Current project state:
+Current goal:
+Audience/operator:
+Must-have outcomes:
+Out of scope:
+Known sensitive surfaces:
+Allowed read scope:
+Allowed write scope:
+Tests or validation commands:
+Success metrics:
+Checkpoint-required actions:
+```
+
+If repo path is missing, stop before creating repo-inspection tasks.
+
+## Crypto Trading Bot Gates
+
+Crypto projects are high risk because agent mistakes can affect money, credentials, and live trading.
+
+Allowed without extra checkpoint:
+
+- Read non-secret source files.
+- Inspect repo structure.
+- Review strategy code and tests without executing live trading.
+- Review backtest design and historical result methodology.
+- Draft risk-control checklists.
+- Propose paper-trading or simulation improvements.
+- Propose safer task splits.
+
+Checkpoint required:
+
+- Any live exchange call.
+- Any order placement, cancellation, account query, balance query, or position query.
+- Any credential, wallet, key, token, cookie, or auth file access.
+- Any `.env` or full environment inspection.
+- Any schedule/autonomy change.
+- Any deployment or service restart.
+- Any provider routing or model setting change.
+- Any database migration, state repair, or destructive cleanup.
+- Any change that could alter live trading behavior.
+
+Forbidden in read-only drill tasks:
+
+- Live trading actions.
+- Exchange API calls.
+- Wallet/private-key inspection.
+- Credential table/file inspection.
+- Full env dumps.
+- Schedule or autonomy activation.
+- Deployment or server restart.
+
+## MMA Sports Pipeline Gates
+
+MMA and sports pipelines are usually lower financial risk than live trading, but still need data-integrity gates.
+
+Allowed without extra checkpoint:
+
+- Read non-secret source files.
+- Inspect pipeline structure.
+- Review schemas, parsers, data quality checks, feature generation, and test coverage.
+- Propose model-evaluation and reporting improvements.
+
+Checkpoint required:
+
+- Paid data source credentials.
+- External account/API writes.
+- Production schedules.
+- Public publishing.
+- Destructive database writes.
+- Scraping behavior that may violate site terms or rate limits.
+
+## Read-Only Task Stencils
+
+Set worker assignment in task metadata. Avoid assignment-looking language inside the prompt body.
+
+### Project Discovery
+
+Metadata:
+
+```text
+Worker: Builder 92b8cd6c
+Status: backlog first, then queue
+Quality gate: disabled or relaxed for pure discovery
+```
+
+Prompt:
+
+```markdown
+Read-only project discovery.
+
+Project:
+[name]
+
+Repo path:
+[absolute path]
+
+Goal:
+[current goal]
+
+Rules:
+- Follow AGENTS.md and local SwarmClaw operator rules.
+- Inspect only non-secret project files needed for discovery.
+- Do not inspect or print secrets, auth JSON, full env files, tokens, credential files, private keys, wallet files, cookies, raw credential output, or credential tables.
+- Do not modify files, tasks, state, schedules, autonomy, credentials, provider routing, env files, server processes, or public exposure.
+- Do not install dependencies, start or stop services, run live trading, exchange API calls, deployments, migrations, or destructive commands.
+- If a needed file may be sensitive, stop and list it as a blocked input.
+
+Return:
+0. Evidence marker in the first ten lines: SWARMCLAW_PROJECT_DISCOVERY_OK
+1. Repo structure and main modules.
+2. Key commands found without running risky actions.
+3. Data flow or request flow.
+4. Current tests or validation hooks.
+5. Secret/safety surfaces avoided.
+6. `Files changed: none`.
+7. `Secrets inspected: none`.
+8. Unknowns/blockers.
+9. Keep this result under 2,500 characters.
+```
+
+Crypto drill marker override: use `SWARMCLAW_CRYPTO_DISCOVERY_OK`.
+
+### Domain Risk Review
+
+Metadata:
+
+```text
+Worker: Reviewer QA c2cd6ff9
+Status: backlog first, then queue
+Quality gate: disabled or relaxed for pure review
+```
+
+Prompt:
+
+```markdown
+Read-only project risk review.
+
+Inputs:
+[project brief and discovery result]
+
+Rules:
+- Follow AGENTS.md and local SwarmClaw operator rules.
+- Do not modify files or state.
+- Do not inspect secrets, credentials, auth JSON, full env files, tokens, private keys, wallet files, cookies, or credential tables.
+- Do not install dependencies, start or stop services, run live trading, exchange calls, schedules, deployment, migrations, or destructive commands.
+
+Check:
+- High-risk execution paths.
+- Credential and secret boundaries.
+- Live-action risks.
+- Data integrity risks.
+- Testing and backtest validity risks.
+- Checkpoint-required actions.
+- For crypto: live-vs-paper gate, order path, position sizing, leverage/margin, max loss/drawdown, stop loss, duplicate order/idempotency, exchange failure handling, rate limits, stale data, reconnect behavior, simulation/backtest separation, and kill switch.
+
+Return:
+0. Evidence marker in the first ten lines: SWARMCLAW_PROJECT_RISK_REVIEW_OK
+1. Findings ordered by severity.
+2. Actions allowed read-only.
+3. Actions requiring Zmey checkpoint.
+4. Recommended safety constraints for the first parallel wave.
+5. `Files changed: none`.
+6. `Secrets inspected: none`.
+7. For crypto, `Trade path executed: no`.
+8. Keep this result under 2,500 characters.
+```
+
+Crypto drill marker override: use `SWARMCLAW_CRYPTO_RISK_REVIEW_OK`.
+
+### Orchestration Plan
+
+Metadata:
+
+```text
+Worker: Coordinator default, or Builder 92b8cd6c when code architecture depth is needed
+Status: backlog first, then queue
+Quality gate: disabled or relaxed for pure planning
+```
+
+Prompt:
+
+```markdown
+Read-only project orchestration plan.
+
+Inputs:
+[project brief, discovery result, risk review]
+
+Rules:
+- Follow AGENTS.md and local SwarmClaw operator rules.
+- Do not modify files or state.
+- Do not create, edit, queue, retry, or cancel tasks.
+- Do not inspect secrets or credentials.
+- Do not run live trading, exchange calls, schedules, deployment, migrations, or destructive commands.
+
+Return:
+0. Evidence marker in the first ten lines: SWARMCLAW_PROJECT_ORCHESTRATION_PLAN_OK
+1. Goal summary.
+2. Proposed workstreams with disjoint scopes.
+3. Dependencies and blockers.
+4. Suggested workers by metadata ID.
+5. First parallel wave proposal.
+6. Checkpoint-required actions.
+7. Fallback if repo path or required files are missing.
+8. `Files changed: none`.
+9. `Secrets inspected: none`.
+10. Keep this result under 2,500 characters.
+```
+
+Crypto drill marker override: use `SWARMCLAW_CRYPTO_ORCHESTRATION_PLAN_OK`.
+
+### Fan-In Review
+
+Metadata:
+
+```text
+Worker: Reviewer QA c2cd6ff9
+Status: backlog first, then queue
+Quality gate: disabled or relaxed for pure review
+```
+
+Prompt:
+
+```markdown
+Read-only fan-in review for a project orchestration plan.
+
+Inputs:
+[discovery, risk review, orchestration plan]
+
+Rules:
+- Follow AGENTS.md and local SwarmClaw operator rules.
+- Do not modify files or state.
+- Do not create, edit, queue, retry, or cancel tasks.
+- Do not inspect secrets or credentials.
+- Do not run live trading, exchange calls, schedules, deployment, migrations, or destructive commands.
+
+Check:
+- Is the proposed wave safe?
+- Are write scopes disjoint or explicitly read-only?
+- Are financial/live-action risks blocked?
+- Are tests and evidence gates sufficient?
+- Are any hidden checkpoint requirements missing?
+
+Return:
+0. Evidence marker in the first ten lines: SWARMCLAW_PROJECT_FAN_IN_REVIEW_OK
+1. Recommendation: accept, request changes, or block.
+2. Findings ordered by severity.
+3. Contradictions or missing evidence across inputs.
+4. Required edits before implementation, if any.
+5. Source task IDs and markers when available.
+6. `Files changed: none`.
+7. `Secrets inspected: none`.
+8. First safe next action.
+9. Keep this result under 2,500 characters.
+```
+
+Crypto drill marker override: use `SWARMCLAW_CRYPTO_FANIN_REVIEW_OK`.
+
+## Final Operator Summary
+
+Main Codex writes the final summary after the drill:
+
+```markdown
+Project:
+Repo path or Knowledge-only source:
+Task IDs and workers:
+Markers:
+Discovery summary:
+Risk summary:
+Accepted first wave:
+Blocked/checkpoint actions:
+Next safest action:
+No-secret verification:
+Local-only verification:
+```
+
+Save durable agentmemory only after the task outputs are verified. Keep the external handoff concise and update it only for durable setup changes.
+
+## Finish Criteria
+
+Onboarding is complete when:
+
+- Project source and safety boundaries are clear.
+- Discovery and risk review completed or produced actionable blockers.
+- The plan has disjoint workstreams or explicitly explains why work must be serial.
+- Reviewer QA accepted or blocked the first wave.
+- Evidence markers, task IDs, and worker IDs are recorded.
+- No secrets, credentials, live actions, schedules, autonomy, provider settings, or public exposure were touched.
