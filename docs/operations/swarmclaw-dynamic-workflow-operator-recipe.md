@@ -85,4 +85,4 @@ Run `cbwf0909` verified the first messy-project workflow drill:
 - Discovery task `cbd901a1` completed with marker `CRYPTO_BOT_DISCOVERY_OK` and produced a useful repo/runtime map.
 - Reviewer QA risk tasks `cbr901a2` and replacement `cbr901b4` stayed silent too long and emitted partial non-marker output when terminated.
 - Fan-in `cbf901a3` was marked failed because its upstream risk evidence was superseded/incomplete.
-- The next safe crypto step is not another broad risk review. Prepare a tiny source capsule from discovery findings, then run a narrow Reviewer QA task against that capsule or exact file list.
+- The successful recovery path is a tiny source capsule, not another broad risk review. Capsule QA task `ccqa2752` completed with marker `CRYPTO_CAPSULE_QA_OK`, accepted the next read-only audit bundle, and confirmed no repo, env, DB, log, credential, external API, generated output, schedule, deployment, provider, or autonomy inspection/change.
