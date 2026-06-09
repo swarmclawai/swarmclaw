@@ -223,3 +223,145 @@ test('workflow continuation marks protocol run completed when all workflow tasks
   if (!ledger.ok) return
   assert.equal(ledger.payload.status, 'completed')
 })
+
+test('workflow continuation drafts the next bundle but stops for approval by default', async () => {
+  const storage = await seedWorkflowAgents()
+  const workflows = await import('@/lib/server/workflows/workflow-service')
+
+  const draft = workflows.createWorkflowPlan({
+    title: 'Approval continuation',
+    goal: 'Review workflow evidence without changing files.',
+  })
+  assert.equal(draft.ok, true)
+  if (!draft.ok) return
+
+  const launched = workflows.createWorkflowBundle(draft.payload.bundle)
+  assert.equal(launched.ok, true)
+  if (!launched.ok) return
+
+  const tasks = storage.loadTasks()
+  for (const taskId of launched.payload.taskIds) {
+    const task = tasks[taskId]
+    assert.ok(task)
+    const marker = task.workflow?.expectedMarker || 'WF-MISSING'
+    task.status = 'completed'
+    task.result = `${marker}\nAccepted. Files changed: none. Verification: workflow smoke checked. Blockers: none. Decision: Pass.`
+    task.updatedAt += 1
+  }
+  storage.saveTasks(tasks)
+  const beforeTaskCount = Object.keys(storage.loadTasks()).length
+
+  const continuation = workflows.continueWorkflowRun(launched.payload.run.id, {
+    continueUntilDone: true,
+    goal: 'Continue safely from accepted evidence.',
+  })
+  assert.equal(continuation.ok, true)
+  if (!continuation.ok) return
+
+  assert.equal(Object.keys(storage.loadTasks()).length, beforeTaskCount)
+  assert.equal(continuation.payload.state, 'checkpoint')
+  assert.equal(continuation.payload.nextAction, 'request_checkpoint')
+  assert.equal(continuation.payload.draft?.createsTasks, false)
+  assert.equal(continuation.payload.launched, null)
+  assert.equal(continuation.payload.policy?.canAutoLaunch, false)
+  assert.match(continuation.payload.summary, /waiting for operator approval/)
+})
+
+test('workflow continuation can auto-create the next read-only bundle as backlog tasks when explicitly allowed', async () => {
+  const storage = await seedWorkflowAgents()
+  const workflows = await import('@/lib/server/workflows/workflow-service')
+
+  const draft = workflows.createWorkflowPlan({
+    title: 'Auto continuation',
+    goal: 'Audit workflow evidence without changing files.',
+    allowedScopes: ['docs/'],
+  })
+  assert.equal(draft.ok, true)
+  if (!draft.ok) return
+
+  const launched = workflows.createWorkflowBundle(draft.payload.bundle)
+  assert.equal(launched.ok, true)
+  if (!launched.ok) return
+
+  const tasks = storage.loadTasks()
+  for (const taskId of launched.payload.taskIds) {
+    const task = tasks[taskId]
+    assert.ok(task)
+    const marker = task.workflow?.expectedMarker || 'WF-MISSING'
+    task.status = 'completed'
+    task.result = `${marker}\nAccepted. Files changed: none. Verification: workflow smoke checked. Blockers: none. Decision: Pass.`
+    task.updatedAt += 1
+  }
+  storage.saveTasks(tasks)
+  const beforeTaskCount = Object.keys(storage.loadTasks()).length
+
+  const continuation = workflows.continueWorkflowRun(launched.payload.run.id, {
+    continueUntilDone: true,
+    autoLaunch: true,
+    goal: 'Audit the next safe read-only slice without changing files.',
+    allowedScopes: ['docs/'],
+    safetyProfile: {
+      mode: 'read_only',
+      approvalRequired: false,
+      quarantine: false,
+      maxTotalTasks: 12,
+    },
+  })
+  assert.equal(continuation.ok, true)
+  if (!continuation.ok) return
+
+  const afterTasks = storage.loadTasks()
+  const created = continuation.payload.launched?.taskIds.map((taskId) => afterTasks[taskId])
+  assert.equal(Object.keys(afterTasks).length, beforeTaskCount + 3)
+  assert.equal(continuation.payload.state, 'waiting')
+  assert.equal(continuation.payload.nextAction, 'launched_next_bundle')
+  assert.equal(continuation.payload.policy?.canAutoLaunch, true)
+  assert.equal(continuation.payload.launched?.queued, false)
+  assert.deepEqual(created?.map((task) => task?.status), ['backlog', 'backlog', 'backlog'])
+})
+
+test('workflow continuation stops on max iteration fuse', async () => {
+  const storage = await seedWorkflowAgents()
+  const workflows = await import('@/lib/server/workflows/workflow-service')
+
+  const draft = workflows.createWorkflowPlan({
+    title: 'Fuse continuation',
+    goal: 'Review workflow evidence without changing files.',
+  })
+  assert.equal(draft.ok, true)
+  if (!draft.ok) return
+
+  const launched = workflows.createWorkflowBundle(draft.payload.bundle)
+  assert.equal(launched.ok, true)
+  if (!launched.ok) return
+
+  const tasks = storage.loadTasks()
+  for (const taskId of launched.payload.taskIds) {
+    const task = tasks[taskId]
+    assert.ok(task)
+    const marker = task.workflow?.expectedMarker || 'WF-MISSING'
+    task.status = 'completed'
+    task.result = `${marker}\nAccepted. Files changed: none. Verification: workflow smoke checked. Blockers: none. Decision: Pass.`
+    task.updatedAt += 1
+  }
+  storage.saveTasks(tasks)
+
+  const first = workflows.continueWorkflowRun(launched.payload.run.id, {
+    continueUntilDone: true,
+    safetyProfile: { maxIterations: 1 },
+  })
+  assert.equal(first.ok, true)
+  if (!first.ok) return
+
+  const second = workflows.continueWorkflowRun(launched.payload.run.id, {
+    continueUntilDone: true,
+    safetyProfile: { maxIterations: 1 },
+  })
+  assert.equal(second.ok, true)
+  if (!second.ok) return
+
+  assert.equal(second.payload.state, 'checkpoint')
+  assert.equal(second.payload.nextAction, 'request_checkpoint')
+  assert.match(second.payload.summary, /maxIterations/)
+  assert.deepEqual(second.payload.policy?.stopReasons, ['maxIterations reached (1/1)'])
+})

@@ -14,11 +14,14 @@ import type {
   WorkflowBundleLaunchResult,
   WorkflowBundleSpec,
   WorkflowBundleTaskSpec,
+  WorkflowContinuationPolicy,
   WorkflowContinuationResult,
   WorkflowGoalClass,
   WorkflowLedger,
   WorkflowLedgerEntry,
   WorkflowPlanDraft,
+  ProtocolRun,
+  ProtocolRunEvent,
   WorkflowSafetyProfile,
 } from '@/types'
 
@@ -62,6 +65,10 @@ function stringList(value: unknown, maxItems = 64): string[] {
 function positiveInt(value: unknown, fallback: number, min: number, max: number): number {
   if (!Number.isFinite(Number(value))) return fallback
   return Math.max(min, Math.min(max, Math.trunc(Number(value))))
+}
+
+function booleanValue(value: unknown): boolean {
+  return value === true || value === 'true'
 }
 
 function normalizeSafetyProfile(value: unknown): WorkflowSafetyProfile {
@@ -665,11 +672,119 @@ export function getWorkflowLedger(runId: string): ServiceResult<WorkflowLedger> 
   })
 }
 
+function eventWorkflowName(event: ProtocolRunEvent): string {
+  return typeof event.data?.workflowEvent === 'string' ? event.data.workflowEvent : ''
+}
+
+function latestSafetyProfileFromEvents(events: ProtocolRunEvent[]): WorkflowSafetyProfile | null {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const safetyProfile = asRecord(events[index]?.data).safetyProfile
+    if (safetyProfile && typeof safetyProfile === 'object') return normalizeSafetyProfile(safetyProfile)
+  }
+  return null
+}
+
+function continuationIteration(events: ProtocolRunEvent[]): number {
+  return events.filter((event) => eventWorkflowName(event) === 'workflow_continue').length + 1
+}
+
+function buildContinuationPolicy(params: {
+  run: ProtocolRun
+  ledger: WorkflowLedger
+  row: Record<string, unknown>
+  events: ProtocolRunEvent[]
+}): WorkflowContinuationPolicy {
+  const eventSafetyProfile = latestSafetyProfileFromEvents(params.events)
+  const requestedSafetyProfile = asRecord(params.row.safetyProfile)
+  const safetyProfile = normalizeSafetyProfile({
+    ...(eventSafetyProfile || {}),
+    ...requestedSafetyProfile,
+  })
+  const elapsedMinutes = Math.max(0, Math.floor((Date.now() - params.run.createdAt) / 60_000))
+  const iteration = continuationIteration(params.events)
+  const activeTasks = params.ledger.entries.filter((entry) => ['queued', 'running'].includes(entry.status)).length
+  const failedTasks = params.ledger.entries.filter((entry) => entry.status === 'failed').length
+  const stopReasons = [
+    activeTasks >= (safetyProfile.maxActiveTasks || 5)
+      ? `maxActiveTasks reached (${activeTasks}/${safetyProfile.maxActiveTasks || 5})`
+      : '',
+    params.ledger.entries.length >= (safetyProfile.maxTotalTasks || 12)
+      ? `maxTotalTasks reached (${params.ledger.entries.length}/${safetyProfile.maxTotalTasks || 12})`
+      : '',
+    iteration > (safetyProfile.maxIterations || 3)
+      ? `maxIterations reached (${iteration - 1}/${safetyProfile.maxIterations || 3})`
+      : '',
+    failedTasks > (safetyProfile.maxRetries || 2)
+      ? `maxRetries reached (${failedTasks}/${safetyProfile.maxRetries || 2})`
+      : '',
+    elapsedMinutes > (safetyProfile.maxElapsedMinutes || 120)
+      ? `maxElapsedMinutes reached (${elapsedMinutes}/${safetyProfile.maxElapsedMinutes || 120})`
+      : '',
+  ].filter(Boolean)
+  const continueUntilDone = booleanValue(params.row.continueUntilDone) || booleanValue(params.row.autopilot)
+  const autoLaunch = booleanValue(params.row.autoLaunch)
+  const canAutoLaunch = continueUntilDone
+    && autoLaunch
+    && safetyProfile.mode === 'read_only'
+    && safetyProfile.approvalRequired === false
+    && safetyProfile.quarantine !== true
+    && stopReasons.length === 0
+  return {
+    continueUntilDone,
+    autoLaunch,
+    safetyProfile,
+    iteration,
+    maxIterations: safetyProfile.maxIterations || 3,
+    maxActiveTasks: safetyProfile.maxActiveTasks || 5,
+    maxTotalTasks: safetyProfile.maxTotalTasks || 12,
+    maxRetries: safetyProfile.maxRetries || 2,
+    maxElapsedMinutes: safetyProfile.maxElapsedMinutes || 120,
+    elapsedMinutes,
+    canAutoLaunch,
+    stopReasons,
+  }
+}
+
+function appendContinuationEvent(runId: string, policy: WorkflowContinuationPolicy, summary: string, extra?: Record<string, unknown>): void {
+  appendProtocolEvent(runId, {
+    type: policy.stopReasons.length > 0 ? 'warning' : 'waiting',
+    summary,
+    data: {
+      workflowEvent: 'workflow_continue',
+      iteration: policy.iteration,
+      autoLaunch: policy.autoLaunch,
+      canAutoLaunch: policy.canAutoLaunch,
+      stopReasons: policy.stopReasons,
+      ...extra,
+    },
+  })
+}
+
+function nextWorkflowGoal(row: Record<string, unknown>, ledger: WorkflowLedger): string {
+  return stringValue(row.goal, 4_000)
+    || `Continue from workflow ledger for ${ledger.runTitle}. Review prior results, verify whether the goal is complete, and propose the next safe wave only if needed.`
+}
+
+function draftContinuationWorkflow(ledger: WorkflowLedger, row: Record<string, unknown>, policy: WorkflowContinuationPolicy): ServiceResult<WorkflowPlanDraft> {
+  return createWorkflowPlan({
+    title: stringValue(row.title, 160) || `${ledger.runTitle}: continuation ${policy.iteration}`,
+    goal: nextWorkflowGoal(row, ledger),
+    cwd: stringValue(row.cwd, 1_000) || undefined,
+    projectId: stringValue(row.projectId, 80) || undefined,
+    allowedScopes: stringList(row.allowedScopes),
+    safetyProfile: policy.safetyProfile,
+  })
+}
+
 export function continueWorkflowRun(runId: string, value: unknown = {}): ServiceResult<WorkflowContinuationResult> {
   const ledgerResult = getWorkflowLedger(runId)
   if (!ledgerResult.ok) return serviceFail(ledgerResult.status, ledgerResult.payload.error)
   const ledger = ledgerResult.payload
   const row = asRecord(value)
+  const run = loadProtocolRunById(runId)
+  if (!run) return serviceFail(404, 'Workflow run not found.')
+  const events = loadProtocolRunEventsByRunId(runId)
+  const policy = buildContinuationPolicy({ run, ledger, row, events })
   const active = ledger.entries.filter((entry) => ['queued', 'running'].includes(entry.status))
   const blockedBacklog = ledger.entries.filter((entry) => entry.status === 'backlog' && (entry.blockers || []).length > 0)
   const failed = ledger.entries.filter((entry) => entry.status === 'failed')
@@ -691,6 +806,24 @@ export function continueWorkflowRun(runId: string, value: unknown = {}): Service
       summary: 'No workflow tasks are linked to this run yet.',
       nextAction: 'draft_next_bundle',
       draft: draft.ok ? draft.payload : null,
+      launched: null,
+      policy,
+      ledger,
+    })
+  }
+  if (policy.continueUntilDone && policy.stopReasons.length > 0) {
+    const draft = draftContinuationWorkflow(ledger, row, policy)
+    appendContinuationEvent(runId, policy, `Workflow autopilot stopped: ${policy.stopReasons.join('; ')}.`, {
+      nextAction: 'request_checkpoint',
+    })
+    return serviceOk({
+      runId,
+      state: 'checkpoint',
+      summary: `Workflow continuation stopped by fuse: ${policy.stopReasons.join('; ')}.`,
+      nextAction: 'request_checkpoint',
+      draft: draft.ok ? draft.payload : null,
+      launched: null,
+      policy,
       ledger,
     })
   }
@@ -701,6 +834,8 @@ export function continueWorkflowRun(runId: string, value: unknown = {}): Service
       summary: `${failed.length} workflow task${failed.length === 1 ? '' : 's'} failed; retry requires operator review.`,
       nextAction: 'retry_failed',
       draft: null,
+      launched: null,
+      policy,
       ledger,
     })
   }
@@ -711,6 +846,8 @@ export function continueWorkflowRun(runId: string, value: unknown = {}): Service
       summary: 'Workflow is still waiting on active, backlog, or blocked tasks.',
       nextAction: 'wait',
       draft: null,
+      launched: null,
+      policy,
       ledger,
     })
   }
@@ -725,6 +862,8 @@ export function continueWorkflowRun(runId: string, value: unknown = {}): Service
       summary: `Workflow is blocked: ${details}.`,
       nextAction: 'request_checkpoint',
       draft: null,
+      launched: null,
+      policy,
       ledger,
     })
   }
@@ -746,12 +885,89 @@ export function continueWorkflowRun(runId: string, value: unknown = {}): Service
     })
     if (completedRun) completedLedger = { ...ledger, status: completedRun.status }
   }
+  if (policy.continueUntilDone) {
+    const draft = draftContinuationWorkflow(completedLedger, row, policy)
+    if (!draft.ok) {
+      appendContinuationEvent(runId, policy, 'Workflow continuation could not draft the next bundle.', {
+        nextAction: 'request_checkpoint',
+        error: draft.payload.error,
+      })
+      return serviceOk({
+        runId,
+        state: 'checkpoint',
+        summary: `Workflow completed, but next-bundle drafting needs operator review: ${draft.payload.error}`,
+        nextAction: 'request_checkpoint',
+        draft: null,
+        launched: null,
+        policy,
+        ledger: completedLedger,
+      })
+    }
+    if (!policy.canAutoLaunch) {
+      appendContinuationEvent(runId, policy, 'Workflow continuation drafted the next bundle and stopped for operator approval.', {
+        nextAction: 'request_checkpoint',
+        draftClassification: draft.payload.classification,
+      })
+      return serviceOk({
+        runId,
+        state: 'checkpoint',
+        summary: 'Workflow completed; next bundle drafted and waiting for operator approval.',
+        nextAction: 'request_checkpoint',
+        draft: draft.payload,
+        launched: null,
+        policy,
+        ledger: completedLedger,
+      })
+    }
+    const launch = createWorkflowBundle({
+      ...draft.payload.bundle,
+      queueImmediately: false,
+      safetyProfile: {
+        ...draft.payload.bundle.safetyProfile,
+        mode: 'read_only',
+        approvalRequired: false,
+        quarantine: false,
+      },
+    })
+    appendContinuationEvent(runId, policy, launch.ok
+      ? 'Workflow continuation created the next bundle as Backlog tasks.'
+      : 'Workflow continuation failed to create the next bundle.', {
+      nextAction: launch.ok ? 'launched_next_bundle' : 'request_checkpoint',
+      launchedRunId: launch.ok ? launch.payload.run.id : null,
+      launchedTaskIds: launch.ok ? launch.payload.taskIds : [],
+      error: launch.ok ? null : launch.payload.error,
+    })
+    if (!launch.ok) {
+      return serviceOk({
+        runId,
+        state: 'checkpoint',
+        summary: `Workflow completed, but auto-launch failed and needs operator review: ${launch.payload.error}`,
+        nextAction: 'request_checkpoint',
+        draft: draft.payload,
+        launched: null,
+        policy,
+        ledger: completedLedger,
+      })
+    }
+    return serviceOk({
+      runId,
+      state: 'waiting',
+      summary: 'Workflow completed; bounded autopilot created the next bundle as Backlog tasks.',
+      nextAction: 'launched_next_bundle',
+      draft: draft.payload,
+      launched: launch.payload,
+      policy,
+      ledger: completedLedger,
+    })
+  }
   return serviceOk({
     runId,
     state: 'done',
     summary: 'All workflow tasks reached terminal successful or non-active states.',
     nextAction: 'none',
     draft: null,
+    launched: null,
+    policy,
     ledger: completedLedger,
   })
 }

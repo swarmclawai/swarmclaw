@@ -141,11 +141,28 @@ export interface WorkflowLedger {
   generatedAt: number
 }
 
+export interface WorkflowContinuationPolicy {
+  continueUntilDone: boolean
+  autoLaunch: boolean
+  safetyProfile: WorkflowSafetyProfile
+  iteration: number
+  maxIterations: number
+  maxActiveTasks: number
+  maxTotalTasks: number
+  maxRetries: number
+  maxElapsedMinutes: number
+  elapsedMinutes: number
+  canAutoLaunch: boolean
+  stopReasons: string[]
+}
+
 export interface WorkflowContinuationResult {
   runId: string
   state: WorkflowContinuationState
   summary: string
-  nextAction: 'none' | 'wait' | 'draft_next_bundle' | 'retry_failed' | 'request_checkpoint'
+  nextAction: 'none' | 'wait' | 'draft_next_bundle' | 'retry_failed' | 'request_checkpoint' | 'launched_next_bundle'
   draft?: WorkflowPlanDraft | null
+  launched?: WorkflowBundleLaunchResult | null
+  policy?: WorkflowContinuationPolicy
   ledger: WorkflowLedger
 }

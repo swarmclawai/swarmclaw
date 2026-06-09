@@ -27,6 +27,8 @@ export function WorkflowLaunchPanel({ selectedRunId, onRunCreated }: WorkflowLau
   const [cwd, setCwd] = useState('')
   const [allowedScopes, setAllowedScopes] = useState('')
   const [reviewApproved, setReviewApproved] = useState(false)
+  const [continueUntilDone, setContinueUntilDone] = useState(false)
+  const [autoLaunch, setAutoLaunch] = useState(false)
   const [draft, setDraft] = useState<WorkflowPlanDraft | null>(null)
   const [continueSummary, setContinueSummary] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -88,8 +90,31 @@ export function WorkflowLaunchPanel({ selectedRunId, onRunCreated }: WorkflowLau
     if (!selectedRunId) return
     setError(null)
     try {
-      const result = await continueMutation.mutateAsync({ runId: selectedRunId, payload: { goal: goal.trim() || undefined } })
-      setContinueSummary(`${result.state}: ${result.summary}`)
+      const result = await continueMutation.mutateAsync({
+        runId: selectedRunId,
+        payload: {
+          goal: goal.trim() || undefined,
+          cwd: cwd.trim() || undefined,
+          allowedScopes: splitLines(allowedScopes),
+          continueUntilDone,
+          autoLaunch,
+          safetyProfile: autoLaunch
+            ? {
+                mode: 'read_only',
+                approvalRequired: false,
+                quarantine: false,
+                allowedScopes: splitLines(allowedScopes),
+              }
+            : undefined,
+        },
+      })
+      if (result.draft) {
+        setDraft(result.draft)
+        setReviewApproved(false)
+      }
+      if (result.launched?.run.id) onRunCreated(result.launched.run.id)
+      const stopText = result.policy?.stopReasons?.length ? ` · ${result.policy.stopReasons.join('; ')}` : ''
+      setContinueSummary(`${result.state}/${result.nextAction}: ${result.summary}${stopText}`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to continue workflow run.')
     }
@@ -170,6 +195,26 @@ export function WorkflowLaunchPanel({ selectedRunId, onRunCreated }: WorkflowLau
                 {continueMutation.isPending ? 'Checking...' : 'Continue selected run'}
               </button>
             )}
+            <label className="flex items-center gap-2 rounded-[10px] border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-[12px] text-text-2">
+              <input
+                type="checkbox"
+                checked={continueUntilDone}
+                onChange={(event) => {
+                  setContinueUntilDone(event.target.checked)
+                  if (!event.target.checked) setAutoLaunch(false)
+                }}
+              />
+              Continue until done
+            </label>
+            <label className="flex items-center gap-2 rounded-[10px] border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-[12px] text-text-2">
+              <input
+                type="checkbox"
+                checked={autoLaunch}
+                disabled={!continueUntilDone}
+                onChange={(event) => setAutoLaunch(event.target.checked)}
+              />
+              Auto-create safe backlog
+            </label>
           </div>
 
           {(error || continueSummary) && (
