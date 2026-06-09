@@ -306,7 +306,7 @@ Read-only smoke caveat: a task can produce the requested marker and still fail v
 ### Browser Automation Pitfalls
 
 1. After direct navigation, `domcontentloaded` is not enough. Wait for route-specific app text before extracting headings, buttons, or state; otherwise a probe can see an almost empty shell and produce false negatives.
-2. Text entry can fail in the in-app browser when the virtual clipboard layer is unavailable. If `fill`, `type`, or DOM typing fails, use character-by-character keypress into the focused field for short fields.
+2. Text entry can fail in the in-app browser when the virtual clipboard layer is unavailable. If `fill`, `type`, CUA typing, or DOM typing fails, use character-by-character `locator.press()` into the focused field for short fields. Do not use the in-app browser for file uploads; the current backend reports that file uploads are unsupported.
 3. Task-board role locators can match hidden or duplicated controls. Do not click a generic `Queue`, `View`, or `Archive` button until the current DOM or visible snapshot proves the button belongs to the intended task card.
 4. Board columns can extend horizontally beyond the current viewport. Coordinate clicks on cards in right-side columns can fail with an offscreen element point. Prefer List view, a scoped locator after enumerating visible task headings, or a source-backed route/service path after checkpoint.
 5. Broad `document.body` text is not reliable for verifying task search filters because task titles can remain in the sidebar, offscreen columns, and detail surfaces. Verify a scoped board/list container, status count, or sanitized task metadata instead.

@@ -128,7 +128,7 @@ For browser-visible work, require concrete evidence:
 
 Worker browsers may be unauthenticated. For protected SwarmClaw GUI routes, reaching `/login` and seeing the access gate can be valid evidence. Do not read `.env.local` or enter an access key without checkpoint.
 
-If browser automation reports that the virtual clipboard is not installed while filling New Task fields, stop retrying text entry. Close the unsaved dialog, verify no partial task was created, and use manual entry or a checkpointed app service/API path only if the smoke still requires a state change.
+If browser automation reports that the virtual clipboard is not installed while filling form fields, stop retrying clipboard-backed `fill`, `type`, CUA typing, or DOM typing. For short fields, click the field and use `locator.press()` character-by-character. For large content or file imports, close the unsaved dialog, verify no partial record was created, and use a checkpointed app service/API path only if the state change is still required. The current in-app browser backend does not support file uploads.
 
 ## Knowledge, Skills, And Memory
 

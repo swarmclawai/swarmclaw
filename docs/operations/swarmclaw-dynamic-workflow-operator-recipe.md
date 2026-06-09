@@ -49,7 +49,7 @@ Run `bf0f448e` verified the core path:
 
 ## Known Pitfalls
 
-- F017: browser text entry can fail in task forms because the browser automation surface lacks virtual clipboard support. Do not loop retries; use manual GUI entry or a checkpointed app-service fallback.
+- F017: browser text entry can fail in task forms because the browser automation surface lacks virtual clipboard support. Do not loop retries on `fill`, `type`, CUA typing, DOM typing, or file upload. Use character-by-character `locator.press()` for short fields; use manual GUI entry or a checkpointed app-service fallback for large content.
 - Workflow dependency edges are not continuation edges. Fan-in tasks must receive upstream result summaries, not reuse a worker's execution session.
 - The task board Queue button can be brittle under browser automation. If visible clicking does not persist, stop and use a checkpointed service/API fallback rather than broad raw DB edits.
 - Shell calls to protected workflow APIs may return `401`; prefer the authenticated GUI for protected actions.
