@@ -26,7 +26,7 @@ export function WorkflowLaunchPanel({ selectedRunId, onRunCreated }: WorkflowLau
   const [title, setTitle] = useState('')
   const [cwd, setCwd] = useState('')
   const [allowedScopes, setAllowedScopes] = useState('')
-  const [queueImmediately, setQueueImmediately] = useState(false)
+  const [reviewApproved, setReviewApproved] = useState(false)
   const [draft, setDraft] = useState<WorkflowPlanDraft | null>(null)
   const [continueSummary, setContinueSummary] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -57,6 +57,7 @@ export function WorkflowLaunchPanel({ selectedRunId, onRunCreated }: WorkflowLau
         allowedScopes: splitLines(allowedScopes),
       })
       setDraft(next)
+      setReviewApproved(false)
       if (!title.trim()) setTitle(next.bundle.title)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to draft workflow plan.')
@@ -70,10 +71,10 @@ export function WorkflowLaunchPanel({ selectedRunId, onRunCreated }: WorkflowLau
     try {
       const bundle = {
         ...draft.bundle,
-        queueImmediately,
+        queueImmediately: false,
         safetyProfile: {
           ...draft.bundle.safetyProfile,
-          approvalRequired: queueImmediately ? false : draft.bundle.safetyProfile.approvalRequired,
+          approvalRequired: true,
         },
       }
       const launched = await bundleMutation.mutateAsync(bundle)
@@ -101,7 +102,7 @@ export function WorkflowLaunchPanel({ selectedRunId, onRunCreated }: WorkflowLau
           <div className="text-[12px] font-700 uppercase tracking-[0.12em] text-text-3/55">Workflow Bundles</div>
           <h2 className="mt-2 text-[22px] font-700 tracking-[-0.02em] text-text">Draft, Review, Launch</h2>
           <div className="mt-2 max-w-[820px] text-[13px] leading-relaxed text-text-3/70">
-            Deterministic workflow bundles create normal task-board work linked to a Protocol run. Drafting creates no tasks; launching creates Backlog tasks unless queueing is explicitly enabled.
+            Deterministic workflow bundles create normal task-board work linked to a Protocol run. Drafting creates no tasks; reviewed launch creates Backlog tasks first, then queueing happens from the task board.
           </div>
 
           <div className="mt-4 grid gap-3 lg:grid-cols-2">
@@ -145,18 +146,19 @@ export function WorkflowLaunchPanel({ selectedRunId, onRunCreated }: WorkflowLau
             <button
               type="button"
               onClick={() => void launchDraft()}
-              disabled={!draft || bundleMutation.isPending}
+              disabled={!draft || !reviewApproved || bundleMutation.isPending}
               className="rounded-[10px] border border-sky-500/20 bg-sky-500/10 px-3 py-2 text-[12px] font-700 text-sky-100 transition-all enabled:hover:bg-sky-500/16 disabled:cursor-not-allowed disabled:opacity-40 cursor-pointer"
             >
-              {bundleMutation.isPending ? 'Creating...' : 'Create workflow tasks'}
+              {bundleMutation.isPending ? 'Creating...' : 'Create backlog tasks'}
             </button>
             <label className="flex items-center gap-2 rounded-[10px] border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-[12px] text-text-2">
               <input
                 type="checkbox"
-                checked={queueImmediately}
-                onChange={(event) => setQueueImmediately(event.target.checked)}
+                checked={reviewApproved}
+                disabled={!draft}
+                onChange={(event) => setReviewApproved(event.target.checked)}
               />
-              Queue immediately
+              Reviewed and approved
             </label>
             {selectedRunId && (
               <button
@@ -187,18 +189,53 @@ export function WorkflowLaunchPanel({ selectedRunId, onRunCreated }: WorkflowLau
               <div>
                 <div className="text-[11px] font-700 uppercase tracking-[0.12em] text-text-3/55">Draft</div>
                 <div className="mt-1 text-[13px] text-text-3/70">
-                  {draft ? `${draft.classification.replace(/_/g, ' ')} · ${draft.bundle.tasks.length} tasks` : 'No draft yet'}
+                  {draft ? `${draft.classification.replace(/_/g, ' ')} · ${draft.bundle.tasks.length} tasks · ${draft.routing.strategy.replace(/_/g, ' ')}` : 'No draft yet'}
                 </div>
               </div>
               {draft && (
                 <span className="rounded-full border border-white/[0.08] bg-white/[0.04] px-2 py-0.5 text-[10px] font-700 uppercase tracking-[0.12em] text-text-3">
-                  no tasks created
+                  draft only
                 </span>
               )}
             </div>
             {draft && (
               <div className="mt-4 space-y-3">
                 <div className="text-[13px] leading-relaxed text-text-2">{draft.summary}</div>
+                <div className="rounded-[14px] border border-amber-500/15 bg-amber-500/10 p-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-[11px] font-700 uppercase tracking-[0.12em] text-amber-100/80">Review Gate</span>
+                    <span className="rounded-full border border-amber-300/20 bg-amber-300/10 px-2 py-0.5 text-[10px] text-amber-50">
+                      {draft.approvalGate.reviewerAgentId}
+                    </span>
+                  </div>
+                  <div className="mt-2 text-[12px] leading-relaxed text-amber-50/80">
+                    {draft.routing.reason}
+                  </div>
+                  <ul className="mt-2 space-y-1 text-[11px] leading-relaxed text-amber-50/70">
+                    {draft.approvalGate.checklist.slice(0, 4).map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
+                <div className="grid gap-2 md:grid-cols-2">
+                  <div className="rounded-[14px] border border-white/[0.06] bg-black/15 p-3">
+                    <div className="text-[11px] font-700 uppercase tracking-[0.12em] text-text-3/55">Risks</div>
+                    <ul className="mt-2 space-y-1 text-[11px] leading-relaxed text-text-3/70">
+                      {draft.risks.slice(0, 4).map((risk) => (
+                        <li key={risk}>{risk}</li>
+                      ))}
+                    </ul>
+                  </div>
+                  <div className="rounded-[14px] border border-white/[0.06] bg-black/15 p-3">
+                    <div className="text-[11px] font-700 uppercase tracking-[0.12em] text-text-3/55">Quarantine</div>
+                    <div className="mt-2 text-[11px] leading-relaxed text-text-3/70">
+                      {draft.quarantine.enabled ? 'Enabled' : 'Off'} · {draft.quarantine.reason}
+                    </div>
+                    <div className="mt-2 text-[11px] leading-relaxed text-text-3/70">
+                      Checkpoints: {draft.checkpoints.slice(0, 4).join(', ')}
+                    </div>
+                  </div>
+                </div>
                 <div className="space-y-2">
                   {draft.bundle.tasks.map((task) => (
                     <div key={task.key} className="rounded-[14px] border border-white/[0.06] bg-black/15 p-3">

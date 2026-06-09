@@ -76,6 +76,14 @@ test('workflow service drafts without creating tasks and launches backlog bundle
 
   assert.equal(beforeTaskCount, 0)
   assert.equal(afterPlanTaskCount, 0)
+  assert.equal(draft.payload.createsTasks, false)
+  assert.equal(draft.payload.routing.strategy, 'deterministic_bundle')
+  assert.equal(draft.payload.approvalGate.status, 'review_required')
+  assert.equal(draft.payload.approvalGate.requiredBeforeLaunch, true)
+  assert.equal(draft.payload.approvalGate.reviewerAgentId, 'c2cd6ff9')
+  assert.match(draft.payload.risks.join('\n'), /Approved launch creates backlog tasks first/)
+  assert.match(draft.payload.verification.join('\n'), /createsTasks=false/)
+  assert.equal(draft.payload.quarantine.enabled, false)
   assert.match(String(discoveryDraft?.description || ''), /first non-empty line of your final answer MUST be exactly/)
   assert.match(String(fanInDraft?.description || ''), /upstream task results injected into this task context/)
   assert.equal(launched.payload.run.status, 'waiting')
@@ -85,6 +93,37 @@ test('workflow service drafts without creating tasks and launches backlog bundle
   assert.equal(worker.blocks?.includes(fanIn.id), true)
   assert.equal(ledger.payload.entries.length, 3)
   assert.match(String(fanInLedger?.resultPreview || ''), new RegExp('token' + '=\\[REDACTED\\]'))
+})
+
+test('workflow planner classifies write-capable goals and quarantines untrusted inputs without creating tasks', async () => {
+  const storage = await seedWorkflowAgents()
+  const workflows = await import('@/lib/server/workflows/workflow-service')
+
+  const beforeTaskCount = Object.keys(storage.loadTasks()).length
+  const draft = workflows.createWorkflowPlan({
+    title: 'Bug hunt from logs',
+    goal: 'Debug failed trading pipeline behavior from copied external logs, then propose fixes.',
+    cwd: '/tmp/project',
+    safetyProfile: {
+      allowedScopes: ['services/', 'tests/'],
+      maxTotalTasks: 8,
+    },
+  })
+  assert.equal(draft.ok, true)
+  if (!draft.ok) return
+  const afterTaskCount = Object.keys(storage.loadTasks()).length
+
+  assert.equal(beforeTaskCount, afterTaskCount)
+  assert.equal(draft.payload.classification, 'bug_hunt')
+  assert.equal(draft.payload.routing.strategy, 'dynamic_draft')
+  assert.equal(draft.payload.quarantine.enabled, true)
+  assert.equal(draft.payload.bundle.queueImmediately, false)
+  assert.equal(draft.payload.bundle.safetyProfile.approvalRequired, true)
+  assert.equal(draft.payload.bundle.safetyProfile.mode, 'standard')
+  assert.deepEqual(draft.payload.bundle.safetyProfile.allowedScopes, ['services/', 'tests/'])
+  assert.match(draft.payload.risks.join('\n'), /Write-capable follow-up work/)
+  assert.match(draft.payload.approvalGate.rejectionTriggers.join('\n'), /Allowed scopes are missing/)
+  assert.match(draft.payload.bundle.tasks[0]?.description || '', /Quarantine mode is enabled/)
 })
 
 test('workflow service blocks immediate queueing when approval remains required', async () => {

@@ -78,12 +78,38 @@ export interface WorkflowBundleLaunchResult {
   queued: boolean
 }
 
+export interface WorkflowPlanRouting {
+  classification: WorkflowGoalClass
+  strategy: 'deterministic_bundle' | 'dynamic_draft'
+  templateId: string
+  reason: string
+}
+
+export interface WorkflowPlanApprovalGate {
+  status: 'review_required'
+  reviewerAgentId: string
+  mode: 'operator_adversarial_review'
+  requiredBeforeLaunch: true
+  checklist: string[]
+  rejectionTriggers: string[]
+}
+
+export interface WorkflowPlanQuarantine {
+  enabled: boolean
+  reason: string
+  restrictedActions: string[]
+}
+
 export interface WorkflowPlanDraft {
   classification: WorkflowGoalClass
   summary: string
   bundle: WorkflowBundleSpec
+  routing: WorkflowPlanRouting
+  approvalGate: WorkflowPlanApprovalGate
+  quarantine: WorkflowPlanQuarantine
   risks: string[]
   checkpoints: string[]
+  verification: string[]
   createsTasks: false
 }
 

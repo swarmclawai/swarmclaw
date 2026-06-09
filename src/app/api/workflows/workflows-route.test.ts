@@ -61,6 +61,9 @@ test('workflow API drafts without tasks, launches a bundle, and returns a ledger
 
   assert.equal(planResponse.status, 200)
   assert.equal(taskCountAfterPlan, 0)
+  assert.equal(plan.createsTasks, false)
+  assert.equal(plan.approvalGate.status, 'review_required')
+  assert.equal(plan.bundle.queueImmediately, false)
   assert.equal(bundleResponse.status, 200)
   assert.equal(ledgerResponse.status, 200)
   assert.equal(ledger.entries.length, 3)
