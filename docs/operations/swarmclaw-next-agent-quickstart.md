@@ -1,10 +1,10 @@
 # SwarmClaw Next-Agent Quickstart
 
-Last verified: 2026-06-07
+Last verified: 2026-06-09
 
 Audience: Codex and future agents operating Zmey's local SwarmClaw instance.
 
-Purpose: a short boot checklist for agents that need to operate SwarmClaw without rereading every long manual first. Use this with `docs/operations/swarmclaw-gui-operator-manual.md` and `docs/operations/swarmclaw-operator-failure-catalog.md`.
+Purpose: a short boot checklist for agents that need to operate SwarmClaw without rereading every long manual first. Use this with `docs/operations/swarmclaw-gui-operator-manual.md`, `docs/operations/swarmclaw-dynamic-workflow-operator-recipe.md`, and `docs/operations/swarmclaw-operator-failure-catalog.md`.
 
 Date convention: operator doc dates use Zmey's local Europe/Sofia calendar date unless a timestamp explicitly says UTC. Docker, task, and API timestamps may display UTC or epoch milliseconds.
 
@@ -110,6 +110,8 @@ Use direct assignment as the default. Split work only when scopes are independen
 Do not rely on the stored Coordinator as a true `spawn_subagent` orchestrator in the current CLI-provider setup. Use it as a planning/triage convention unless a future checkpoint changes provider or product behavior.
 
 For full-app work, use `docs/operations/swarmclaw-parallel-app-build-template.md`. It contains task stencils, phase gates, worker metadata, QA evidence requirements, specialist-expansion rules, and an evidence ledger.
+
+For workflow-bundle operation, use `docs/operations/swarmclaw-dynamic-workflow-operator-recipe.md`. It covers Draft -> Review -> Backlog -> Queue -> Fan-in -> Continue, checkpoint triggers, and the verified Wave 1-3 smoke run.
 
 ## Browser And QA Evidence
 

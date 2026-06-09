@@ -317,6 +317,19 @@ describe('resolveTaskResumeContext', () => {
     assert.equal(result!.resume.codexThreadId, 'codex-b')
   })
 
+  it('does not seed resume state from dependencies for workflow fan-in tasks', () => {
+    const blocker = makeTask({ id: 'blocker', codexResumeId: 'codex-b' })
+    const fanIn = makeTask({
+      id: 'fan-in',
+      blockedBy: ['blocker'],
+      workflow: { bundleId: 'workflow-run-1', bundleTaskKey: 'fan_in' },
+    })
+
+    const result = queue.resolveTaskResumeContext(fanIn, { blocker, 'fan-in': fanIn })
+
+    assert.equal(result, null)
+  })
+
   it('prefers self over delegated_from_task', () => {
     const parent = makeTask({ id: 'parent', claudeResumeId: 'cr-parent' })
     const child = makeTask({ id: 'child', claudeResumeId: 'cr-self', delegatedFromTaskId: 'parent' })
@@ -445,6 +458,36 @@ describe('resolveReusableTaskSessionId', () => {
     const sessions = { 'sess-blocker': { id: 'sess-blocker', cwd: '/tmp', messages: [], user: '' } }
     const result = queue.resolveReusableTaskSessionId(blocked, { blocker, blocked }, sessions as Record<string, SessionLike>)
     assert.equal(result, 'sess-blocker')
+  })
+
+  it('does not reuse dependency sessions for workflow fan-in tasks', () => {
+    const blocker = makeTask({ id: 'blocker', sessionId: 'sess-blocker' })
+    const fanIn = makeTask({
+      id: 'fan-in',
+      blockedBy: ['blocker'],
+      workflow: { bundleId: 'workflow-run-1', bundleTaskKey: 'fan_in' },
+    })
+    const sessions = { 'sess-blocker': { id: 'sess-blocker', cwd: '/tmp', messages: [], user: '' } }
+
+    const result = queue.resolveReusableTaskSessionId(fanIn, { blocker, 'fan-in': fanIn }, sessions as Record<string, SessionLike>)
+
+    assert.equal(result, '')
+  })
+
+  it('does not reuse a stale workflow session from a different task workspace', () => {
+    const fanIn = makeTask({
+      id: 'fan-in',
+      cwd: '/workspace/tasks/fan-in',
+      sessionId: 'sess-old-worker',
+      workflow: { bundleId: 'workflow-run-1', bundleTaskKey: 'fan_in' },
+    })
+    const sessions = {
+      'sess-old-worker': { id: 'sess-old-worker', cwd: '/workspace/tasks/worker', messages: [], user: '' },
+    }
+
+    const result = queue.resolveReusableTaskSessionId(fanIn, { 'fan-in': fanIn }, sessions as Record<string, SessionLike>)
+
+    assert.equal(result, '')
   })
 
   it('returns empty when referenced session does not exist', () => {

@@ -132,18 +132,21 @@ export function WorkflowLaunchPanel({ selectedRunId, onRunCreated }: WorkflowLau
 
           <div className="mt-4 grid gap-3 lg:grid-cols-2">
             <input
+              data-testid="workflow-title-input"
               value={title}
               onChange={(event) => setTitle(event.target.value)}
               placeholder="Workflow title"
               className="rounded-[12px] border border-white/[0.06] bg-white/[0.04] px-3 py-2.5 text-[14px] text-text outline-none placeholder:text-text-3/35"
             />
             <input
+              data-testid="workflow-cwd-input"
               value={cwd}
               onChange={(event) => setCwd(event.target.value)}
               placeholder="Working directory"
               className="rounded-[12px] border border-white/[0.06] bg-white/[0.04] px-3 py-2.5 text-[14px] text-text outline-none placeholder:text-text-3/35"
             />
             <textarea
+              data-testid="workflow-goal-input"
               value={goal}
               onChange={(event) => setGoal(event.target.value)}
               placeholder="Goal to turn into a workflow"
@@ -151,6 +154,7 @@ export function WorkflowLaunchPanel({ selectedRunId, onRunCreated }: WorkflowLau
               className="rounded-[12px] border border-white/[0.06] bg-white/[0.04] px-3 py-2.5 text-[14px] text-text outline-none placeholder:text-text-3/35 lg:col-span-2"
             />
             <textarea
+              data-testid="workflow-allowed-scopes-input"
               value={allowedScopes}
               onChange={(event) => setAllowedScopes(event.target.value)}
               placeholder="Allowed scopes, one per line"
@@ -161,6 +165,7 @@ export function WorkflowLaunchPanel({ selectedRunId, onRunCreated }: WorkflowLau
 
           <div className="mt-4 flex flex-wrap items-center gap-2">
             <button
+              data-testid="workflow-draft-plan"
               type="button"
               onClick={() => void draftPlan()}
               disabled={!goal.trim() || planMutation.isPending}
@@ -169,6 +174,7 @@ export function WorkflowLaunchPanel({ selectedRunId, onRunCreated }: WorkflowLau
               {planMutation.isPending ? 'Drafting...' : 'Draft plan'}
             </button>
             <button
+              data-testid="workflow-create-backlog"
               type="button"
               onClick={() => void launchDraft()}
               disabled={!draft || !reviewApproved || bundleMutation.isPending}
@@ -178,6 +184,7 @@ export function WorkflowLaunchPanel({ selectedRunId, onRunCreated }: WorkflowLau
             </button>
             <label className="flex items-center gap-2 rounded-[10px] border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-[12px] text-text-2">
               <input
+                data-testid="workflow-review-approved"
                 type="checkbox"
                 checked={reviewApproved}
                 disabled={!draft}
@@ -187,6 +194,7 @@ export function WorkflowLaunchPanel({ selectedRunId, onRunCreated }: WorkflowLau
             </label>
             {selectedRunId && (
               <button
+                data-testid="workflow-continue-selected-run"
                 type="button"
                 onClick={() => void continueRun()}
                 disabled={continueMutation.isPending}
@@ -197,6 +205,7 @@ export function WorkflowLaunchPanel({ selectedRunId, onRunCreated }: WorkflowLau
             )}
             <label className="flex items-center gap-2 rounded-[10px] border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-[12px] text-text-2">
               <input
+                data-testid="workflow-continue-until-done"
                 type="checkbox"
                 checked={continueUntilDone}
                 onChange={(event) => {
@@ -208,6 +217,7 @@ export function WorkflowLaunchPanel({ selectedRunId, onRunCreated }: WorkflowLau
             </label>
             <label className="flex items-center gap-2 rounded-[10px] border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-[12px] text-text-2">
               <input
+                data-testid="workflow-auto-create-safe-backlog"
                 type="checkbox"
                 checked={autoLaunch}
                 disabled={!continueUntilDone}

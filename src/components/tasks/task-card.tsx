@@ -358,6 +358,7 @@ export function TaskCard({
 
         {task.status === 'backlog' && (
           <button
+            data-testid={`task-queue-${task.id}`}
             onClick={handleQueue}
             className="ml-auto px-2.5 py-1 rounded-[8px] text-[11px] font-600 bg-amber-500/10 text-amber-400 border-none cursor-pointer
               opacity-0 group-hover:opacity-100 transition-opacity hover:bg-amber-500/20"
@@ -369,6 +370,7 @@ export function TaskCard({
 
         {task.sessionId && (task.status === 'running' || task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled') && (
           <button
+            data-testid={`task-view-session-${task.id}`}
             onClick={handleViewSession}
             className="ml-auto px-2.5 py-1 rounded-[8px] text-[11px] font-600 bg-white/[0.06] text-text-2 border-none cursor-pointer
               opacity-0 group-hover:opacity-100 transition-opacity hover:bg-white/[0.1]"

@@ -257,10 +257,13 @@ export function resolveTaskResumeContext(
   tasksById: Record<string, BoardTask>,
   sessionsById?: Record<string, SessionLike | Session>,
 ): TaskResumeContext | null {
+  const blockedByResumeCandidates = isWorkflowDependencyTask(task)
+    ? []
+    : (Array.isArray(task.blockedBy) ? task.blockedBy : [])
   const candidates: Array<{ source: TaskResumeContext['source']; taskId: string | null | undefined }> = [
     { source: 'self', taskId: task.id },
     { source: 'delegated_from_task', taskId: task.delegatedFromTaskId },
-    ...((Array.isArray(task.blockedBy) ? task.blockedBy : []).map((taskId) => ({ source: 'blocked_by' as const, taskId }))),
+    ...blockedByResumeCandidates.map((taskId) => ({ source: 'blocked_by' as const, taskId })),
   ]
   const seen = new Set<string>()
 
@@ -271,6 +274,9 @@ export function resolveTaskResumeContext(
     const sourceTask = taskId === task.id ? task : tasksById[taskId]
     if (!sourceTask) continue
     const sourceSessionId = normalizeResumeHandle(sourceTask.checkpoint?.lastSessionId) || normalizeResumeHandle(sourceTask.sessionId)
+    if (taskId === task.id && sourceSessionId && !workflowSessionMatchesTaskWorkspace(task, sessionsById?.[sourceSessionId])) {
+      continue
+    }
     const resume = extractTaskResumeState(sourceTask)
       || (sourceSessionId && sessionsById?.[sourceSessionId]
         ? extractSessionResumeState(sessionsById[sourceSessionId] as Session)
@@ -286,6 +292,17 @@ export function resolveTaskResumeContext(
   }
 
   return null
+}
+
+function isWorkflowDependencyTask(task: BoardTask): boolean {
+  return Boolean(task.workflow?.bundleId)
+}
+
+function workflowSessionMatchesTaskWorkspace(task: BoardTask, session: SessionLike | Session | undefined): boolean {
+  if (!isWorkflowDependencyTask(task)) return true
+  const taskCwd = typeof task.cwd === 'string' ? task.cwd.trim() : ''
+  const sessionCwd = typeof session?.cwd === 'string' ? session.cwd.trim() : ''
+  return !taskCwd || !sessionCwd || taskCwd === sessionCwd
 }
 
 export function applyTaskResumeStateToSession(session: Session, resume: TaskResumeState | null | undefined): boolean {
@@ -322,10 +339,13 @@ export function resolveReusableTaskSessionId(
   tasks: Record<string, BoardTask>,
   sessions: Record<string, SessionLike>,
 ): string {
+  const blockedBySessionCandidates = isWorkflowDependencyTask(task)
+    ? []
+    : (Array.isArray(task.blockedBy) ? task.blockedBy : [])
   const candidateTaskIds = [
     task.id,
     typeof task.delegatedFromTaskId === 'string' ? task.delegatedFromTaskId : '',
-    ...(Array.isArray(task.blockedBy) ? task.blockedBy : []),
+    ...blockedBySessionCandidates,
   ]
   const seen = new Set<string>()
   for (const candidateTaskId of candidateTaskIds) {
@@ -339,6 +359,7 @@ export function resolveReusableTaskSessionId(
       normalizeResumeHandle(sourceTask.sessionId),
     ]
     for (const candidate of candidates) {
+      if (taskId === task.id && candidate && !workflowSessionMatchesTaskWorkspace(task, sessions[candidate])) continue
       if (candidate && sessions[candidate]) return candidate
     }
   }
