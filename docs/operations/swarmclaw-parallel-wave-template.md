@@ -123,6 +123,37 @@ Avoid assignment-looking text inside the task body. Set worker assignment in met
 - Each task result should stay under about 2,500 characters unless it links to an artifact.
 - Each task must put its marker and evidence labels in the first ten lines.
 
+## Messy Repo Recovery Pattern
+
+If a parallel read-only wave against a messy repo returns prompt echoes,
+progress-only output, missing first-line markers, or silent liveness failures,
+stop expanding the worker scope.
+
+Use this recovery path instead:
+
+1. Preserve task IDs, agent IDs, statuses, and any useful findings.
+2. Cancel or supersede fan-in tasks that depend on failed/incomplete upstream
+   evidence.
+3. Have the main operator prepare a tiny source/evidence capsule from exact safe
+   files and line windows.
+4. Run a capsule-only fan-in task that does not inspect the repo.
+5. If Reviewer QA/Codex CLI fails during runtime initialization, do one short
+   retry. If it repeats, use OpenCode backup fan-in with a no-repo-inspection
+   capsule and record the Codex tasks as runtime-blocked.
+6. Convert checkpoint-required code candidates into backlog TODO tasks instead
+   of starting implementation.
+
+Verified crypto example:
+
+- Broad audit tasks `ca137bc`, `ca31b69`, and `ca47b9a` produced prompt or
+  progress-only output.
+- Reviewer QA/Codex fan-in retries `cafv10ee` and `cafv8eb1` failed due runtime
+  errors, not audit content.
+- OpenCode backup fan-in `cafo31b3` completed with
+  `CRYPTO_AUDIT_FANIN_BLOCKED`.
+- Deferred TODO tasks `ctodo5a37`, `ctodoac45`, `ctodo29df`, and `ctodo99ba`
+  were created as backlog-only items under the Crypto Trading Bot project.
+
 ## Worktree Isolation Policy
 
 Worktrees are not the default. This pass documents the policy only.

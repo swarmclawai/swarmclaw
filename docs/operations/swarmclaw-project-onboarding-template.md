@@ -155,6 +155,25 @@ Choose the lightest artifact that makes the project operable.
 
 Use `docs/operations/swarmclaw-parallel-wave-template.md` once the fan-in review accepts the first wave.
 
+## Deferred Work Handling
+
+When fan-in identifies code-writing candidates but Zmey chooses to defer them:
+
+1. Record the candidates in the repo-local ledger or project notes.
+2. Create backlog-only SwarmClaw tasks tagged `deferred`, `todo`, and
+   `checkpoint-required`.
+3. Keep those tasks out of the queue until Zmey gives a fresh checkpoint.
+4. Do not treat deferred tasks as blockers for continued read-only project
+   onboarding, operator documentation, or project planning.
+5. If the deferred work touches financial, credential, deployment, provider,
+   schedule, autonomy, database, or public-exposure surfaces, repeat the
+   checkpoint requirement in the task description.
+
+Verified crypto example: deferred tasks `ctodo5a37`, `ctodoac45`,
+`ctodo29df`, and `ctodo99ba` are backlog-only TODOs under the Crypto Trading Bot
+project. They must not be queued until Zmey approves a narrow test-first crypto
+repo patch.
+
 ## Generic Intake
 
 Use this before task creation:
