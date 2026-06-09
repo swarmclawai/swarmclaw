@@ -18,6 +18,25 @@ export type ProtocolPhaseKind =
   | 'dispatch_delegation'
   | 'a2a_delegate'
 
+export interface ProtocolTaskConfig {
+  agentId?: string
+  title: string
+  description: string
+  cwd?: string | null
+  projectId?: string | null
+  qualityGate?: import('./task').TaskQualityGateConfig | null
+  executionPolicy?: import('./task').TaskExecutionPolicy | null
+  tags?: string[]
+  priority?: import('./task').BoardTask['priority']
+  maxAttempts?: number
+  retryBackoffSec?: number
+  blockedBy?: string[]
+  blocks?: string[]
+  expectedMarker?: string | null
+  allowedScope?: string[]
+  forbiddenActions?: string[]
+}
+
 export interface ProtocolPhaseDefinition {
   id: string
   kind: ProtocolPhaseKind
@@ -25,7 +44,7 @@ export interface ProtocolPhaseDefinition {
   instructions?: string | null
   turnLimit?: number | null
   completionCriteria?: string | null
-  taskConfig?: { agentId?: string; title: string; description: string } | null
+  taskConfig?: ProtocolTaskConfig | null
   delegationConfig?: { agentId: string; message: string } | null
   a2aDelegateConfig?: {
     targetUrl?: string | null
@@ -98,7 +117,7 @@ export interface ProtocolStepDefinition {
   instructions?: string | null
   turnLimit?: number | null
   completionCriteria?: string | null
-  taskConfig?: { agentId?: string; title: string; description: string } | null
+  taskConfig?: ProtocolTaskConfig | null
   delegationConfig?: { agentId: string; message: string } | null
   a2aDelegateConfig?: {
     targetUrl?: string | null

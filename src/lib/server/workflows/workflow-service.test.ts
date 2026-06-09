@@ -1,0 +1,105 @@
+import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import test, { after } from 'node:test'
+
+const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'swarmclaw-workflow-service-'))
+process.env.DATA_DIR = tempDir
+process.env.WORKSPACE_DIR = path.join(tempDir, 'workspace')
+process.env.SWARMCLAW_DAEMON_AUTOSTART = '0'
+
+after(() => {
+  fs.rmSync(tempDir, { recursive: true, force: true })
+})
+
+async function seedWorkflowAgents() {
+  const storageMod = await import('@/lib/server/storage')
+  const storage = storageMod
+  for (const agent of [
+    { id: '92b8cd6c', name: 'Builder' },
+    { id: 'c2cd6ff9', name: 'Reviewer QA' },
+    { id: 'default', name: 'Coordinator' },
+  ]) {
+    storage.upsertStoredItem('agents', agent.id, {
+      id: agent.id,
+      name: agent.name,
+      provider: 'ollama',
+      model: 'test-model',
+      systemPrompt: 'test',
+      createdAt: 1,
+      updatedAt: 1,
+    })
+  }
+  return storage
+}
+
+test('workflow service drafts without creating tasks and launches backlog bundle tasks with fan-in dependencies', async () => {
+  const storage = await seedWorkflowAgents()
+  const workflows = await import('@/lib/server/workflows/workflow-service')
+
+  const beforeTaskCount = Object.keys(storage.loadTasks()).length
+  const draft = workflows.createWorkflowPlan({
+    title: 'Crypto audit',
+    goal: 'Audit the project structure without changing files.',
+    cwd: '/tmp/project',
+    allowedScopes: ['services/', 'tests/'],
+  })
+  assert.equal(draft.ok, true)
+  if (!draft.ok) return
+
+  const afterPlanTaskCount = Object.keys(storage.loadTasks()).length
+  const launched = workflows.createWorkflowBundle(draft.payload.bundle)
+  assert.equal(launched.ok, true)
+  if (!launched.ok) return
+
+  const tasks = storage.loadTasks()
+  const createdTasks = launched.payload.taskIds.map((id) => tasks[id])
+  const fanIn = createdTasks.find((task) => task.workflow?.bundleTaskKey === 'fan_in')
+  const worker = createdTasks.find((task) => task.workflow?.bundleTaskKey === 'discovery')
+  assert.ok(fanIn)
+  assert.ok(worker)
+  const initialStatuses = createdTasks.map((task) => task.status)
+
+  const redactionFixture = 'token' + '=' + 'fixture-value'
+  fanIn.result = `WF-REVIEW-FAN-IN\nAccepted. ${redactionFixture} should be redacted.`
+  fanIn.status = 'completed'
+  tasks[fanIn.id] = fanIn
+  storage.saveTasks(tasks)
+
+  const ledger = workflows.getWorkflowLedger(launched.payload.run.id)
+  assert.equal(ledger.ok, true)
+  if (!ledger.ok) return
+  const fanInLedger = ledger.payload.entries.find((entry) => entry.taskKey === 'fan_in')
+
+  assert.equal(beforeTaskCount, 0)
+  assert.equal(afterPlanTaskCount, 0)
+  assert.equal(launched.payload.run.status, 'waiting')
+  assert.equal(launched.payload.taskIds.length, 3)
+  assert.deepEqual(initialStatuses, ['backlog', 'backlog', 'backlog'])
+  assert.equal(fanIn.blockedBy?.length || 0, 2)
+  assert.equal(worker.blocks?.includes(fanIn.id), true)
+  assert.equal(ledger.payload.entries.length, 3)
+  assert.match(String(fanInLedger?.resultPreview || ''), new RegExp('token' + '=\\[REDACTED\\]'))
+})
+
+test('workflow service blocks immediate queueing when approval remains required', async () => {
+  const workflows = await import('@/lib/server/workflows/workflow-service')
+  const result = workflows.createWorkflowBundle({
+    title: 'Unsafe queue attempt',
+    goal: 'Queue immediately while approval remains required.',
+    queueImmediately: true,
+    safetyProfile: { mode: 'read_only', approvalRequired: true },
+    tasks: [{
+      key: 'one',
+      title: 'One',
+      description: 'One',
+      agentId: 'missing',
+    }],
+  })
+
+  assert.equal(result.ok, false)
+  if (result.ok) return
+  assert.equal(result.status, 409)
+  assert.match(result.payload.error, /Approval-required/)
+})

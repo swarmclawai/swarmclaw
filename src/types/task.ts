@@ -123,6 +123,14 @@ export interface TaskRuntimeContextPacket {
   executionPolicyState?: TaskExecutionPolicyState | null
 }
 
+export interface TaskWorkflowContext {
+  bundleId?: string | null
+  bundleTaskKey?: string | null
+  expectedMarker?: string | null
+  allowedScope?: string[]
+  forbiddenActions?: string[]
+}
+
 export interface TaskExecutionWorkspace {
   path: string
   mode: TaskExecutionWorkspaceMode
@@ -275,6 +283,7 @@ export interface BoardTask {
   qualityGate?: TaskQualityGateConfig | null
   executionPolicy?: TaskExecutionPolicy | null
   executionPolicyState?: TaskExecutionPolicyState | null
+  workflow?: TaskWorkflowContext | null
   // Competitive task claiming (pool mode)
   assignmentMode?: 'direct' | 'pool'
   poolCandidateAgentIds?: string[]

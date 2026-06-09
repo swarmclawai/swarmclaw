@@ -18,27 +18,16 @@ import { MainContent } from '@/components/layout/main-content'
 import { StructuredSessionLauncher } from '@/components/protocols/structured-session-launcher'
 import { TemplateGallery } from '@/components/protocols/builder/template-gallery'
 import { GroundingPanel } from '@/components/knowledge/grounding-panel'
+import { WorkflowLaunchPanel } from '@/components/workflows/workflow-launch-panel'
 import { DEFAULT_BUILDER_ROUTE } from '@/lib/home-launchpad'
 import { timeAgo } from '@/lib/time-format'
 import type {
-  BoardTask,
-  Chatroom,
   ProtocolRun,
   ProtocolRunEvent,
   ProtocolStepDefinition,
   ProtocolTemplate,
 } from '@/types'
 
-type ProtocolRunDetail = {
-  run: ProtocolRun
-  template: ProtocolTemplate | null
-  transcript: Chatroom | null
-  parentChatroom: Chatroom | null
-  linkedTask: BoardTask | null
-  events: ProtocolRunEvent[]
-}
-
-type AgentList = Record<string, { id: string; name: string }>
 type RunStatusFilter = 'all' | ProtocolRun['status']
 
 function statusTone(status: ProtocolRun['status']): string {
@@ -734,6 +723,8 @@ export default function ProtocolsPage() {
               </div>
             )}
           </section>
+
+          <WorkflowLaunchPanel selectedRunId={selectedRunId} onRunCreated={handleSelectRun} />
 
           <div className="grid min-h-0 gap-5 xl:grid-cols-[360px_minmax(0,1fr)]">
             <section className="min-h-0 rounded-[24px] border border-white/[0.06] bg-white/[0.02] p-4">

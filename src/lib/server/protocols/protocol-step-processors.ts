@@ -16,7 +16,6 @@ import { errorMessage } from '@/lib/shared-utils'
 import { getAgents } from '@/lib/server/agents/agent-repository'
 import { upsertTask } from '@/lib/server/tasks/task-repository'
 import { notify } from '@/lib/server/ws-hub'
-import { enqueueTask } from '@/lib/server/runtime/queue'
 import { cleanText, isDiscussionStepKind, now, uniqueIds } from '@/lib/server/protocols/protocol-types'
 import type { ProtocolRunDeps } from '@/lib/server/protocols/protocol-types'
 import type * as ProtocolRunLifecycle from '@/lib/server/protocols/protocol-run-lifecycle'
@@ -24,6 +23,7 @@ import { processForEachStep } from '@/lib/server/protocols/protocol-foreach'
 import { processSubflowStep } from '@/lib/server/protocols/protocol-subflow'
 import { processSwarmStep } from '@/lib/server/protocols/protocol-swarm'
 import { processA2ADelegatePhase } from '@/lib/server/protocols/protocol-a2a-delegate'
+import { createProtocolDispatchedTask } from '@/lib/server/protocols/protocol-task-dispatch'
 import { findRunStep } from '@/lib/server/protocols/protocol-normalization'
 import {
   appendProtocolEvent,
@@ -410,7 +410,7 @@ function buildJoinArtifactContent(branches: ProtocolRunParallelBranchState[]): s
 
 export async function processParallelStep(run: ProtocolRun, step: ProtocolStepDefinition, deps?: ProtocolRunDeps): Promise<ProtocolRun> {
   // Lazy import to avoid circular dependency
-  const { createProtocolRun, requestProtocolRunExecution } = require('@/lib/server/protocols/protocol-run-lifecycle') as typeof ProtocolRunLifecycle
+  const { createProtocolRun, requestProtocolRunExecution } = await import('@/lib/server/protocols/protocol-run-lifecycle') as typeof ProtocolRunLifecycle
   const parallel = step.parallel
   if (!parallel?.branches?.length) {
     throw new Error(`Parallel step "${step.label}" is missing branches.`)
@@ -609,20 +609,45 @@ export function processDispatchTaskPhase(run: ProtocolRun, phase: ProtocolPhaseD
       updatedAt: now(deps),
     })
   }
-  const taskId = genId()
-  const taskData: BoardTask = {
-    id: taskId,
+  const created = createProtocolDispatchedTask({
+    runId: run.id,
     title: config.title,
     description: config.description || '',
-    status: 'queued',
     agentId,
-    protocolRunId: run.id,
-    queuedAt: now(deps),
-    createdAt: now(deps),
-    updatedAt: now(deps),
+    status: 'queued',
+    cwd: config.cwd || null,
+    projectId: config.projectId || run.config?.taskProjectId || null,
+    qualityGate: config.qualityGate || null,
+    executionPolicy: config.executionPolicy || null,
+    tags: ['protocol-dispatch', ...(config.tags || [])],
+    priority: config.priority,
+    maxAttempts: config.maxAttempts,
+    retryBackoffSec: config.retryBackoffSec,
+    blockedBy: config.blockedBy || [],
+    blocks: config.blocks || [],
+    expectedMarker: config.expectedMarker || null,
+    allowedScope: config.allowedScope || [],
+    forbiddenActions: config.forbiddenActions || [],
+    sourceType: 'delegation',
+    createdByAgentId: chooseFacilitator(run),
+    createdInSessionId: run.sessionId || null,
+    now: now(deps),
+  })
+  if (!created.ok) {
+    appendProtocolEvent(run.id, {
+      type: 'failed',
+      phaseId: phase.id,
+      summary: created.payload.error,
+    }, deps)
+    return persistRun({
+      ...run,
+      status: 'failed',
+      lastError: created.payload.error,
+      endedAt: run.endedAt || now(deps),
+      updatedAt: now(deps),
+    })
   }
-  upsertTask(taskId, taskData)
-  enqueueTask(taskId)
+  const taskId = created.payload.id
   const createdTaskIds = [...(run.createdTaskIds || []), taskId]
   appendProtocolEvent(run.id, {
     type: 'task_dispatched',
@@ -630,7 +655,6 @@ export function processDispatchTaskPhase(run: ProtocolRun, phase: ProtocolPhaseD
     phaseId: phase.id,
     taskId,
   }, deps)
-  notify('tasks')
   return persistRun({
     ...run,
     status: 'waiting',
@@ -657,21 +681,34 @@ export function processDispatchDelegationPhase(run: ProtocolRun, phase: Protocol
       updatedAt: now(deps),
     })
   }
-  const taskId = genId()
-  const taskData: BoardTask = {
-    id: taskId,
+  const created = createProtocolDispatchedTask({
+    runId: run.id,
     title: `Delegation: ${phase.label}`,
     description: config.message,
-    status: 'queued',
     agentId: config.agentId,
-    protocolRunId: run.id,
+    status: 'queued',
+    projectId: run.config?.taskProjectId || null,
+    tags: ['protocol-delegation'],
     sourceType: 'delegation',
-    queuedAt: now(deps),
-    createdAt: now(deps),
-    updatedAt: now(deps),
+    createdByAgentId: chooseFacilitator(run),
+    createdInSessionId: run.sessionId || null,
+    now: now(deps),
+  })
+  if (!created.ok) {
+    appendProtocolEvent(run.id, {
+      type: 'failed',
+      phaseId: phase.id,
+      summary: created.payload.error,
+    }, deps)
+    return persistRun({
+      ...run,
+      status: 'failed',
+      lastError: created.payload.error,
+      endedAt: run.endedAt || now(deps),
+      updatedAt: now(deps),
+    })
   }
-  upsertTask(taskId, taskData)
-  enqueueTask(taskId)
+  const taskId = created.payload.id
   const createdTaskIds = [...(run.createdTaskIds || []), taskId]
   appendProtocolEvent(run.id, {
     type: 'delegation_dispatched',
@@ -679,7 +716,6 @@ export function processDispatchDelegationPhase(run: ProtocolRun, phase: Protocol
     phaseId: phase.id,
     taskId,
   }, deps)
-  notify('tasks')
   return persistRun({
     ...run,
     status: 'waiting',

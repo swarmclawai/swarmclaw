@@ -27,6 +27,7 @@ import type {
   ProtocolStepDefinition,
   ProtocolSubflowConfig,
   ProtocolSwarmConfig,
+  ProtocolTaskConfig,
   ProtocolTemplate,
 } from '@/types'
 import { loadProtocolRun } from '@/lib/server/protocols/protocol-run-repository'
@@ -123,6 +124,9 @@ export function phaseToStepDefinition(phase: ProtocolPhaseDefinition, nextStepId
     instructions: cleanText(phase.instructions, 600) || null,
     turnLimit: typeof phase.turnLimit === 'number' ? phase.turnLimit : null,
     completionCriteria: cleanText(phase.completionCriteria, 240) || null,
+    taskConfig: normalizeProtocolTaskConfig(phase.taskConfig),
+    delegationConfig: normalizeDelegationConfig(phase.delegationConfig),
+    a2aDelegateConfig: normalizeA2ADelegateConfig(phase.a2aDelegateConfig),
     nextStepId,
     branchCases: [],
     defaultNextStepId: null,
@@ -140,6 +144,9 @@ export function compilePhasesToSteps(phases: ProtocolPhaseDefinition[]): { steps
     instructions: cleanText(phase.instructions, 600) || null,
     turnLimit: typeof phase.turnLimit === 'number' ? phase.turnLimit : null,
     completionCriteria: cleanText(phase.completionCriteria, 240) || null,
+    taskConfig: normalizeProtocolTaskConfig(phase.taskConfig),
+    delegationConfig: normalizeDelegationConfig(phase.delegationConfig),
+    a2aDelegateConfig: normalizeA2ADelegateConfig(phase.a2aDelegateConfig),
   })) : []
   const steps = normalized.map((phase, index) => phaseToStepDefinition(phase, normalized[index + 1]?.id || null))
   return { steps, entryStepId: steps[0]?.id || null }
@@ -155,6 +162,9 @@ export function deriveDisplayPhasesFromSteps(steps: ProtocolStepDefinition[]): P
       instructions: step.instructions || null,
       turnLimit: step.turnLimit ?? null,
       completionCriteria: step.completionCriteria || null,
+      taskConfig: normalizeProtocolTaskConfig(step.taskConfig),
+      delegationConfig: normalizeDelegationConfig(step.delegationConfig),
+      a2aDelegateConfig: normalizeA2ADelegateConfig(step.a2aDelegateConfig),
     }))
 }
 
@@ -221,6 +231,53 @@ export function normalizeSwarmConfig(config: ProtocolSwarmConfig | null | undefi
   }
 }
 
+export function normalizeProtocolTaskConfig(config: ProtocolTaskConfig | null | undefined): ProtocolTaskConfig | null {
+  if (!config || typeof config !== 'object') return null
+  const title = cleanText(config.title, 160)
+  if (!title) return null
+  return {
+    agentId: cleanText(config.agentId, 64) || undefined,
+    title,
+    description: cleanText(config.description, 4_000) || '',
+    cwd: cleanText(config.cwd, 1_000) || null,
+    projectId: cleanText(config.projectId, 64) || null,
+    qualityGate: config.qualityGate || null,
+    executionPolicy: config.executionPolicy || null,
+    tags: uniqueIds(config.tags, 32),
+    priority: config.priority,
+    maxAttempts: typeof config.maxAttempts === 'number' ? Math.max(1, Math.min(20, Math.trunc(config.maxAttempts))) : undefined,
+    retryBackoffSec: typeof config.retryBackoffSec === 'number' ? Math.max(1, Math.min(3600, Math.trunc(config.retryBackoffSec))) : undefined,
+    blockedBy: uniqueIds(config.blockedBy, 64),
+    blocks: uniqueIds(config.blocks, 64),
+    expectedMarker: cleanText(config.expectedMarker, 120) || null,
+    allowedScope: uniqueIds(config.allowedScope, 64),
+    forbiddenActions: uniqueIds(config.forbiddenActions, 64),
+  }
+}
+
+function normalizeDelegationConfig(config: ProtocolPhaseDefinition['delegationConfig'] | undefined): ProtocolPhaseDefinition['delegationConfig'] | null {
+  if (!config || typeof config !== 'object') return null
+  const agentId = cleanText(config.agentId, 64)
+  const message = cleanText(config.message, 4_000)
+  return agentId && message ? { agentId, message } : null
+}
+
+function normalizeA2ADelegateConfig(config: ProtocolPhaseDefinition['a2aDelegateConfig'] | undefined): ProtocolPhaseDefinition['a2aDelegateConfig'] | null {
+  if (!config || typeof config !== 'object') return null
+  const taskName = cleanText(config.taskName, 160)
+  const taskMessage = cleanText(config.taskMessage, 4_000)
+  if (!taskName || !taskMessage) return null
+  return {
+    targetUrl: cleanText(config.targetUrl, 1_000) || null,
+    targetExternalAgentId: cleanText(config.targetExternalAgentId, 160) || null,
+    taskName,
+    taskMessage,
+    timeoutMs: typeof config.timeoutMs === 'number' ? Math.max(1_000, Math.trunc(config.timeoutMs)) : null,
+    credentialId: cleanText(config.credentialId, 160) || null,
+    onFailure: config.onFailure === 'advance_with_warning' ? 'advance_with_warning' : 'fail',
+  }
+}
+
 export function normalizeStep(step: ProtocolStepDefinition): ProtocolStepDefinition {
   return {
     id: cleanText(step.id, 64) || genId(),
@@ -229,6 +286,9 @@ export function normalizeStep(step: ProtocolStepDefinition): ProtocolStepDefinit
     instructions: cleanText(step.instructions, 600) || null,
     turnLimit: typeof step.turnLimit === 'number' ? step.turnLimit : null,
     completionCriteria: cleanText(step.completionCriteria, 240) || null,
+    taskConfig: normalizeProtocolTaskConfig(step.taskConfig),
+    delegationConfig: normalizeDelegationConfig(step.delegationConfig),
+    a2aDelegateConfig: normalizeA2ADelegateConfig(step.a2aDelegateConfig),
     nextStepId: cleanText(step.nextStepId, 64) || null,
     branchCases: Array.isArray(step.branchCases) ? step.branchCases.map(normalizeBranchCase) : [],
     defaultNextStepId: cleanText(step.defaultNextStepId, 64) || null,

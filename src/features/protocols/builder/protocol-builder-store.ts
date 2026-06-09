@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { devtools } from 'zustand/middleware'
 import type { Node, Edge } from '@xyflow/react'
-import type { ProtocolTemplate, ProtocolStepKind, ProtocolBranchCase, ProtocolRepeatConfig, ProtocolParallelConfig, ProtocolJoinConfig, ProtocolForEachConfig, ProtocolSubflowConfig, ProtocolSwarmConfig, ProtocolRunStepStatus } from '@/types'
+import type { ProtocolTemplate, ProtocolStepKind, ProtocolBranchCase, ProtocolRepeatConfig, ProtocolParallelConfig, ProtocolJoinConfig, ProtocolForEachConfig, ProtocolSubflowConfig, ProtocolSwarmConfig, ProtocolRunStepStatus, ProtocolTaskConfig } from '@/types'
 
 export interface BuilderNodeData extends Record<string, unknown> {
   label: string
@@ -9,7 +9,7 @@ export interface BuilderNodeData extends Record<string, unknown> {
   instructions?: string | null
   turnLimit?: number | null
   completionCriteria?: string | null
-  taskConfig?: { agentId?: string; title: string; description: string } | null
+  taskConfig?: ProtocolTaskConfig | null
   delegationConfig?: { agentId: string; message: string } | null
   repeat?: ProtocolRepeatConfig | null
   parallel?: ProtocolParallelConfig | null

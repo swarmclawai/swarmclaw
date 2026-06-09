@@ -83,6 +83,15 @@ const TaskExecutionPolicySchema = z.object({
   })).optional().default([]),
 }).nullable().optional()
 
+const TaskQualityGateConfigSchema = z.object({
+  enabled: z.boolean().optional(),
+  minResultChars: z.number().optional(),
+  minEvidenceItems: z.number().optional(),
+  requireVerification: z.boolean().optional(),
+  requireArtifact: z.boolean().optional(),
+  requireReport: z.boolean().optional(),
+}).nullable().optional()
+
 export const AgentCreateSchema = z.object({
   name: z.string().min(1, 'Agent name is required'),
   provider: z.string().min(1, 'Provider is required'),
@@ -244,14 +253,7 @@ export const TaskCreateSchema = z.object({
     port: z.number().nullable().optional(),
     startedAt: z.number().nullable().optional(),
   })).optional(),
-  qualityGate: z.object({
-    enabled: z.boolean().optional(),
-    minResultChars: z.number().optional(),
-    minEvidenceItems: z.number().optional(),
-    requireVerification: z.boolean().optional(),
-    requireArtifact: z.boolean().optional(),
-    requireReport: z.boolean().optional(),
-  }).nullable().optional(),
+  qualityGate: TaskQualityGateConfigSchema,
   executionPolicy: TaskExecutionPolicySchema,
 })
 
@@ -407,6 +409,40 @@ export const ChatroomCreateSchema = z.object({
  * types and ranges. */
 export const ChatroomUpdateSchema = ChatroomCreateSchema.partial()
 
+export const ProtocolTaskConfigSchema = z.object({
+  agentId: z.string().optional(),
+  title: z.string().min(1),
+  description: z.string().optional().default(''),
+  cwd: z.string().nullable().optional().default(null),
+  projectId: z.string().nullable().optional().default(null),
+  qualityGate: TaskQualityGateConfigSchema,
+  executionPolicy: TaskExecutionPolicySchema,
+  tags: z.array(z.string()).optional().default([]),
+  priority: z.enum(['low', 'medium', 'high', 'critical']).optional(),
+  maxAttempts: z.number().int().positive().optional(),
+  retryBackoffSec: z.number().int().positive().optional(),
+  blockedBy: z.array(z.string()).optional().default([]),
+  blocks: z.array(z.string()).optional().default([]),
+  expectedMarker: z.string().nullable().optional().default(null),
+  allowedScope: z.array(z.string()).optional().default([]),
+  forbiddenActions: z.array(z.string()).optional().default([]),
+})
+
+const ProtocolDelegationConfigSchema = z.object({
+  agentId: z.string().min(1),
+  message: z.string().min(1),
+})
+
+const ProtocolA2ADelegateConfigSchema = z.object({
+  targetUrl: z.string().nullable().optional().default(null),
+  targetExternalAgentId: z.string().nullable().optional().default(null),
+  taskName: z.string().min(1),
+  taskMessage: z.string().min(1),
+  timeoutMs: z.number().int().positive().nullable().optional().default(null),
+  credentialId: z.string().nullable().optional().default(null),
+  onFailure: z.enum(['fail', 'advance_with_warning']).optional().default('fail'),
+})
+
 export const ProtocolPhaseDefinitionSchema = z.object({
   id: z.string().min(1),
   kind: z.enum([
@@ -418,11 +454,17 @@ export const ProtocolPhaseDefinitionSchema = z.object({
     'summarize',
     'emit_tasks',
     'wait',
+    'dispatch_task',
+    'dispatch_delegation',
+    'a2a_delegate',
   ]),
   label: z.string().min(1),
   instructions: z.string().nullable().optional().default(null),
   turnLimit: z.number().int().positive().nullable().optional().default(null),
   completionCriteria: z.string().nullable().optional().default(null),
+  taskConfig: ProtocolTaskConfigSchema.nullable().optional().default(null),
+  delegationConfig: ProtocolDelegationConfigSchema.nullable().optional().default(null),
+  a2aDelegateConfig: ProtocolA2ADelegateConfigSchema.nullable().optional().default(null),
 })
 
 export const ProtocolConditionDefinitionSchema: z.ZodType<
@@ -563,11 +605,15 @@ export const ProtocolStepDefinitionSchema: z.ZodTypeAny = z.lazy(() => z.object(
     'swarm_claim',
     'dispatch_task',
     'dispatch_delegation',
+    'a2a_delegate',
   ]),
   label: z.string().min(1),
   instructions: z.string().nullable().optional().default(null),
   turnLimit: z.number().int().positive().nullable().optional().default(null),
   completionCriteria: z.string().nullable().optional().default(null),
+  taskConfig: ProtocolTaskConfigSchema.nullable().optional().default(null),
+  delegationConfig: ProtocolDelegationConfigSchema.nullable().optional().default(null),
+  a2aDelegateConfig: ProtocolA2ADelegateConfigSchema.nullable().optional().default(null),
   nextStepId: z.string().nullable().optional().default(null),
   branchCases: z.array(ProtocolBranchCaseSchema).optional().default([]),
   defaultNextStepId: z.string().nullable().optional().default(null),

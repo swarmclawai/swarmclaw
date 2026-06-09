@@ -176,6 +176,7 @@ export interface PrepareTaskCreationOptions {
   defaultCwd?: string | null
   deriveTitleFromDescription?: boolean
   requireMeaningfulTitle?: boolean
+  skipDuplicateCheck?: boolean
   seed?: Record<string, unknown>
 }
 
@@ -249,7 +250,7 @@ export function prepareTaskCreation(options: PrepareTaskCreationOptions): Prepar
   }
   task.fingerprint = computeTaskFingerprint(task.title || 'Untitled Task', task.agentId || '')
 
-  const duplicate = task.fingerprint
+  const duplicate = !options.skipDuplicateCheck && task.fingerprint
     ? findDuplicateTask(options.tasks, { fingerprint: task.fingerprint })
     : null
   if (duplicate) {
