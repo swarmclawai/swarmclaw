@@ -348,6 +348,20 @@ export function classifyWorkflowGoal(goal: string): WorkflowGoalClass {
   return 'read_only_discovery'
 }
 
+function completionContract(marker: string, role: 'discovery' | 'risk_review' | 'fan_in'): string {
+  const roleInstruction = role === 'fan_in'
+    ? 'Use the upstream task results injected into this task context as the primary evidence source. Do not block merely because local task workspace files are empty when upstream results are present.'
+    : 'If no cwd/project artifacts are supplied, treat this as an orchestration smoke and verify the task contract from the prompt instead of treating an empty task workspace as a blocker.'
+  return [
+    'Final answer contract:',
+    `- The first non-empty line of your final answer MUST be exactly: ${marker}`,
+    '- Include these sections: Findings, Files changed, Verification, Blockers, Decision.',
+    '- Files changed must be "none" unless this task explicitly changed files.',
+    '- Do not answer with "Starting task", "I will", or unresolved planning language.',
+    roleInstruction,
+  ].join('\n')
+}
+
 function chooseAgentId(agents: Record<string, { id?: string; name?: string }>, preferredIds: string[], namePatterns: RegExp[]): string {
   for (const id of preferredIds) {
     if (agents[id]) return id
@@ -383,6 +397,9 @@ export function createWorkflowPlan(value: unknown): ServiceResult<WorkflowPlanDr
     allowedScopes: stringList(row.allowedScopes),
   })
   const markerPrefix = `WF-${classification.replace(/_/g, '-').toUpperCase()}`
+  const discoveryMarker = `${markerPrefix}-DISCOVERY`
+  const riskMarker = `${markerPrefix}-RISK`
+  const fanInMarker = `${markerPrefix}-FAN-IN`
   const bundle: WorkflowBundleSpec = {
     title,
     goal,
@@ -395,15 +412,16 @@ export function createWorkflowPlan(value: unknown): ServiceResult<WorkflowPlanDr
         key: 'discovery',
         title: `${title}: discovery`,
         description: [
-          `${markerPrefix}-DISCOVERY`,
+          discoveryMarker,
           goal,
           'Produce concise findings, inspected areas, blockers, and files changed. Do not inspect secrets, credentials, auth JSON, full env files, wallets, private keys, DB dumps, or tokens.',
+          completionContract(discoveryMarker, 'discovery'),
         ].join('\n'),
         agentId: builderId,
         cwd,
         projectId,
         tags: ['workflow', 'discovery'],
-        expectedMarker: `${markerPrefix}-DISCOVERY`,
+        expectedMarker: discoveryMarker,
         allowedScope: safetyProfile.allowedScopes,
         forbiddenActions: safetyProfile.forbiddenActions,
       },
@@ -411,15 +429,16 @@ export function createWorkflowPlan(value: unknown): ServiceResult<WorkflowPlanDr
         key: 'risk_review',
         title: `${title}: safety review`,
         description: [
-          `${markerPrefix}-RISK`,
+          riskMarker,
           goal,
           'Review scope, risks, missing context, and checkpoint-required actions. Files changed: none.',
+          completionContract(riskMarker, 'risk_review'),
         ].join('\n'),
         agentId: reviewerId,
         cwd,
         projectId,
         tags: ['workflow', 'risk-review'],
-        expectedMarker: `${markerPrefix}-RISK`,
+        expectedMarker: riskMarker,
         allowedScope: safetyProfile.allowedScopes,
         forbiddenActions: safetyProfile.forbiddenActions,
       },
@@ -427,16 +446,17 @@ export function createWorkflowPlan(value: unknown): ServiceResult<WorkflowPlanDr
         key: 'fan_in',
         title: `${title}: fan-in decision`,
         description: [
-          `${markerPrefix}-FAN-IN`,
+          fanInMarker,
           goal,
           'Read upstream task results, accept or block the next wave, and list exact blockers/checkpoints. Files changed: none.',
+          completionContract(fanInMarker, 'fan_in'),
         ].join('\n'),
         agentId: coordinatorId,
         cwd,
         projectId,
         tags: ['workflow', 'fan-in'],
         dependsOn: ['discovery', 'risk_review'],
-        expectedMarker: `${markerPrefix}-FAN-IN`,
+        expectedMarker: fanInMarker,
         allowedScope: safetyProfile.allowedScopes,
         forbiddenActions: safetyProfile.forbiddenActions,
       },
@@ -476,9 +496,14 @@ function firstLine(value: string | null | undefined): string | null {
 
 function qaDisposition(task: BoardTask): WorkflowLedgerEntry['qaDisposition'] {
   const result = String(task.result || '').toLowerCase()
-  if (/changes requested|needs changes|retry/.test(result)) return 'changes_requested'
-  if (/\bblock|blocked|reject|unsafe\b/.test(result)) return 'blocked'
-  if (/\baccept|accepted|approved|pass\b/.test(result)) return 'accepted'
+  const nonBlockingText = result
+    .replace(/\bno\s+blocking\s+findings?\b/g, '')
+    .replace(/\bno\s+blockers?\b/g, '')
+    .replace(/\bblockers?\s*:\s*(none|no\b[^\n.]*)/g, '')
+  if (/\b(changes requested|needs changes|retry)\b/.test(nonBlockingText)) return 'changes_requested'
+  if (/\b(decision|disposition|verdict)\s*[:=-]\s*(block|blocked|reject|rejected|unsafe)\b/.test(nonBlockingText)) return 'blocked'
+  if (/^\s*(block|blocked|reject|rejected|unsafe)\b/.test(nonBlockingText)) return 'blocked'
+  if (/\b(accept|accepted|approved|pass|passed)\b/.test(nonBlockingText)) return 'accepted'
   return 'unknown'
 }
 
@@ -538,6 +563,11 @@ export function continueWorkflowRun(runId: string, value: unknown = {}): Service
   const blockedBacklog = ledger.entries.filter((entry) => entry.status === 'backlog' && (entry.blockers || []).length > 0)
   const failed = ledger.entries.filter((entry) => entry.status === 'failed')
   const unfinished = ledger.entries.filter((entry) => !['completed', 'cancelled', 'archived'].includes(entry.status))
+  const markerMismatches = ledger.entries.filter((entry) => {
+    if (entry.status !== 'completed' || !entry.expectedMarker || !entry.marker) return false
+    return !entry.marker.startsWith(entry.expectedMarker)
+  })
+  const blockedDispositions = ledger.entries.filter((entry) => entry.status === 'completed' && entry.qaDisposition === 'blocked')
   if (ledger.entries.length === 0) {
     const draft = createWorkflowPlan({
       goal: stringValue(row.goal, 4_000) || ledger.runTitle,
@@ -573,12 +603,44 @@ export function continueWorkflowRun(runId: string, value: unknown = {}): Service
       ledger,
     })
   }
+  if (markerMismatches.length > 0 || blockedDispositions.length > 0) {
+    const details = [
+      markerMismatches.length ? `${markerMismatches.length} completed task${markerMismatches.length === 1 ? '' : 's'} missed expected first-line markers` : '',
+      blockedDispositions.length ? `${blockedDispositions.length} completed task${blockedDispositions.length === 1 ? '' : 's'} reported a blocked disposition` : '',
+    ].filter(Boolean).join('; ')
+    return serviceOk({
+      runId,
+      state: 'blocked',
+      summary: `Workflow is blocked: ${details}.`,
+      nextAction: 'request_checkpoint',
+      draft: null,
+      ledger,
+    })
+  }
+  let completedLedger = ledger
+  if (ledger.status !== 'completed') {
+    const completedAt = Date.now()
+    const completedRun = patchProtocolRun(runId, (current) => current ? {
+      ...current,
+      status: 'completed',
+      summary: current.summary || 'Workflow completed successfully.',
+      waitingReason: null,
+      endedAt: current.endedAt || completedAt,
+      updatedAt: completedAt,
+    } : null)
+    appendProtocolEvent(runId, {
+      type: 'completed',
+      summary: 'Workflow continuation marked the run completed after all workflow tasks finished.',
+      data: { workflowEvent: 'workflow_run_completed' },
+    })
+    if (completedRun) completedLedger = { ...ledger, status: completedRun.status }
+  }
   return serviceOk({
     runId,
     state: 'done',
     summary: 'All workflow tasks reached terminal successful or non-active states.',
     nextAction: 'none',
     draft: null,
-    ledger,
+    ledger: completedLedger,
   })
 }

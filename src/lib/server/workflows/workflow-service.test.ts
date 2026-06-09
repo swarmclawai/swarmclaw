@@ -49,6 +49,8 @@ test('workflow service drafts without creating tasks and launches backlog bundle
   if (!draft.ok) return
 
   const afterPlanTaskCount = Object.keys(storage.loadTasks()).length
+  const discoveryDraft = draft.payload.bundle.tasks.find((task) => task.key === 'discovery')
+  const fanInDraft = draft.payload.bundle.tasks.find((task) => task.key === 'fan_in')
   const launched = workflows.createWorkflowBundle(draft.payload.bundle)
   assert.equal(launched.ok, true)
   if (!launched.ok) return
@@ -74,6 +76,8 @@ test('workflow service drafts without creating tasks and launches backlog bundle
 
   assert.equal(beforeTaskCount, 0)
   assert.equal(afterPlanTaskCount, 0)
+  assert.match(String(discoveryDraft?.description || ''), /first non-empty line of your final answer MUST be exactly/)
+  assert.match(String(fanInDraft?.description || ''), /upstream task results injected into this task context/)
   assert.equal(launched.payload.run.status, 'waiting')
   assert.equal(launched.payload.taskIds.length, 3)
   assert.deepEqual(initialStatuses, ['backlog', 'backlog', 'backlog'])
@@ -102,4 +106,81 @@ test('workflow service blocks immediate queueing when approval remains required'
   if (result.ok) return
   assert.equal(result.status, 409)
   assert.match(result.payload.error, /Approval-required/)
+})
+
+test('workflow continuation blocks completed runs with marker mismatches or blocked fan-in disposition', async () => {
+  const storage = await seedWorkflowAgents()
+  const workflows = await import('@/lib/server/workflows/workflow-service')
+
+  const draft = workflows.createWorkflowPlan({
+    title: 'Marker gate',
+    goal: 'Review workflow evidence without changing files.',
+  })
+  assert.equal(draft.ok, true)
+  if (!draft.ok) return
+
+  const launched = workflows.createWorkflowBundle(draft.payload.bundle)
+  assert.equal(launched.ok, true)
+  if (!launched.ok) return
+
+  const tasks = storage.loadTasks()
+  for (const taskId of launched.payload.taskIds) {
+    const task = tasks[taskId]
+    assert.ok(task)
+    const marker = task.workflow?.expectedMarker || 'WF-MISSING'
+    task.status = 'completed'
+    task.result = task.workflow?.bundleTaskKey === 'discovery'
+      ? `Wrong marker\nAccepted discovery evidence. Files changed: none. Verification: prompt contract checked.`
+      : task.workflow?.bundleTaskKey === 'fan_in'
+        ? `${marker}\nBlocked next wave. Files changed: none. Verification: upstream results reviewed. Blockers: marker mismatch. Decision: blocked.`
+        : `${marker}\nNo blocking findings. Files changed: none. Verification: prompt contract checked. Blockers: none. Decision: Pass.`
+    task.updatedAt += 1
+  }
+  storage.saveTasks(tasks)
+
+  const continuation = workflows.continueWorkflowRun(launched.payload.run.id)
+  assert.equal(continuation.ok, true)
+  if (!continuation.ok) return
+  assert.equal(continuation.payload.state, 'blocked')
+  assert.equal(continuation.payload.nextAction, 'request_checkpoint')
+  assert.match(continuation.payload.summary, /missed expected first-line markers/)
+  assert.match(continuation.payload.summary, /blocked disposition/)
+})
+
+test('workflow continuation marks protocol run completed when all workflow tasks pass', async () => {
+  const storage = await seedWorkflowAgents()
+  const workflows = await import('@/lib/server/workflows/workflow-service')
+
+  const draft = workflows.createWorkflowPlan({
+    title: 'Done gate',
+    goal: 'Verify workflow completion status without changing files.',
+  })
+  assert.equal(draft.ok, true)
+  if (!draft.ok) return
+
+  const launched = workflows.createWorkflowBundle(draft.payload.bundle)
+  assert.equal(launched.ok, true)
+  if (!launched.ok) return
+
+  const tasks = storage.loadTasks()
+  for (const taskId of launched.payload.taskIds) {
+    const task = tasks[taskId]
+    assert.ok(task)
+    const marker = task.workflow?.expectedMarker || 'WF-MISSING'
+    task.status = 'completed'
+    task.result = `${marker}\nAccepted. Files changed: none. Verification: workflow smoke checked. Blockers: none. Decision: Pass.`
+    task.updatedAt += 1
+  }
+  storage.saveTasks(tasks)
+
+  const continuation = workflows.continueWorkflowRun(launched.payload.run.id)
+  assert.equal(continuation.ok, true)
+  if (!continuation.ok) return
+  assert.equal(continuation.payload.state, 'done')
+  assert.equal(continuation.payload.ledger.status, 'completed')
+
+  const ledger = workflows.getWorkflowLedger(launched.payload.run.id)
+  assert.equal(ledger.ok, true)
+  if (!ledger.ok) return
+  assert.equal(ledger.payload.status, 'completed')
 })
