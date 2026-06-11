@@ -151,6 +151,18 @@ openclaw skills install swarmclaw
 
 [Browse on ClawHub](https://clawhub.ai/waydelyle/swarmclaw)
 
+## v1.9.39 Highlights
+
+Scheduled-run reliability release: stale workspace rebinding, fail-fast credential checks, and durable delivery evidence for schedule-driven sends.
+
+- **Legacy workspace cwd migration.** Scheduled reruns and reused schedule sessions pinned to a pre-migration workspace root (e.g. `~/.swarmclaw/workspace`) are now rebound to the current `WORKSPACE_DIR` automatically; intentional custom working directories are never touched.
+- **Orphan recovery dedup.** Startup queue recovery now recovers each orphaned task once instead of re-logging it every tick, and dead-letters tasks that repeatedly return to the queue without starting.
+- **Schedule delivery status.** Every scheduled run now writes `lastDeliveryStatus`/`lastDeliveryError` back to its schedule, so failures are visible without digging through task records.
+- **Credential preflight for schedules.** Scheduled runs on API-key providers fail fast with an actionable error when no credential resolves, instead of dying on a 401 deep in execution.
+- **Empty-run classification.** Runs that produce no text, no tool calls, and no error now fail with a clear provider-configuration message instead of a generic validation failure.
+- **Durable connector delivery evidence.** Task follow-up sends route through the connector outbox with task/schedule linkage, retries with backoff, and per-run dedupe, so triage can prove whether a scheduled send succeeded, failed, or was never attempted.
+- **Regression coverage.** Added tests for workspace path normalization, orphan recovery, schedule outcome writes, credential preflight, empty-run classification, and outbox-backed follow-ups.
+
 ## v1.9.38 Highlights
 
 PR integration release for provider catalog coverage, OpenRouter context meters, and safer unsigned macOS desktop artifacts.
@@ -487,6 +499,18 @@ If you need a trace-specific endpoint, set `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` 
 Operational docs: https://swarmclaw.ai/docs/observability
 
 ## Releases
+
+### v1.9.39 Highlights
+
+Scheduled-run reliability release: stale workspace rebinding, fail-fast credential checks, and durable delivery evidence for schedule-driven sends.
+
+- **Legacy workspace cwd migration.** Scheduled reruns and reused schedule sessions pinned to a pre-migration workspace root (e.g. `~/.swarmclaw/workspace`) are now rebound to the current `WORKSPACE_DIR` automatically; intentional custom working directories are never touched.
+- **Orphan recovery dedup.** Startup queue recovery now recovers each orphaned task once instead of re-logging it every tick, and dead-letters tasks that repeatedly return to the queue without starting.
+- **Schedule delivery status.** Every scheduled run now writes `lastDeliveryStatus`/`lastDeliveryError` back to its schedule, so failures are visible without digging through task records.
+- **Credential preflight for schedules.** Scheduled runs on API-key providers fail fast with an actionable error when no credential resolves, instead of dying on a 401 deep in execution.
+- **Empty-run classification.** Runs that produce no text, no tool calls, and no error now fail with a clear provider-configuration message instead of a generic validation failure.
+- **Durable connector delivery evidence.** Task follow-up sends route through the connector outbox with task/schedule linkage, retries with backoff, and per-run dedupe, so triage can prove whether a scheduled send succeeded, failed, or was never attempted.
+- **Regression coverage.** Added tests for workspace path normalization, orphan recovery, schedule outcome writes, credential preflight, empty-run classification, and outbox-backed follow-ups.
 
 ### v1.9.38 Highlights
 

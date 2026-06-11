@@ -177,4 +177,48 @@ describe('schedule lifecycle helpers', () => {
     assert.equal(Boolean(schedules['sched-archived']), false)
     assert.equal(Boolean(schedules['sched-live']), true)
   })
+
+  it('applyScheduleRunOutcome records a successful run and clears the previous error', () => {
+    const schedule = makeSchedule({
+      lastDeliveryStatus: 'error',
+      lastDeliveryError: 'previous failure',
+    }) as unknown as import('@/types').Schedule
+
+    const changed = lifecycle.applyScheduleRunOutcome(schedule, { status: 'completed', error: null }, 500)
+
+    assert.equal(changed, true)
+    assert.equal(schedule.lastDeliveryStatus, 'ok')
+    assert.equal(schedule.lastDeliveryError, null)
+    assert.equal(schedule.lastDeliveredAt, 500)
+    assert.equal(schedule.updatedAt, 500)
+  })
+
+  it('applyScheduleRunOutcome records a failed run with a truncated error', () => {
+    const schedule = makeSchedule() as unknown as import('@/types').Schedule
+    const longError = 'x'.repeat(600)
+
+    const changed = lifecycle.applyScheduleRunOutcome(schedule, { status: 'failed', error: longError }, 700)
+
+    assert.equal(changed, true)
+    assert.equal(schedule.lastDeliveryStatus, 'error')
+    assert.equal(schedule.lastDeliveryError?.length, 500)
+    assert.equal(schedule.lastDeliveredAt, 700)
+  })
+
+  it('applyScheduleRunOutcome uses a fallback message when the task has no error', () => {
+    const schedule = makeSchedule() as unknown as import('@/types').Schedule
+
+    lifecycle.applyScheduleRunOutcome(schedule, { status: 'failed', error: null }, 800)
+
+    assert.match(schedule.lastDeliveryError || '', /Scheduled run failed without a recorded error/)
+  })
+
+  it('applyScheduleRunOutcome ignores non-terminal task statuses', () => {
+    const schedule = makeSchedule() as unknown as import('@/types').Schedule
+
+    const changed = lifecycle.applyScheduleRunOutcome(schedule, { status: 'queued', error: null }, 900)
+
+    assert.equal(changed, false)
+    assert.equal(schedule.lastDeliveryStatus, undefined)
+  })
 })

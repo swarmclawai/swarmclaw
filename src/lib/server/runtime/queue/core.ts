@@ -8,7 +8,8 @@ import { logActivity } from '@/lib/server/activity/activity-log'
 import { loadAgents } from '@/lib/server/agents/agent-repository'
 import { withTransaction } from '@/lib/server/persistence/transaction'
 import { loadQueue, saveQueue } from '@/lib/server/runtime/queue-repository'
-import { loadSchedules, saveSchedules } from '@/lib/server/schedules/schedule-repository'
+import { loadSchedules, saveSchedules, upsertSchedule } from '@/lib/server/schedules/schedule-repository'
+import { applyScheduleRunOutcome } from '@/lib/server/schedules/schedule-lifecycle'
 import { loadSessions, saveSessions } from '@/lib/server/sessions/session-repository'
 import { loadSettings } from '@/lib/server/settings/settings-repository'
 import { loadTasks, saveTasks } from '@/lib/server/tasks/task-repository'
@@ -16,13 +17,20 @@ import { notify } from '@/lib/server/ws-hub'
 import { getMessages, getLastMessage, appendMessage } from '@/lib/server/messages/message-repository'
 import { perf } from '@/lib/server/runtime/perf'
 import { WORKSPACE_DIR } from '@/lib/server/data-dir'
+import { normalizeLegacyWorkspacePath } from '@/lib/server/workspace-paths'
+import {
+  MAX_ORPHAN_RECOVERY_ATTEMPTS,
+  pruneOrphanRecovery,
+  trackOrphanRecovery,
+} from '@/lib/server/runtime/queue/orphan-recovery'
+import { preflightProviderCredential } from '@/lib/server/runtime/scheduled-run-preflight'
 import { createAgentTaskSession } from '@/lib/server/agents/task-session'
 import { formatValidationFailure } from '@/lib/server/tasks/task-validation'
 import { pushMainLoopEventToMainSessions } from '@/lib/server/agents/main-agent-loop'
 import type { ExecuteChatTurnResult } from '@/lib/server/chat-execution/chat-execution-types'
 import { checkAgentBudgetLimits } from '@/lib/server/cost'
 import { enqueueExecution } from '@/lib/server/execution-engine'
-import { extractTaskResult, formatResultBody } from '@/lib/server/tasks/task-result'
+import { classifyEmptyRunOutcome, EMPTY_RUN_OUTCOME_MESSAGE, extractTaskResult, formatResultBody } from '@/lib/server/tasks/task-result'
 import { checkoutTask } from '@/lib/server/tasks/task-checkout'
 import { queueSwarmFeedTaskCompletionWake } from '@/lib/server/swarmfeed-runtime'
 import {
@@ -64,6 +72,7 @@ const _queueState = hmrSingleton('__swarmclaw_queue__', () => ({
   activeCount: 0,
   maxConcurrent: 3,
   pendingKick: false,
+  orphanRecoveryAttempts: {} as Record<string, number>,
 }))
 
 function normalizeInt(value: unknown, fallback: number, min: number, max: number): number {
@@ -499,7 +508,10 @@ function inferWorkspaceProjectCwd(task: Pick<BoardTask, 'title' | 'description' 
 function resolveTaskExecutionCwd(task: ScheduleTaskMeta, sessions: Record<string, SessionLike>): string {
   const workspaceRoot = path.resolve(WORKSPACE_DIR)
 
-  const explicitCwd = normalizeDirCandidate(task.cwd, workspaceRoot)
+  const explicitCwd = normalizeDirCandidate(
+    normalizeLegacyWorkspacePath(typeof task.cwd === 'string' ? task.cwd : '', { workspaceRoot, taskId: task.id }),
+    workspaceRoot,
+  )
   if (explicitCwd) return explicitCwd
 
   const projectId = typeof task.projectId === 'string' ? task.projectId.trim() : ''
@@ -520,13 +532,19 @@ function resolveTaskExecutionCwd(task: ScheduleTaskMeta, sessions: Record<string
 
   const sourceSessionId = typeof task.createdInSessionId === 'string' ? task.createdInSessionId.trim() : ''
   const sourceSessionCwd = sourceSessionId
-    ? normalizeDirCandidate(sessions[sourceSessionId]?.cwd, workspaceRoot)
+    ? normalizeDirCandidate(
+        normalizeLegacyWorkspacePath(sessions[sourceSessionId]?.cwd, { workspaceRoot, taskId: task.id }),
+        workspaceRoot,
+      )
     : null
   if (sourceSessionCwd && path.resolve(sourceSessionCwd) !== workspaceRoot) return sourceSessionCwd
 
   const runSessionId = typeof task.sessionId === 'string' ? task.sessionId.trim() : ''
   const runSessionCwd = runSessionId
-    ? normalizeDirCandidate(sessions[runSessionId]?.cwd, workspaceRoot)
+    ? normalizeDirCandidate(
+        normalizeLegacyWorkspacePath(sessions[runSessionId]?.cwd, { workspaceRoot, taskId: task.id }),
+        workspaceRoot,
+      )
     : null
   if (runSessionCwd && path.resolve(runSessionCwd) !== workspaceRoot) return runSessionCwd
 
@@ -708,6 +726,7 @@ export function reconcileFinishedRunningTasks(): { reconciled: number; deadLette
     if (!fallbackText && !task.result) {
       task.status = 'failed'
       task.result = 'Agent session finished without producing output.'
+      task.error = EMPTY_RUN_OUTCOME_MESSAGE.slice(0, 500)
       task.checkoutRunId = null
       task.updatedAt = now
       tasksDirty = true
@@ -854,7 +873,20 @@ function deliverTaskConnectorFollowups(task: BoardTask, sessions: Record<string,
   })
 }
 
+/** Reflects a terminal scheduled-run outcome back onto the originating schedule. */
+function recordScheduleRunOutcome(task: BoardTask): void {
+  const meta = task as ScheduleTaskMeta
+  const sourceScheduleId = typeof meta.sourceScheduleId === 'string' ? meta.sourceScheduleId.trim() : ''
+  if (!sourceScheduleId) return
+  const schedule = loadSchedules()[sourceScheduleId]
+  if (!schedule) return
+  if (!applyScheduleRunOutcome(schedule, task, Date.now())) return
+  upsertSchedule(sourceScheduleId, schedule)
+  notify('schedules')
+}
+
 function handleTerminalTaskResultDeliveries(task: BoardTask): void {
+  recordScheduleRunOutcome(task)
   const sessions = loadSessions() as Record<string, SessionLike>
   pushUserFacingTaskResult(task, sessions)
   deliverTaskConnectorFollowups(task, sessions)
@@ -1114,25 +1146,68 @@ export async function processNext() {
       const allTasks = loadTasks()
       const currentQueue = loadQueue()
       const queueSet = new Set(currentQueue)
+      // Backfill for hmrSingleton state created before this field existed
+      _queueState.orphanRecoveryAttempts ??= {}
+      const orphanAttempts = _queueState.orphanRecoveryAttempts
+      const stillOrphanedIds = new Set<string>()
+      const deadLetteredOrphans: BoardTask[] = []
       let recovered = false
       let tasksDirty = false
       for (const [id, t] of Object.entries(allTasks) as [string, BoardTask][]) {
-        if (t.status === 'queued' && !queueSet.has(id)) {
-          log.info(TAG, `[queue] Recovering orphaned queued task: "${t.title}" (${id})`)
-          // Defence in depth: a queued task must not carry a stale checkoutRunId
-          // (left over from pre-1.5.38 retries). If it does, checkoutTask() will
-          // reject every attempt and this orphan-recovery loop will spin at 100%
-          // CPU re-queueing a task that can never run.
-          if (t.checkoutRunId) {
-            t.checkoutRunId = null
-            tasksDirty = true
-          }
-          pushQueueUnique(currentQueue, id)
-          recovered = true
+        if (t.status !== 'queued' || queueSet.has(id)) continue
+        const decision = trackOrphanRecovery(orphanAttempts, id)
+        if (decision.action === 'dead_letter') {
+          // Recovery keeps re-queueing this task but it never starts. Stop the
+          // loop with one terminal reason instead of spamming recovery forever.
+          const now = Date.now()
+          t.status = 'failed'
+          t.deadLetteredAt = now
+          t.retryScheduledAt = null
+          t.checkoutRunId = null
+          t.updatedAt = now
+          t.error = `Orphan recovery exhausted after ${MAX_ORPHAN_RECOVERY_ATTEMPTS} attempts: task repeatedly returned to "queued" without starting.`
+          if (!t.comments) t.comments = []
+          t.comments.push({
+            id: genId(),
+            author: 'System',
+            text: t.error,
+            createdAt: now,
+          })
+          delete orphanAttempts[id]
+          tasksDirty = true
+          deadLetteredOrphans.push(t)
+          log.warn(TAG, `[queue] Dead-lettered orphaned queued task after ${decision.attempt - 1} recovery attempts: "${t.title}" (${id})`)
+          continue
         }
+        stillOrphanedIds.add(id)
+        if (decision.firstAttempt) {
+          log.info(TAG, `[queue] Recovering orphaned queued task: "${t.title}" (${id})`)
+        } else {
+          log.debug(TAG, `[queue] Re-recovering orphaned queued task (attempt ${decision.attempt}): "${t.title}" (${id})`)
+        }
+        // Defence in depth: a queued task must not carry a stale checkoutRunId
+        // (left over from pre-1.5.38 retries). If it does, checkoutTask() will
+        // reject every attempt and this orphan-recovery loop will spin at 100%
+        // CPU re-queueing a task that can never run.
+        if (t.checkoutRunId) {
+          t.checkoutRunId = null
+          tasksDirty = true
+        }
+        pushQueueUnique(currentQueue, id)
+        recovered = true
       }
+      pruneOrphanRecovery(orphanAttempts, stillOrphanedIds)
       if (tasksDirty) saveTasks(allTasks)
       if (recovered) saveQueue(currentQueue)
+      for (const t of deadLetteredOrphans) {
+        notify('tasks')
+        logActivity({ entityType: 'task', entityId: t.id, action: 'failed', actor: 'system', actorId: t.agentId, summary: `Task failed: "${t.title}" (orphan recovery exhausted)` })
+        pushMainLoopEventToMainSessions({
+          type: 'task_failed',
+          text: `Task failed: "${t.title}" (${t.id}): orphan recovery exhausted.`,
+        })
+        handleTerminalTaskResultDeliveries(t)
+      }
     }
 
     // Process ONE task per invocation (no while loop)
@@ -1261,6 +1336,61 @@ export async function processNext() {
         } catch {}
       }
 
+      // Credential preflight for scheduled runs: fail fast with an actionable
+      // error instead of letting the schedule die on a 401 deep in execution.
+      // Retries cannot succeed without a key, so this dead-letters immediately.
+      if ((task as ScheduleTaskMeta).sourceType === 'schedule') {
+        const preflight = preflightProviderCredential({
+          provider: typedAgent.provider,
+          ollamaMode: typedAgent.ollamaMode ?? null,
+          credentialId: typedAgent.credentialId ?? null,
+          fallbackCredentialIds: typedAgent.fallbackCredentialIds || null,
+        })
+        if (!preflight.ok) {
+          const now = Date.now()
+          task.status = 'failed'
+          task.deadLetteredAt = now
+          task.retryScheduledAt = null
+          task.checkoutRunId = null
+          task.error = preflight.error.slice(0, 500)
+          task.updatedAt = now
+          if (!task.comments) task.comments = []
+          task.comments.push({
+            id: genId(),
+            author: 'System',
+            text: preflight.error,
+            createdAt: now,
+          })
+          saveTasks(latestTasks)
+          notify('tasks')
+          const failure = classifyRuntimeFailure({ source: 'task', message: preflight.error })
+          recordSupervisorIncident({
+            runId: task.id,
+            sessionId: task.sessionId || '',
+            taskId: task.id,
+            agentId: typedAgent.id,
+            source: 'task',
+            kind: 'runtime_failure',
+            severity: failure.severity,
+            summary: `Scheduled run blocked by credential preflight: ${preflight.error}`.slice(0, 320),
+            details: preflight.error,
+            failureFamily: failure.family,
+            remediation: failure.remediation,
+            repairPrompt: failure.repairPrompt,
+            autoAction: null,
+          })
+          logActivity({ entityType: 'task', entityId: task.id, action: 'failed', actor: 'system', actorId: typedAgent.id, summary: `Task failed credential preflight: "${task.title}"` })
+          pushMainLoopEventToMainSessions({
+            type: 'task_failed',
+            text: `Task failed: "${task.title}" (${task.id}): ${preflight.error.slice(0, 200)}`,
+          })
+          handleTerminalTaskResultDeliveries(task)
+          cleanupTerminalOneOffSchedule(task)
+          log.warn(TAG, `[queue] Scheduled task "${task.title}" (${taskId}) failed credential preflight: ${preflight.error}`)
+          return
+        }
+      }
+
       // Atomic checkout — prevents two runners from starting the same task
       const runId = genId()
       task = checkoutTask(taskId, runId) as BoardTask | undefined
@@ -1296,8 +1426,17 @@ export async function processNext() {
           : ''
         if (existingSessionId) {
           const sessions = loadSessions()
-          if (sessions[existingSessionId]) {
+          const existingSession = sessions[existingSessionId]
+          if (existingSession) {
             sessionId = existingSessionId
+            // Rebind sessions still pinned to a legacy workspace root (e.g. a
+            // pre-migration ~/.swarmclaw/workspace path) onto the current root.
+            const sessionCwd = typeof existingSession.cwd === 'string' ? existingSession.cwd : ''
+            if (sessionCwd && normalizeLegacyWorkspacePath(sessionCwd, { taskId: task.id }) !== sessionCwd) {
+              existingSession.cwd = taskCwd
+              saveSessions(sessions)
+              log.info(TAG, `[queue] Rebound stale schedule session cwd to ${taskCwd} (session ${existingSessionId})`)
+            }
           }
         }
         if (!sessionId) {
@@ -1467,7 +1606,10 @@ export async function processNext() {
               createdAt: now,
             })
           } else {
-            const failureReason = formatValidationFailure(validation.reasons).slice(0, 500)
+            // A run with no text, no tool calls, and no error gets an actionable
+            // reason instead of the generic "Result summary is empty." message.
+            const emptyRunReason = classifyEmptyRunOutcome(taskRun)
+            const failureReason = (emptyRunReason || formatValidationFailure(validation.reasons)).slice(0, 500)
             const retryState = scheduleRetryOrDeadLetter(t2[taskId], failureReason)
             t2[taskId].completedAt = retryState === 'dead_lettered' ? null : t2[taskId].completedAt
             t2[taskId].comments!.push({

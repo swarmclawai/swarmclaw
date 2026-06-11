@@ -5,7 +5,7 @@ import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { describe, it } from 'node:test'
 
-import { assessAutonomyRun } from '@/lib/server/autonomy/supervisor-reflection'
+import { assessAutonomyRun, classifyRuntimeFailure } from '@/lib/server/autonomy/supervisor-reflection'
 import type { Session } from '@/types'
 
 const repoRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../../../..')
@@ -614,5 +614,14 @@ describe('supervisor-reflection', () => {
     assert.match(String(incident?.details || ''), /html error payload/i)
     assert.doesNotMatch(String(incident?.details || ''), /<!doctype html>/i)
     assert.match(String(incident?.details || ''), /singleton is not defined/i)
+  })
+
+  it('classifies the scheduled-run credential preflight error as provider auth', () => {
+    const failure = classifyRuntimeFailure({
+      source: 'task',
+      message: 'Provider authentication preflight failed: no API credential configured for provider "openai".',
+    })
+    assert.equal(failure.family, 'provider_auth')
+    assert.equal(failure.severity, 'high')
   })
 })

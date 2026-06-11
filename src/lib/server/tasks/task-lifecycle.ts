@@ -8,6 +8,7 @@ import {
   type TaskCompletionValidation,
 } from '@/lib/server/tasks/task-validation'
 import { syncTaskExecutionPolicyState } from '@/lib/server/tasks/task-execution-policy'
+import { normalizeLegacyWorkspacePath } from '@/lib/server/workspace-paths'
 import { createMission, startMission } from '@/lib/server/missions/mission-service'
 import { getMission } from '@/lib/server/missions/mission-repository'
 import { loadSessions } from '@/lib/server/storage'
@@ -74,6 +75,11 @@ export function resetTaskForRerun(task: BoardTask, options: ResetTaskForRerunOpt
   task.retryScheduledAt = null
   task.deadLetteredAt = null
   task.validation = null
+  // Remap cwds persisted under a previous workspace root so reruns don't keep
+  // executing in the pre-migration directory. Custom cwds pass through unchanged.
+  if (typeof task.cwd === 'string' && task.cwd.trim()) {
+    task.cwd = normalizeLegacyWorkspacePath(task.cwd, { taskId: task.id })
+  }
   task.executionPolicyState = syncTaskExecutionPolicyState(task.executionPolicy || null, null, options.now)
   if (options.runNumber !== undefined) stats.runNumber = options.runNumber
   return task

@@ -84,6 +84,33 @@ function disableSessionHeartbeatLocally(
   return true
 }
 
+/**
+ * Records the outcome of a scheduled run on the schedule itself so failures
+ * are visible without digging through the linked task. Returns true when the
+ * schedule was updated and needs to be persisted.
+ */
+export function applyScheduleRunOutcome(
+  schedule: Schedule,
+  task: Pick<BoardTask, 'status' | 'error'>,
+  now: number,
+): boolean {
+  if (task.status === 'completed') {
+    schedule.lastDeliveryStatus = 'ok'
+    schedule.lastDeliveryError = null
+    schedule.lastDeliveredAt = now
+    schedule.updatedAt = now
+    return true
+  }
+  if (task.status === 'failed') {
+    schedule.lastDeliveryStatus = 'error'
+    schedule.lastDeliveryError = (task.error || 'Scheduled run failed without a recorded error.').slice(0, 500)
+    schedule.lastDeliveredAt = now
+    schedule.updatedAt = now
+    return true
+  }
+  return false
+}
+
 function markTaskCancelled(task: BoardTask, reason: string, now: number): void {
   task.status = 'cancelled'
   task.retryScheduledAt = null
