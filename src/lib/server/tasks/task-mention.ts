@@ -90,3 +90,13 @@ export function resolveTaskAgentFromDescription(
   const assigned = parseAssignedAgentId(description, agents)
   return assigned || currentAgentId
 }
+
+export function resolveTaskAgentForCreate(
+  description: string,
+  explicitAgentId: string,
+  agents: Record<string, Agent>,
+): string {
+  const trimmedExplicit = explicitAgentId.trim()
+  if (trimmedExplicit) return trimmedExplicit
+  return description ? resolveTaskAgentFromDescription(description, '', agents) : ''
+}

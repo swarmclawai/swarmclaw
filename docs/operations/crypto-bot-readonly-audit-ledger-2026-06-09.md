@@ -196,6 +196,31 @@ Operator findings:
   description-based assignment resolution and override the explicit worker.
   Use neutral evidence labels such as `worker` in embedded task summaries.
 
+### Crypto Onboarding Wave
+
+Wave `crypto-readonly-onboarding-graphify-2026-06-11` completed with final
+fan-in marker `CRYPTO_ONBOARD_FANIN_ACCEPTED`.
+
+| Task | Agent | Status | Marker | Disposition |
+|---|---|---|---|---|
+| `c030facb` architecture map | Builder `92b8cd6c` | completed | `CRYPTO_ONBOARD_ARCH_MAP_OK` | accepted |
+| `db866e2f` safety boundary review | Reviewer QA `c2cd6ff9` | completed | `CRYPTO_ONBOARD_SAFETY_REVIEW_OK` | accepted |
+| `5d51143f` manifest/test inventory | Copilot Mini `e74dd145` | completed | marker not first | superseded by marker repair |
+| `e1018b09` manifest/test replacement | Copilot Mini `e74dd145` | completed | marker not first | superseded by marker repair |
+| `4e6612ae` manifest/test marker repair | Builder `92b8cd6c` | completed | `CRYPTO_ONBOARD_MANIFEST_TESTS_OK` | accepted |
+| `200521ea` source hot spots | OpenCode Builder `a0f79bad` | completed | `CRYPTO_ONBOARD_HOTSPOTS_OK` | accepted |
+| `098f9adc` operating brief draft | Builder `92b8cd6c` | completed | `CRYPTO_ONBOARD_OPERATING_BRIEF_OK` | accepted |
+| `9b1c3037` fan-in gate | Reviewer QA `c2cd6ff9` | completed | `CRYPTO_ONBOARD_FANIN_ACCEPTED` | accepted |
+
+Accepted next safe action: read-only contract trace of
+`entry_runtime_contract_v1` and `token_ready` payload expectations against active
+source/tests, with no runtime, DB, logs, output, model, secrets, raw Graphify, or
+exchange access.
+
+Sanitized Knowledge import is allowed only as a scoped orientation note with
+limitations and checkpoint gates preserved. Raw Graphify graph/report remains
+blocked from Knowledge.
+
 ## Deferred TODOs
 
 Status: deferred by Zmey on 2026-06-09. Do not start these until Zmey gives a

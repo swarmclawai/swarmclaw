@@ -1,7 +1,13 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import type { Agent } from '@/types'
-import { parseAssignedAgentId, parseMentionedAgentId, resolveAgentReference, resolveTaskAgentFromDescription } from '@/lib/server/tasks/task-mention'
+import {
+  parseAssignedAgentId,
+  parseMentionedAgentId,
+  resolveAgentReference,
+  resolveTaskAgentForCreate,
+  resolveTaskAgentFromDescription,
+} from '@/lib/server/tasks/task-mention'
 
 const now = Date.now()
 const agents: Record<string, Agent> = {
@@ -50,6 +56,22 @@ describe('task-mention', () => {
 
   it('resolves task assignment without @mentions', () => {
     const resolved = resolveTaskAgentFromDescription('Please delegate this to CodeBot.', 'default', agents)
+    assert.equal(resolved, 'coder')
+  })
+
+  it('preserves explicit create-route assignment over assignment-looking evidence text', () => {
+    const resolved = resolveTaskAgentForCreate(
+      'Evidence says Agent ID: coder, but this is not an assignment instruction.',
+      'default',
+      agents,
+    )
+
+    assert.equal(resolved, 'default')
+  })
+
+  it('uses description routing for create-route tasks without an explicit assignee', () => {
+    const resolved = resolveTaskAgentForCreate('Please delegate this to CodeBot.', '', agents)
+
     assert.equal(resolved, 'coder')
   })
 })

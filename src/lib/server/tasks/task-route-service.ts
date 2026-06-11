@@ -27,7 +27,7 @@ import {
   prepareTaskExecutionWorkspace,
   type PrepareTaskExecutionWorkspaceOptions,
 } from '@/lib/server/tasks/task-execution-workspace'
-import { resolveTaskAgentFromDescription } from '@/lib/server/tasks/task-mention'
+import { resolveTaskAgentForCreate } from '@/lib/server/tasks/task-mention'
 import {
   describeTaskExecutionPolicy,
   isTaskExecutionPolicySatisfied,
@@ -418,9 +418,8 @@ export function createTaskFromRoute(body: Record<string, unknown>): ServiceResul
     }
   }
   const description = typeof body.description === 'string' ? body.description : ''
-  const resolvedAgentId = description
-    ? resolveTaskAgentFromDescription(description, (body.agentId as string) || '', loadAgents())
-    : ((body.agentId as string) || '')
+  const explicitAgentId = typeof body.agentId === 'string' ? body.agentId.trim() : ''
+  const resolvedAgentId = resolveTaskAgentForCreate(description, explicitAgentId, loadAgents())
 
   const prepared = prepareTaskCreation({
     id,

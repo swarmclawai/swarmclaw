@@ -120,15 +120,22 @@ export function extractSessionResumeState(session: Partial<Session> | null | und
   return hasResumeState(resume) ? resume : null
 }
 
+function isWorkflowDependencyTask(task: BoardTask): boolean {
+  return Boolean(task.workflow?.bundleId)
+}
+
 export function resolveTaskResumeContext(
   task: BoardTask,
   tasksById: Record<string, BoardTask>,
   sessionsById?: Record<string, SessionLike | Session>,
 ): TaskResumeContext | null {
+  const blockedByResumeCandidates = isWorkflowDependencyTask(task)
+    ? []
+    : (Array.isArray(task.blockedBy) ? task.blockedBy : [])
   const candidates: Array<{ source: TaskResumeContext['source']; taskId: string | null | undefined }> = [
     { source: 'self', taskId: task.id },
     { source: 'delegated_from_task', taskId: task.delegatedFromTaskId },
-    ...((Array.isArray(task.blockedBy) ? task.blockedBy : []).map((taskId) => ({ source: 'blocked_by' as const, taskId }))),
+    ...blockedByResumeCandidates.map((taskId) => ({ source: 'blocked_by' as const, taskId })),
   ]
   const seen = new Set<string>()
 

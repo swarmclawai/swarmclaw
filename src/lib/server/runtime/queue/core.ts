@@ -42,7 +42,7 @@ import {
   type SessionLike,
 } from '@/lib/server/tasks/task-followups'
 import { getCheckpointSaver } from '@/lib/server/langgraph-checkpoint'
-import { cascadeUnblock } from '@/lib/server/dag-validation'
+import { cascadeUnblock, hydrateUpstreamResults } from '@/lib/server/dag-validation'
 import { prepareGuardianRecovery } from '@/lib/server/agents/guardian'
 import { notifyOrchestrators } from '@/lib/server/runtime/orchestrator-events'
 import type { Agent, BoardTask, Message, Session } from '@/types'
@@ -1293,6 +1293,7 @@ export async function processNext() {
       // Reload tasks map for resolution functions and final save (checkoutTask already saved the running status)
       const allTasks = loadTasks() as Record<string, BoardTask>
       allTasks[taskId] = task
+      hydrateUpstreamResults(task, allTasks)
       const sessionsForCwd = loadSessions() as Record<string, SessionLike>
       const taskCwd = resolveTaskExecutionCwd(task as ScheduleTaskMeta, sessionsForCwd)
       task.cwd = taskCwd

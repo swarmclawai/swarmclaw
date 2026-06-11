@@ -5,6 +5,60 @@ interface DagResult {
   cycle?: string[]
 }
 
+const MAX_UPSTREAM_RESULT_PREVIEW_CHARS = 1600
+
+function redactSensitiveTaskText(value: string): string {
+  return value
+    .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, 'Bearer [REDACTED]')
+    .replace(/\bsk-[A-Za-z0-9_-]{12,}\b/g, 'sk-[REDACTED]')
+    .replace(/\b(api[_-]?key|token|secret|password|private[_-]?key)\s*[:=]\s*\S+/gi, '$1=[REDACTED]')
+}
+
+function previewTaskResult(value: string | null | undefined): string | null {
+  if (!value) return null
+  const text = redactSensitiveTaskText(value).trim()
+  return text ? text.slice(0, MAX_UPSTREAM_RESULT_PREVIEW_CHARS) : null
+}
+
+function sameUpstreamResults(
+  current: BoardTask['upstreamResults'],
+  next: NonNullable<BoardTask['upstreamResults']>,
+): boolean {
+  if (!Array.isArray(current) || current.length !== next.length) return false
+  return current.every((row, index) => {
+    const candidate = next[index]
+    return row.taskId === candidate.taskId
+      && row.taskTitle === candidate.taskTitle
+      && row.agentId === candidate.agentId
+      && row.resultPreview === candidate.resultPreview
+  })
+}
+
+export function hydrateUpstreamResults(
+  task: BoardTask,
+  tasks: Record<string, BoardTask>,
+): boolean {
+  const deps = Array.isArray(task.blockedBy) ? task.blockedBy : []
+  if (deps.length === 0) return false
+
+  const allDone = deps.every((depId) => tasks[depId]?.status === 'completed')
+  if (!allDone) return false
+
+  const next = deps.map((depId) => {
+    const dep = tasks[depId]
+    return {
+      taskId: depId,
+      taskTitle: dep?.title || depId,
+      agentId: dep?.agentId || null,
+      resultPreview: previewTaskResult(dep?.result || null),
+    }
+  })
+
+  if (sameUpstreamResults(task.upstreamResults, next)) return false
+  task.upstreamResults = next
+  return true
+}
+
 /**
  * Validate that adding `proposedBlockedBy` to `taskId` would not create a cycle
  * in the task dependency graph. Uses DFS to check if `taskId` is reachable from
@@ -104,16 +158,7 @@ export function cascadeUnblock(
     })
 
     if (allDone) {
-      // Populate upstream results from completed blockers
-      blocked.upstreamResults = deps.map((depId) => {
-        const dep = tasks[depId]
-        return {
-          taskId: depId,
-          taskTitle: dep?.title || depId,
-          agentId: dep?.agentId || null,
-          resultPreview: dep?.result ? dep.result.slice(0, 800) : null,
-        }
-      })
+      hydrateUpstreamResults(blocked, tasks)
       blocked.status = 'queued'
       blocked.queuedAt = Date.now()
       blocked.updatedAt = Date.now()
