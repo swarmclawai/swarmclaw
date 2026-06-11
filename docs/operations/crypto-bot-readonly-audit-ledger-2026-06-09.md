@@ -150,6 +150,52 @@ automatically. The next code-writing candidate is narrow and test-first:
 Required checkpoint before code-writing: Zmey approval for a test-first crypto
 repo patch touching only the verified green-zone files.
 
+## Graphify Sidecar Follow-Up
+
+2026-06-11 code-only Graphify pilot completed as scratch-only discovery. The
+pilot copied only active `.py` and `.sql` source from `services/`,
+`live_trading/`, `execution/`, `config/`, `data_collection/`,
+`detective_crypto/`, `tests/`, `utils/`, and `migrations/` into `/tmp`, then ran
+Graphify with provider API environment names unset and query logging disabled.
+Result: 98 code files, 2302 nodes, 4481 edges, 123 communities, zero token cost.
+
+Do not import the raw Graphify graph/report into Knowledge. It contains
+secret-handling labels from source code such as credential, cookie, API-key, and
+wallet function/docstring names. Count-only scans found no credential values,
+private keys, DSNs, or provider token patterns. Use only sanitized summaries or
+symbol-heavy graph queries as discovery input for the next read-only SwarmClaw
+wave.
+
+### Graphify-Informed SwarmClaw Review Wave
+
+Workflow run `930f36cc` validated the sanitized Graphify summary as input for
+the next read-only onboarding wave, with important operator caveats.
+
+| Task | Agent | Status | Marker | Disposition |
+|---|---|---|---|---|
+| `bcb9aa86` architecture map | Builder `92b8cd6c` | completed | `CRYPTO_GRAPHIFY_ARCH_MAP_OK` | useful, but blocked on missing mounted summary |
+| `e1036431` hygiene review | Reviewer QA `c2cd6ff9` | completed | `CRYPTO_GRAPHIFY_HYGIENE_REVIEW_OK` | blocked raw graph use and requested accessible sanitized summary |
+| `14272a35` onboarding plan | Builder `92b8cd6c` | completed | `CRYPTO_GRAPHIFY_ONBOARDING_PLAN_OK` | proposed read-only waves, no code-writing |
+| `b1b1e4bc` original fan-in | Reviewer QA `c2cd6ff9` | completed | `CRYPTO_GRAPHIFY_FANIN_REVIEW_OK` | blocked because upstream outputs were not accessible in workspace |
+| `4cff2a98` remedial fan-in | intended Reviewer QA | completed | mixed | invalidated by retry/assignee mismatch |
+| `68908d9c` final fan-in | Builder `92b8cd6c` | completed | `CRYPTO_GRAPHIFY_FINAL_FANIN_OK` | accepted read-only onboarding, but wrong worker |
+| `8edbdccb` final QA fan-in | Reviewer QA `c2cd6ff9` | completed | `CRYPTO_GRAPHIFY_QA_FINAL_OK` | accepted next read-only onboarding wave |
+
+Final QA decision: accept only a strictly read-only onboarding wave using the
+sanitized Graphify summary, active manifests, and config references. Do not
+import raw Graphify graph/report artifacts into Knowledge. Do not use this as
+proof of raw graph safety beyond the sanitized assertions already recorded.
+
+Operator findings:
+
+- Protocol fan-in tasks need upstream outputs embedded or otherwise made
+  accessible; dependency edges alone did not provide predecessor evidence.
+- Pure planning/review tasks should disable or relax implementation-style
+  quality gates and validate markers manually.
+- Task descriptions containing phrases like `Agent ID: ...` can trigger
+  description-based assignment resolution and override the explicit worker.
+  Use neutral evidence labels such as `worker` in embedded task summaries.
+
 ## Deferred TODOs
 
 Status: deferred by Zmey on 2026-06-09. Do not start these until Zmey gives a

@@ -1,6 +1,6 @@
 # SwarmClaw Project Onboarding Template
 
-Last verified: 2026-06-08
+Last verified: 2026-06-11
 
 Audience: Codex and future agents operating Zmey's local SwarmClaw instance.
 
@@ -126,6 +126,76 @@ Blocked by default:
 
 Adding or syncing Knowledge is a runtime change and requires a checkpoint after Zmey reviews the sanitized content.
 
+## Graph Sidecar Discovery
+
+Graphify may be used as an optional sidecar for repo understanding before
+SwarmClaw task fan-out. It is a discovery aid, not the orchestrator and not a
+replacement for SwarmClaw Projects, Tasks, Runs, Knowledge, or agentmemory.
+
+Use Graphify when the project is large, messy, cross-language, or hard to map
+with normal file inspection. This is especially useful for the crypto trading bot
+and other already-developed projects where code paths, scripts, SQL schemas,
+docs, and runtime conventions have drifted over time.
+
+Default first-pass rules:
+
+- Run scratch-first and project-scoped. Do not run global installers or
+  `curl | bash`.
+- Do not use Graphify's agent install/hooks/config mutation path without a
+  separate checkpoint.
+- Write outputs to a temporary local artifact first. Do not commit
+  `graphify-out/` or add it to SwarmClaw Knowledge until reviewed.
+- Use a `.graphifyignore` or equivalent scoped input list before the first run.
+- Exclude `.env*`, credentials, cookies, auth JSON, wallets, private keys,
+  tokens, DBs, DB dumps, datasets, logs, generated reports, model binaries,
+  runtime captures, broad `output/`, broad `data/`, and any unclear sensitive
+  surface.
+- For DB-backed projects, allow schema-only or source-level SQL review after
+  checkpoint. Do not point Graphify at large database files or raw production
+  data.
+- Keep any Graphify MCP or HTTP surface localhost-only. Never bind it to
+  `0.0.0.0` on Zmey's machine without a separate exposure checkpoint.
+- Review generated graph/report content for secrets and irrelevant noise before
+  summarizing it into docs, Knowledge, or task prompts.
+
+Recommended use by project:
+
+| Project Type | Graphify Role | Default Scope | Blocked Scope |
+|---|---|---|---|
+| SwarmClaw platform | Map code relationships before product changes. | Workflow, Protocol, Task, Run, storage, and UI source paths. | `.env.local`, `state/`, provider credentials, runtime DBs, logs, generated artifacts. |
+| Crypto trading bot | Map pipelines, strategy, risk, execution, tests, scripts, and schema docs. | Source, tests, README/runbooks, non-secret config schemas, source-like SQL. | Live trading actions, exchange/account calls, raw DBs, datasets, logs, credentials, wallets, outputs. |
+| MMA sports pipelines | Map ingestion, parsing, feature generation, models, reports, tests. | Source, schemas, docs, tests, small non-secret fixtures. | Paid credentials, raw private datasets, scraping account secrets, production schedules. |
+
+Graphify and agentmemory are complementary:
+
+- Graphify answers: what exists in this repo and how pieces connect.
+- agentmemory answers: what Zmey and prior agents decided, verified, deferred,
+  fixed, or learned across sessions.
+
+If the graph is useful, feed only sanitized summaries into SwarmClaw tasks:
+
+1. Builder maps architecture from safe graph plus repo structure.
+2. Reviewer QA reviews graph coverage, secret hygiene, and false confidence.
+3. Coordinator or Builder drafts the project onboarding plan.
+4. Reviewer QA fan-in accepts, requests changes, or blocks the first wave.
+
+When using workflow bundles, embed sanitized predecessor summaries into fan-in
+prompts or make them available as reviewed Knowledge/operator text. Dependency
+edges alone may not give the fan-in worker access to prior outputs. Use neutral
+labels such as `worker` in embedded evidence; assignment-like phrases such as
+`Agent ID: ...` can be parsed as a new assignee and override the intended worker.
+
+Verified SwarmClaw platform pilot, 2026-06-10: a scratch-only Graphify run
+against workflow/protocol/task orchestration source produced a useful code graph
+without global install, hooks, MCP, Knowledge import, provider changes, or runtime
+changes. Symbol-heavy queries were useful; broad natural-language queries were
+noisy and should be scoped.
+
+Verified crypto bot pilot, 2026-06-11: a scratch-only Graphify run against safe
+code-only zones produced a useful sanitized summary. Final Reviewer QA task
+`8edbdccb` accepted the next read-only onboarding wave from sanitized inputs and
+blocked raw graph/report Knowledge import.
+
 ## Artifact Decision Table
 
 Choose the lightest artifact that makes the project operable.
@@ -135,6 +205,7 @@ Choose the lightest artifact that makes the project operable.
 | Durable operating brief | Project | Stores objective, audience, priorities, objectives, capabilities, metrics. |
 | One-off work item | Task | Direct assign by exact stored worker ID. |
 | Shared source material | Knowledge | Add only sanitized sources after checkpoint. |
+| Repo relationship graph | Graphify sidecar artifact | Optional scratch-first discovery aid; review before commit or Knowledge import. |
 | Repeated checklist or role behavior | Skill | Draft in repo docs first; runtime install/pin later only after checkpoint. |
 | Stable specialist identity | Agent | Create only after repeated proof that a skill or task prompt is insufficient. |
 | Recurring automation | Schedule or Mission | High-impact; checkpoint required. |
@@ -147,6 +218,7 @@ Choose the lightest artifact that makes the project operable.
 | Phase | Owner | Action | Write Scope | Completion Gate |
 |---|---|---|---|---|
 | 0 | Main Codex helper | Confirm repo path, project metadata, and safety constraints. | None | Zmey confirms source path or Knowledge-only mode. |
+| 0.5 | Main Codex helper | Optional Graphify sidecar pilot for large or messy repos. | Temporary artifact only | Sanitized graph/report reviewed, or discarded as noisy/unsafe. |
 | 1 | Builder `92b8cd6c` | Read-only project discovery. | None | Structure, key files, tests, risks, unknowns. |
 | 2 | Reviewer QA `c2cd6ff9` | Read-only domain/risk review. | None | Safety risks and checkpoint-required actions listed. |
 | 3 | Coordinator `default` or Builder `92b8cd6c` | Orchestration plan. | None | Goal, workstreams, dependencies, first wave. |

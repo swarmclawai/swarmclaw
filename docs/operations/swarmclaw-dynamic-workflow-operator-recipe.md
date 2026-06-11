@@ -1,6 +1,6 @@
 # SwarmClaw Dynamic Workflow Operator Recipe
 
-Last verified: 2026-06-09, local subscription image `swarmclaw-subscription:1.9.36`.
+Last verified: 2026-06-11, local subscription image `swarmclaw-subscription:1.9.36`.
 
 Purpose: operate SwarmClaw-native dynamic workflows safely through Protocols, Tasks, Runs, and the Workflow Bundles panel. This is the short runbook for future agents; use the GUI operator manual for page-by-page detail.
 
@@ -47,12 +47,68 @@ Run `bf0f448e` verified the core path:
 - Clicking **Continue selected run** marked the workflow run completed with summary: `Workflow continuation marked the run completed after all workflow tasks finished.`
 - Docker health after rebuild remained healthy and local-only on `127.0.0.1:3456-3457`.
 
+## Graphify Sidecar Pilot
+
+2026-06-10 SwarmClaw platform scratch pilot:
+
+- Cloned Graphify to `/tmp` and installed it only into an isolated `/tmp`
+  virtualenv. No global install, hooks, Codex config mutation, MCP server,
+  Knowledge import, provider change, or SwarmClaw runtime change.
+- Built a temporary corpus from workflow/protocol/task orchestration source only:
+  `src/lib/server/workflows`, `src/lib/server/protocols`,
+  `src/lib/server/tasks`, workflow/protocol API routes, workflow UI query
+  files, and workflow/protocol types.
+- Ran code-only extraction with provider API environment names unset and
+  `GRAPHIFY_QUERY_LOG_DISABLE=1`.
+- Result: 70 code files, 558 nodes, 1052 edges, 43 communities, zero token cost.
+- Useful query style: symbol-heavy queries such as
+  `createWorkflowBundle createProtocolRun createProtocolDispatchedTask workflow bundle task dispatch protocol run`.
+- Weak query style: broad natural-language queries can match generic nodes like
+  `task()` and need scoping.
+- Secret hygiene: generated report/graph contained no secret values; only
+  policy/report language such as `Token cost`.
+
+2026-06-11 crypto bot code-only scratch pilot:
+
+- Used Graphify `0.8.37` from a `/tmp` clone and isolated `/tmp` virtualenv.
+  No global install, hooks, Codex config mutation, MCP server, Knowledge import,
+  provider change, runtime change, DB read, live trading action, or repo write.
+- Built a temporary corpus from active source zones only: `services/`,
+  `live_trading/`, `execution/`, `config/`, `data_collection/`,
+  `detective_crypto/`, `tests/`, `utils/`, and `migrations/`.
+- Included only `.py` and `.sql`; excluded caches, `.env*`, `data/`,
+  `test_data/`, `output/`, runtime logs, `secrets/`, `LEGACY_CODE/`, JSON,
+  DBs, models, generated artifacts, and secret-named files.
+- First extraction attempt was blocked by an over-broad temp `.graphifyignore`
+  that excluded the copied `state/` prefix. Fix: build the temp corpus from the
+  target repo root so copied paths start at active-source directory names.
+- Result: 98 code files, 2302 nodes, 4481 edges, 123 communities, zero token
+  cost.
+- Useful query style: symbol-heavy queries around active concepts, for example
+  `PersistenceService ScoringService TradingService PumpFunPregradDiscoveryService PostgresDB`
+  or `SecurityChecker evaluate_pumpfun_security_snapshot scoring_service`.
+- Raw graph/report should not be imported into Knowledge without sanitization:
+  it contains secret-handling labels from source code, such as credential,
+  cookie, API-key, and wallet function/docstring names, though count-only scans
+  found no credential values, private keys, DSNs, or provider token patterns.
+- Follow-up workflow run `930f36cc` completed architecture, hygiene, onboarding,
+  and fan-in tasks. Final Reviewer QA task `8edbdccb` returned
+  `CRYPTO_GRAPHIFY_QA_FINAL_OK` and accepted only a strictly read-only
+  onboarding wave from sanitized inputs.
+
 ## Known Pitfalls
 
 - F017: browser text entry can fail in task forms because the browser automation surface lacks virtual clipboard support. Do not loop retries on `fill`, `type`, CUA typing, DOM typing, or file upload. Use character-by-character `locator.press()` for short fields; use manual GUI entry or a checkpointed app-service fallback for large content.
 - Workflow dependency edges are not continuation edges. Fan-in tasks must receive upstream result summaries, not reuse a worker's execution session.
 - The task board Queue button can be brittle under browser automation. If visible clicking does not persist, stop and use a checkpointed service/API fallback rather than broad raw DB edits.
 - Shell calls to protected workflow APIs may return `401`; prefer the authenticated GUI for protected actions.
+- Task creation resolves assignment-like text in descriptions. Embedded
+  evidence containing strings such as `Agent ID: ...` can override an explicit
+  `agentId`; use neutral labels like `worker` when summarizing predecessor
+  outputs.
+- Planning, audit, and fan-in tasks often fail implementation-style quality
+  gates even when their content is valid. Disable or relax quality gates for
+  pure reasoning tasks, keep first-line markers, and manually validate evidence.
 
 ## Checkpoint Triggers
 
@@ -73,10 +129,14 @@ Ask Zmey before:
 For a messy project such as the crypto bot:
 
 1. Start read-only discovery with source/docs only.
-2. Exclude DBs, datasets, logs, outputs, `.env*`, credentials, cookies, auth JSON, wallets, keys, and live trading actions.
-3. Use two worker tasks plus one Reviewer QA fan-in before implementation.
-4. Convert accepted findings into a project onboarding plan and a staging ledger.
-5. Only after the ledger is accepted, discuss code-writing waves and isolation policy.
+2. If the repo is large or hard to map, run an optional Graphify sidecar pilot
+   scratch-first against safe source/docs only. Do not install hooks, mutate
+   agent config, commit `graphify-out/`, expose a Graphify server, or import the
+   graph into Knowledge until the artifact is reviewed.
+3. Exclude DBs, datasets, logs, outputs, `.env*`, credentials, cookies, auth JSON, wallets, keys, and live trading actions.
+4. Use two worker tasks plus one Reviewer QA fan-in before implementation.
+5. Convert accepted findings into a project onboarding plan and a staging ledger.
+6. Only after the ledger is accepted, discuss code-writing waves and isolation policy.
 
 ## Crypto Pilot Result
 
