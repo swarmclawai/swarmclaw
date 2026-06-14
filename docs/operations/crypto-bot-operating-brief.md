@@ -1,7 +1,7 @@
 # Crypto Bot Operating Brief
 
-Last verified: 2026-06-11
-Status: read-only onboarding accepted by SwarmClaw fan-in task `9b1c3037`.
+Last verified: 2026-06-14
+Status: contract trace fan-in accepted by SwarmClaw task `6f78749c` for the next read-only planning step only.
 Purpose: give Codex and future SwarmClaw workers a concise, sanitized operating
 brief for Zmey's crypto trading bot.
 
@@ -24,6 +24,8 @@ brief for Zmey's crypto trading bot.
 - `docs/operations/crypto-bot-graphify-summary-2026-06-11.md`
 - Onboarding tasks: `c030facb`, `db866e2f`, `4e6612ae`, `200521ea`,
   `098f9adc`, and final fan-in `9b1c3037`.
+- Contract trace tasks: `cfd16de6`, `794dae24`, `e282952d`, `1e7b00cd`,
+  and final fan-in `6f78749c`.
 
 ## Current Runtime Map
 
@@ -79,6 +81,12 @@ Checkpoint-required scopes:
 - Runtime health, Redis/Postgres state, dynamic env overrides, model correctness,
   API behavior, trade artifacts, and DB contents remain unverified.
 - Graphify/source-only evidence is orientation, not operational proof.
+- Contract trace fan-in accepted the next read-only planning step around
+  `entry_runtime_contract_v1` fan-in, the `token_ready` publisher/consumer
+  boundary, missing tests/docs coverage, and safety-map caveats.
+- The accepted contract trace is not approval for runtime promotion, live
+  execution, repo mutation, secret/config inspection, or claims that coverage
+  gaps are fixed.
 
 ## SwarmClaw Operating Pattern
 
@@ -92,9 +100,10 @@ Checkpoint-required scopes:
 
 ## Next Actions
 
-Next safest action: run a read-only contract trace of
-`entry_runtime_contract_v1` and `token_ready` payload expectations against
-active source/tests.
+Next safest action: draft a read-only remediation plan prioritizing
+`token_ready` runtime-boundary payload tests, forbidden selector completeness,
+checkpoint field-count coverage, `docs/current_runtime` contract references,
+and the stale `ENABLE_MONITORING` conflict noted by task `1e7b00cd`.
 
 First possible code-writing candidates remain deferred until checkpoint:
 

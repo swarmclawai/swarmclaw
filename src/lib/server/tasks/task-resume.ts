@@ -120,8 +120,12 @@ export function extractSessionResumeState(session: Partial<Session> | null | und
   return hasResumeState(resume) ? resume : null
 }
 
-function isWorkflowDependencyTask(task: BoardTask): boolean {
-  return Boolean(task.workflow?.bundleId)
+function hasHydratedDependencyResults(task: BoardTask): boolean {
+  return Array.isArray(task.upstreamResults) && task.upstreamResults.length > 0
+}
+
+function isDependencyResultTask(task: BoardTask): boolean {
+  return Boolean(task.workflow?.bundleId) || hasHydratedDependencyResults(task)
 }
 
 export function resolveTaskResumeContext(
@@ -129,7 +133,7 @@ export function resolveTaskResumeContext(
   tasksById: Record<string, BoardTask>,
   sessionsById?: Record<string, SessionLike | Session>,
 ): TaskResumeContext | null {
-  const blockedByResumeCandidates = isWorkflowDependencyTask(task)
+  const blockedByResumeCandidates = isDependencyResultTask(task)
     ? []
     : (Array.isArray(task.blockedBy) ? task.blockedBy : [])
   const candidates: Array<{ source: TaskResumeContext['source']; taskId: string | null | undefined }> = [
@@ -197,10 +201,13 @@ export function resolveReusableTaskSessionId(
   tasks: Record<string, BoardTask>,
   sessions: Record<string, SessionLike>,
 ): string {
+  const blockedBySessionCandidates = isDependencyResultTask(task)
+    ? []
+    : (Array.isArray(task.blockedBy) ? task.blockedBy : [])
   const candidateTaskIds = [
     task.id,
     typeof task.delegatedFromTaskId === 'string' ? task.delegatedFromTaskId : '',
-    ...(Array.isArray(task.blockedBy) ? task.blockedBy : []),
+    ...blockedBySessionCandidates,
   ]
   const seen = new Set<string>()
   for (const candidateTaskId of candidateTaskIds) {

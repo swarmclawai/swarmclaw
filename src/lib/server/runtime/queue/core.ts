@@ -257,7 +257,7 @@ export function resolveTaskResumeContext(
   tasksById: Record<string, BoardTask>,
   sessionsById?: Record<string, SessionLike | Session>,
 ): TaskResumeContext | null {
-  const blockedByResumeCandidates = isWorkflowDependencyTask(task)
+  const blockedByResumeCandidates = isDependencyResultTask(task)
     ? []
     : (Array.isArray(task.blockedBy) ? task.blockedBy : [])
   const candidates: Array<{ source: TaskResumeContext['source']; taskId: string | null | undefined }> = [
@@ -294,12 +294,16 @@ export function resolveTaskResumeContext(
   return null
 }
 
-function isWorkflowDependencyTask(task: BoardTask): boolean {
-  return Boolean(task.workflow?.bundleId)
+function hasHydratedDependencyResults(task: BoardTask): boolean {
+  return Array.isArray(task.upstreamResults) && task.upstreamResults.length > 0
+}
+
+function isDependencyResultTask(task: BoardTask): boolean {
+  return Boolean(task.workflow?.bundleId) || hasHydratedDependencyResults(task)
 }
 
 function workflowSessionMatchesTaskWorkspace(task: BoardTask, session: SessionLike | Session | undefined): boolean {
-  if (!isWorkflowDependencyTask(task)) return true
+  if (!isDependencyResultTask(task)) return true
   const taskCwd = typeof task.cwd === 'string' ? task.cwd.trim() : ''
   const sessionCwd = typeof session?.cwd === 'string' ? session.cwd.trim() : ''
   return !taskCwd || !sessionCwd || taskCwd === sessionCwd
@@ -339,7 +343,7 @@ export function resolveReusableTaskSessionId(
   tasks: Record<string, BoardTask>,
   sessions: Record<string, SessionLike>,
 ): string {
-  const blockedBySessionCandidates = isWorkflowDependencyTask(task)
+  const blockedBySessionCandidates = isDependencyResultTask(task)
     ? []
     : (Array.isArray(task.blockedBy) ? task.blockedBy : [])
   const candidateTaskIds = [

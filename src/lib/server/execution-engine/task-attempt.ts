@@ -51,6 +51,28 @@ function looksIncomplete(text: string): boolean {
   return /\b(?:next i(?:'ll| will)|now i(?:'ll| will)|let me (?:now|next)|moving on to|proceeding to)\b/.test(lastChunk)
 }
 
+function formatUpstreamResultsContext(task: BoardTask): string | null {
+  if (!Array.isArray(task.upstreamResults) || task.upstreamResults.length === 0) return null
+  const upstreamBlock = task.upstreamResults
+    .map((ur) => `### ${ur.taskTitle}\n${ur.resultPreview || '(no result)'}`)
+    .join('\n\n')
+  return upstreamBlock ? `## Context from upstream tasks\n\n${upstreamBlock}` : null
+}
+
+export function buildTaskAttemptPrompt(task: BoardTask): string {
+  const basePrompt = task.description || task.title
+  const upstreamContext = formatUpstreamResultsContext(task)
+  return [
+    basePrompt,
+    upstreamContext ? `\n${upstreamContext}` : '',
+    '',
+    'Completion requirements:',
+    '- Execute the task before replying; do not reply with only a plan.',
+    '- Include concrete evidence in your final summary: changed file paths, commands run, and verification results.',
+    '- If blocked, state the blocker explicitly and what input or permission is missing.',
+  ].join('\n')
+}
+
 function chainCallerSignal(callerSignal: AbortSignal | undefined, controller: AbortController): void {
   if (!callerSignal) return
   if (callerSignal.aborted) {
@@ -115,15 +137,7 @@ async function executeTaskAttemptTurn(
   }
 
   const settings = loadSettings()
-  const basePrompt = task.description || task.title
-  const prompt = [
-    basePrompt,
-    '',
-    'Completion requirements:',
-    '- Execute the task before replying; do not reply with only a plan.',
-    '- Include concrete evidence in your final summary: changed file paths, commands run, and verification results.',
-    '- If blocked, state the blocker explicitly and what input or permission is missing.',
-  ].join('\n')
+  const prompt = buildTaskAttemptPrompt(task)
 
   let latestRun = await executeExecutionChatTurn({
     sessionId,
