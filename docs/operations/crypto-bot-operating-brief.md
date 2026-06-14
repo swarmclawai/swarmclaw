@@ -1,7 +1,7 @@
 # Crypto Bot Operating Brief
 
 Last verified: 2026-06-14
-Status: contract trace fan-in accepted by SwarmClaw task `6f78749c` for the next read-only planning step only.
+Status: remediation planning accepted by SwarmClaw fan-in task `209d1e87`; next step needs a focused test/docs code-writing checkpoint.
 Purpose: give Codex and future SwarmClaw workers a concise, sanitized operating
 brief for Zmey's crypto trading bot.
 
@@ -26,6 +26,9 @@ brief for Zmey's crypto trading bot.
   `098f9adc`, and final fan-in `9b1c3037`.
 - Contract trace tasks: `cfd16de6`, `794dae24`, `e282952d`, `1e7b00cd`,
   and final fan-in `6f78749c`.
+- Remediation planning tasks: `c028598a`, `38615719`, `ed891a79`,
+  blocked fan-in `1636b59d`, count reconciliation `7e7931ff`, and final
+  accepted fan-in `209d1e87`.
 
 ## Current Runtime Map
 
@@ -87,6 +90,12 @@ Checkpoint-required scopes:
 - The accepted contract trace is not approval for runtime promotion, live
   execution, repo mutation, secret/config inspection, or claims that coverage
   gaps are fixed.
+- Remediation fan-in `1636b59d` initially blocked because worker counts
+  conflicted. Reconciliation task `7e7931ff` verified the authoritative source
+  target as 65 `entry_runtime_contract_v1` fields and 18 forbidden selectors;
+  task `209d1e87` accepted that basis for a focused test/docs checkpoint.
+- R03-derived planning that cites 76 contract fields or 15 forbidden selectors
+  is superseded and must be corrected to 65 and 18.
 
 ## SwarmClaw Operating Pattern
 
@@ -100,17 +109,21 @@ Checkpoint-required scopes:
 
 ## Next Actions
 
-Next safest action: draft a read-only remediation plan prioritizing
-`token_ready` runtime-boundary payload tests, forbidden selector completeness,
-checkpoint field-count coverage, `docs/current_runtime` contract references,
-and the stale `ENABLE_MONITORING` conflict noted by task `1e7b00cd`.
+Next safest action: ask Zmey for a focused code-writing checkpoint limited to
+count-alignment tests/docs for the 65-field contract and 18 forbidden-selector
+target, plus targeted verification of the relevant contract test file only.
 
 First possible code-writing candidates remain deferred until checkpoint:
 
-- Safe README/runbook cleanup.
-- Test matrix labels for unit/integration/live.
-- Contract-test strengthening.
-- Runtime payload validation helpers.
+- `tests/test_pumpfun_runtime_contract.py`: explicit 65-field count,
+  uniqueness, 18 forbidden selectors, 13 fields per checkpoint, and
+  `token_ready` boundary assertions.
+- `docs/current_runtime/RUNTIME_VERIFICATION_STATUS.md`: corrected
+  `ENABLE_MONITORING=True` note and explicit `entry_runtime_contract_v1`
+  reference after tests/docs checkpoint approval.
+- No runtime stack, DB, logs, datasets, generated output, model artifacts,
+  secrets, live trading, deployment, schedules, provider/autonomy changes, or
+  broad repo cleanup.
 
 Sanitized Knowledge import is allowed only as a scoped orientation note that
 preserves the limitations and checkpoint gates above.
