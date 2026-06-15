@@ -92,6 +92,13 @@ export function streamClaudeCliChat({ session, message, imagePath, systemPrompt,
   let buf = ''
   let eventCount = 0
   let stderrText = ''
+  // Map Claude CLI tool_use ids to their tool name so tool_result events
+  // (which only reference tool_use_id) can be matched back to a tool name.
+  const toolUseNames = new Map<string, string>()
+  // The CLI hides raw thinking tokens, but the agent narrates between steps as
+  // text blocks. Capture the most recent narration so it can be attached to the
+  // next tool call and shown interleaved with the tool steps.
+  let pendingReasoning = ''
 
   proc.stdout!.on('data', (chunk: Buffer) => {
     const raw = chunk.toString()
@@ -127,8 +134,37 @@ export function streamClaudeCliChat({ session, message, imagePath, systemPrompt,
           for (const block of ev.message.content) {
             if (block.type === 'text' && block.text) {
               fullResponse = block.text
+              // Hold the narration; if a tool follows it is that tool's reasoning,
+              // otherwise it is the final answer text (already streamed below).
+              pendingReasoning = block.text
               write(`data: ${JSON.stringify({ t: 'md', text: block.text })}\n\n`)
               log.debug('claude-cli', `Assistant text block (${block.text.length} chars)`)
+            } else if (block.type === 'tool_use' && block.name) {
+              // Surface the CLI's internal tool calls as SwarmClaw tool events
+              if (block.id) toolUseNames.set(block.id, block.name)
+              let toolInput = ''
+              try { toolInput = typeof block.input === 'string' ? block.input : JSON.stringify(block.input ?? {}) } catch { toolInput = '' }
+              const reasoning = pendingReasoning.trim()
+              pendingReasoning = ''
+              write(`data: ${JSON.stringify({ t: 'tool_call', toolName: block.name, toolInput, toolCallId: block.id, reasoning: reasoning || undefined })}\n\n`)
+              log.debug('claude-cli', `Tool call: ${block.name}`)
+            }
+          }
+        } else if (ev.type === 'user' && ev.message?.content) {
+          // Tool results come back as user-role messages with tool_result blocks
+          for (const block of ev.message.content) {
+            if (block.type === 'tool_result') {
+              const toolName = (block.tool_use_id && toolUseNames.get(block.tool_use_id)) || 'unknown'
+              let toolOutput = ''
+              const c = block.content
+              if (typeof c === 'string') {
+                toolOutput = c
+              } else if (Array.isArray(c)) {
+                toolOutput = c.map((p: { type?: string; text?: string }) => (p?.type === 'text' && p.text) ? p.text : '').filter(Boolean).join('\n')
+              }
+              if (block.is_error && toolOutput && !/^error/i.test(toolOutput.trim())) toolOutput = `Error: ${toolOutput}`
+              write(`data: ${JSON.stringify({ t: 'tool_result', toolName, toolOutput, toolCallId: block.tool_use_id })}\n\n`)
+              log.debug('claude-cli', `Tool result: ${toolName} (${toolOutput.length} chars)`)
             }
           }
         } else if (ev.type === 'content_block_delta' && ev.delta?.text) {
