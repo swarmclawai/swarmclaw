@@ -295,7 +295,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
             }
 
             if (responseText.trim() && !shouldSuppressHiddenControlText(rawResponseText)) {
-              appendSyntheticSessionMessage(syntheticSession.id, 'assistant', responseText)
+              appendSyntheticSessionMessage(syntheticSession.id, 'assistant', responseText, toolEventsBag.length ? toolEventsBag : undefined)
               const parsedMentions = parseMentions(responseText, agents, freshChatroom.agentIds, { senderId: agent.id, skipImplicit: true })
               const chainedHealth = filterHealthyChatroomAgents(parsedMentions, agents)
               const newMentions = chainedHealth.healthyAgentIds
