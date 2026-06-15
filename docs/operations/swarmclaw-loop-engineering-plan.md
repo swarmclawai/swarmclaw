@@ -48,14 +48,25 @@ Done:
   recreated from `swarmclaw-subscription:1.9.36`, reported healthy, remained
   bound to `127.0.0.1:3456-3457`, served `/protocols` with HTTP 200, and kept
   workflow plan POSTs protected from unauthenticated shell calls with HTTP 401.
+- Commit/push: LoopSpec productization was committed and pushed as `4d06802b`
+  on branch `docker-subscription-setup`.
+- Knowledge sync: eight reviewed operator/project docs were synced as global
+  in-app Knowledge on 2026-06-15. Created sources:
+  `SwarmClaw Loop Engineering Plan` (`c413dab9a015b67c`) and
+  `SwarmClaw Loop Template Catalog` (`d2b83f7368f00da5`). Updated sources:
+  dynamic workflow recipe, next-agent quickstart, failure catalog, parallel wave
+  template, project onboarding template, and crypto bot operating brief.
+- Knowledge verification: service-level Knowledge search found the LoopSpec
+  `safe_backlog_only` content, run-until-done fuse content, and crypto safety
+  boundary content. A one-off Docker verification run with a writable
+  transformers cache mount avoided cache permission warnings; see F038.
 
 Not done yet:
 
-- Commit/push of the LoopSpec patch.
 - Live authenticated GUI click-through smoke for Workflow Bundles; browser
   control was not exposed in the Codex tool list during this verification turn.
-- Add or sync these docs into in-app Knowledge; this remains a separate
-  checkpoint after review.
+  Shell health, route, protected API, build, tests, and service-level Knowledge
+  checks are done, but authenticated clicking is not honestly verified.
 - Full browser UI regression coverage for Workflow Bundles beyond the focused
   service/API tests and production build.
 - Crypto bot application of LoopSpec to the next approved code-writing wave.
