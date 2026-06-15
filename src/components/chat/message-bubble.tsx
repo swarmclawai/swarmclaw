@@ -14,6 +14,7 @@ import { AgentAvatar } from '@/components/agents/agent-avatar'
 import { CodeBlock } from './code-block'
 import { extractMedia, isExplicitScreenshot } from './tool-call-bubble'
 import { ToolEventsSection, ToolActivityPill } from './tool-events-section'
+import { ThinkingStepsView } from './thinking-steps-view'
 import { MessageAttachments } from '@/components/shared/attachment-chip'
 import { MarkdownBody } from '@/components/shared/markdown-body'
 import { MessageActions, ActionButton } from '@/components/shared/message-actions'
@@ -377,6 +378,7 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
               input: ev.input,
               output: ev.output,
               status: ev.error ? 'error' as const : 'done' as const,
+              reasoning: ev.reasoning,
             })))
       : persistedToolEvents.map((ev, i) => ({
           id: ev.toolCallId || `${message.time}-${ev.name}-${i}`,
@@ -384,6 +386,7 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
           input: ev.input,
           output: ev.output,
           status: ev.error ? 'error' as const : 'done' as const,
+          reasoning: ev.reasoning,
         }))),
     [liveStreamActive, liveToolEvents, message.time, persistedToolEvents],
   )
@@ -649,9 +652,7 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
               )}
             </summary>
             <div className="px-3.5 pb-3 pt-1 max-h-[300px] overflow-y-auto">
-              <div className="text-[13px] leading-[1.6] text-text-3/70 whitespace-pre-wrap break-words">
-                {effectiveThinking}
-              </div>
+              <ThinkingStepsView thinking={effectiveThinking} />
             </div>
           </details>
         </div>

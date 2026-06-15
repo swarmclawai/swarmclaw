@@ -98,9 +98,14 @@ export async function processIterationEvents(opts: ProcessIterationEventsOpts): 
   /** Interval for progress checkpoint nudges */
   const PROGRESS_CHECK_INTERVAL = 10
 
+  // Reasoning emitted since the last tool call. Attached to the next tool_call
+  // so the model's thinking is shown interleaved with the tool steps.
+  let pendingReasoning = ''
+
   const emitThinking = (text: string) => {
     if (!text) return
     state.accumulatedThinking += text
+    pendingReasoning += text
     write(`data: ${JSON.stringify({ t: 'thinking', text })}\n\n`)
   }
 
@@ -182,11 +187,14 @@ export async function processIterationEvents(opts: ProcessIterationEventsOpts): 
         toolCallId: event.run_id,
         timestamp: Date.now(),
       })
+      const stepReasoning = pendingReasoning.trim()
+      pendingReasoning = ''
       write(`data: ${JSON.stringify({
         t: 'tool_call',
         toolName,
         toolInput: inputStr,
         toolCallId: event.run_id,
+        reasoning: stepReasoning || undefined,
       })}\n\n`)
       updateStreamedToolEvents(state.streamedToolEvents, {
         type: 'call',

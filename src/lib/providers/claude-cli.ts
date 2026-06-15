@@ -7,6 +7,7 @@ import { log } from '../server/logger'
 import { loadRuntimeSettings } from '@/lib/server/runtime/runtime-settings'
 import { getEnabledToolIds } from '@/lib/capability-selection'
 import { resolveCliBinary, buildCliEnv, probeCliAuth, attachAbortHandler, isStderrNoise } from './cli-utils'
+import { createCliToolStreamCtx, emitCliStreamToolEvents } from './cli-tool-stream'
 
 const TAG = 'provider-claude-cli'
 
@@ -92,6 +93,9 @@ export function streamClaudeCliChat({ session, message, imagePath, systemPrompt,
   let buf = ''
   let eventCount = 0
   let stderrText = ''
+  // Surface the CLI's internal tool calls (and inter-step narration) as
+  // SwarmClaw tool events via the shared Anthropic stream-json parser.
+  const toolCtx = createCliToolStreamCtx()
 
   proc.stdout!.on('data', (chunk: Buffer) => {
     const raw = chunk.toString()
@@ -115,6 +119,9 @@ export function streamClaudeCliChat({ session, message, imagePath, systemPrompt,
           session.claudeSessionId = ev.session_id
           log.info('claude-cli', `Got session_id: ${ev.session_id}`)
         }
+
+        // Surface tool calls/results (and inter-step narration) from the stream.
+        emitCliStreamToolEvents(ev, toolCtx, write)
 
         if (ev.type === 'result') {
           if (ev.session_id) session.claudeSessionId = ev.session_id

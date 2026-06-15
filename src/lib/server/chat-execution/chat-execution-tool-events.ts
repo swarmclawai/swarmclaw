@@ -42,6 +42,7 @@ export function collectToolEvent(ev: SSEEvent, bag: MessageToolEvent[]) {
       name: ev.toolName || 'unknown',
       input: ev.toolInput || '',
       toolCallId: ev.toolCallId,
+      reasoning: ev.reasoning || undefined,
     })
     return
   }

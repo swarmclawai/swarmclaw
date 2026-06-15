@@ -8,6 +8,8 @@ export interface MessageToolEvent {
   error?: boolean
   /** Internal correlation token for matching streaming tool calls/results. */
   toolCallId?: string
+  /** Agent narration/reasoning that preceded this tool call (interleaved step). */
+  reasoning?: string
 }
 
 export type MessageTaskIntent = 'coding' | 'research' | 'browsing' | 'outreach' | 'scheduling' | 'general'

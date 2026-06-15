@@ -10,6 +10,8 @@ export interface SSEEvent {
   toolInput?: string
   toolOutput?: string
   toolCallId?: string
+  /** Agent narration/reasoning emitted just before this tool call. */
+  reasoning?: string
   agentId?: string
   agentName?: string
 }
