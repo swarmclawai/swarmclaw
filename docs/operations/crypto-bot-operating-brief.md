@@ -1,6 +1,6 @@
 # Crypto Bot Operating Brief
 
-Last verified: 2026-06-14
+Last verified: 2026-06-15
 Status: remediation planning accepted by SwarmClaw fan-in task `209d1e87`; next step needs a focused test/docs code-writing checkpoint.
 Purpose: give Codex and future SwarmClaw workers a concise, sanitized operating
 brief for Zmey's crypto trading bot.
@@ -106,6 +106,19 @@ Checkpoint-required scopes:
   reviewed Knowledge/operator text.
 - Avoid assignment-looking labels such as `Agent ID:` in embedded evidence; use
   neutral labels such as `worker`.
+- Use `docs/operations/swarmclaw-loop-engineering-plan.md` before any repeated
+  remediation loop. Crypto loops must define progress/stuck signals, retry caps,
+  Reviewer QA evaluation, and explicit stop conditions before tasks are queued.
+
+## Current Loop Engineering Targets
+
+Keep the detailed evidence in the audit ledger and use this section only as a
+compact current loop map.
+
+| Loop | Invariant | Progress Signal | Stop Condition |
+|---|---|---|---|
+| Runtime contract/selector loop | `entry_runtime_contract_v1` remains 65 fields and 18 forbidden selectors. | Targeted test/docs evidence aligns to 65/18 and Reviewer QA accepts. | Tests pass plus QA accept, or same failure twice, count conflict, secret/DB/log boundary, or checkpoint-required action. |
+| Shadow/paper/execute safety loop | Agents do not promote beyond paper/shadow or submit live orders. | Safety review confirms no live trading, exchange action, env override, schedule, or deployment change. | Any live-action request, credential/env need, runtime stack start, or safety contradiction. |
 
 ## Next Actions
 

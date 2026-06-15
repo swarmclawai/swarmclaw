@@ -89,6 +89,12 @@ export function WorkflowLaunchPanel({ selectedRunId, onRunCreated }: WorkflowLau
   async function continueRun() {
     if (!selectedRunId) return
     setError(null)
+    const continuedLoopSpec = ledger?.loopSpec
+      ? {
+          ...ledger.loopSpec,
+          continuationPolicy: autoLaunch ? 'safe_backlog_only' : 'draft_only',
+        }
+      : undefined
     try {
       const result = await continueMutation.mutateAsync({
         runId: selectedRunId,
@@ -106,6 +112,7 @@ export function WorkflowLaunchPanel({ selectedRunId, onRunCreated }: WorkflowLau
                 allowedScopes: splitLines(allowedScopes),
               }
             : undefined,
+          loopSpec: continuedLoopSpec,
         },
       })
       if (result.draft) {
@@ -291,6 +298,22 @@ export function WorkflowLaunchPanel({ selectedRunId, onRunCreated }: WorkflowLau
                     </div>
                   </div>
                 </div>
+                {draft.bundle.loopSpec && (
+                  <div className="rounded-[14px] border border-cyan-400/15 bg-cyan-400/10 p-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-[11px] font-700 uppercase tracking-[0.12em] text-cyan-100/80">LoopSpec</span>
+                      <span className="rounded-full border border-cyan-300/20 bg-cyan-300/10 px-2 py-0.5 text-[10px] text-cyan-50">
+                        {draft.bundle.loopSpec.continuationPolicy.replace(/_/g, ' ')}
+                      </span>
+                    </div>
+                    <div className="mt-2 space-y-1 text-[11px] leading-relaxed text-cyan-50/75">
+                      <div>Invariant: {draft.bundle.loopSpec.invariant}</div>
+                      <div>Progress: {draft.bundle.loopSpec.progressSignal}</div>
+                      <div>Stuck: {draft.bundle.loopSpec.stuckSignal}</div>
+                      <div>Stops: {draft.bundle.loopSpec.stopStates.join(', ')}</div>
+                    </div>
+                  </div>
+                )}
                 <div className="space-y-2">
                   {draft.bundle.tasks.map((task) => (
                     <div key={task.key} className="rounded-[14px] border border-white/[0.06] bg-black/15 p-3">
@@ -321,24 +344,41 @@ export function WorkflowLaunchPanel({ selectedRunId, onRunCreated }: WorkflowLau
             <div className="mt-4 max-h-[320px] space-y-2 overflow-y-auto pr-1">
               {ledgerQuery.isFetching ? (
                 <div className="text-[12px] text-text-3/65">Loading ledger...</div>
-              ) : ledger?.entries.length ? ledger.entries.map((entry) => (
-                <div key={entry.taskId} className="rounded-[14px] border border-white/[0.06] bg-black/15 p-3">
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-[12px] font-700 text-text">{entry.title}</div>
-                      <div className="mt-1 text-[11px] text-text-3/65">{entry.agentId} · {entry.expectedMarker || entry.taskKey || entry.taskId}</div>
-                    </div>
-                    <span className="rounded-full border border-white/[0.08] bg-white/[0.04] px-2 py-0.5 text-[10px] font-700 uppercase tracking-[0.12em] text-text-3">
-                      {entry.status}
-                    </span>
-                  </div>
-                  {(entry.blockers?.length || entry.resultPreview) && (
-                    <div className="mt-2 line-clamp-3 text-[11px] leading-relaxed text-text-3/70">
-                      {entry.blockers?.length ? `Blocked by: ${entry.blockers.join(', ')}` : entry.resultPreview}
+              ) : ledger?.entries.length ? (
+                <>
+                  {ledger.loopSpec && (
+                    <div className="rounded-[14px] border border-cyan-400/15 bg-cyan-400/10 p-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-[11px] font-700 uppercase tracking-[0.12em] text-cyan-100/80">LoopSpec</span>
+                        <span className="rounded-full border border-cyan-300/20 bg-cyan-300/10 px-2 py-0.5 text-[10px] text-cyan-50">
+                          iteration {ledger.loopSpec.iteration}
+                        </span>
+                      </div>
+                      <div className="mt-2 line-clamp-3 text-[11px] leading-relaxed text-cyan-50/75">
+                        {ledger.loopSpec.invariant}
+                      </div>
                     </div>
                   )}
-                </div>
-              )) : (
+                  {ledger.entries.map((entry) => (
+                    <div key={entry.taskId} className="rounded-[14px] border border-white/[0.06] bg-black/15 p-3">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-[12px] font-700 text-text">{entry.title}</div>
+                          <div className="mt-1 text-[11px] text-text-3/65">{entry.agentId} · {entry.expectedMarker || entry.taskKey || entry.taskId}</div>
+                        </div>
+                        <span className="rounded-full border border-white/[0.08] bg-white/[0.04] px-2 py-0.5 text-[10px] font-700 uppercase tracking-[0.12em] text-text-3">
+                          {entry.status}
+                        </span>
+                      </div>
+                      {(entry.blockers?.length || entry.resultPreview) && (
+                        <div className="mt-2 line-clamp-3 text-[11px] leading-relaxed text-text-3/70">
+                          {entry.blockers?.length ? `Blocked by: ${entry.blockers.join(', ')}` : entry.resultPreview}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </>
+              ) : (
                 <div className="rounded-[14px] border border-white/[0.06] bg-white/[0.02] p-3 text-[12px] text-text-3/65">
                   No workflow ledger entries for the selected run.
                 </div>

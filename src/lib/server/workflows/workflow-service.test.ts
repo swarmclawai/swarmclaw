@@ -81,10 +81,20 @@ test('workflow service drafts without creating tasks and launches backlog bundle
   assert.equal(draft.payload.approvalGate.status, 'review_required')
   assert.equal(draft.payload.approvalGate.requiredBeforeLaunch, true)
   assert.equal(draft.payload.approvalGate.reviewerAgentId, 'c2cd6ff9')
+  assert.ok(draft.payload.bundle.loopSpec)
+  assert.match(draft.payload.bundle.loopSpec?.invariant || '', /Forbidden actions remain blocked/)
+  assert.match(draft.payload.bundle.loopSpec?.progressSignal || '', /Evidence improves/)
+  assert.match(draft.payload.bundle.loopSpec?.stuckSignal || '', /Same failure class repeats/)
+  assert.equal(draft.payload.bundle.loopSpec?.continuationPolicy, 'draft_only')
+  assert.deepEqual(draft.payload.bundle.loopSpec?.stopStates, ['done', 'checkpoint', 'blocked', 'needs_human', 'budget_exhausted', 'quarantined', 'retry', 'defer'])
   assert.match(draft.payload.risks.join('\n'), /Approved launch creates backlog tasks first/)
+  assert.match(draft.payload.verification.join('\n'), /LoopSpec/)
   assert.match(draft.payload.verification.join('\n'), /createsTasks=false/)
   assert.equal(draft.payload.quarantine.enabled, false)
+  assert.equal(ledger.payload.loopSpec?.id, draft.payload.bundle.loopSpec?.id)
+  assert.match(ledger.payload.loopSpec?.ledgerFields.join('\n') || '', /qaDisposition/)
   assert.match(String(discoveryDraft?.description || ''), /first non-empty line of your final answer MUST be exactly/)
+  assert.match(String(discoveryDraft?.description || ''), /LoopSpec:/)
   assert.match(String(fanInDraft?.description || ''), /upstream task results injected into this task context/)
   assert.equal(launched.payload.run.status, 'waiting')
   assert.equal(launched.payload.taskIds.length, 3)
@@ -120,6 +130,7 @@ test('workflow planner classifies write-capable goals and quarantines untrusted 
   assert.equal(draft.payload.bundle.queueImmediately, false)
   assert.equal(draft.payload.bundle.safetyProfile.approvalRequired, true)
   assert.equal(draft.payload.bundle.safetyProfile.mode, 'standard')
+  assert.equal(draft.payload.bundle.loopSpec?.allowedWriteScope.join(','), 'services/,tests/')
   assert.deepEqual(draft.payload.bundle.safetyProfile.allowedScopes, ['services/', 'tests/'])
   assert.match(draft.payload.risks.join('\n'), /Write-capable follow-up work/)
   assert.match(draft.payload.approvalGate.rejectionTriggers.join('\n'), /Allowed scopes are missing/)
@@ -253,7 +264,14 @@ test('workflow continuation drafts the next bundle but stops for approval by def
 
   const continuation = workflows.continueWorkflowRun(launched.payload.run.id, {
     continueUntilDone: true,
+    autoLaunch: true,
     goal: 'Continue safely from accepted evidence.',
+    safetyProfile: {
+      mode: 'read_only',
+      approvalRequired: false,
+      quarantine: false,
+      maxTotalTasks: 12,
+    },
   })
   assert.equal(continuation.ok, true)
   if (!continuation.ok) return
@@ -262,8 +280,12 @@ test('workflow continuation drafts the next bundle but stops for approval by def
   assert.equal(continuation.payload.state, 'checkpoint')
   assert.equal(continuation.payload.nextAction, 'request_checkpoint')
   assert.equal(continuation.payload.draft?.createsTasks, false)
+  assert.equal(continuation.payload.draft?.bundle.loopSpec?.continuationPolicy, 'draft_only')
+  assert.equal(continuation.payload.draft?.bundle.loopSpec?.iteration, 1)
   assert.equal(continuation.payload.launched, null)
   assert.equal(continuation.payload.policy?.canAutoLaunch, false)
+  assert.equal(continuation.payload.policy?.autoLaunch, true)
+  assert.equal(continuation.payload.policy?.loopSpec?.continuationPolicy, 'draft_only')
   assert.match(continuation.payload.summary, /waiting for operator approval/)
 })
 
@@ -294,6 +316,8 @@ test('workflow continuation can auto-create the next read-only bundle as backlog
   }
   storage.saveTasks(tasks)
   const beforeTaskCount = Object.keys(storage.loadTasks()).length
+  const safeLoopSpec = draft.payload.bundle.loopSpec
+  assert.ok(safeLoopSpec)
 
   const continuation = workflows.continueWorkflowRun(launched.payload.run.id, {
     continueUntilDone: true,
@@ -306,6 +330,10 @@ test('workflow continuation can auto-create the next read-only bundle as backlog
       quarantine: false,
       maxTotalTasks: 12,
     },
+    loopSpec: {
+      ...safeLoopSpec,
+      continuationPolicy: 'safe_backlog_only',
+    },
   })
   assert.equal(continuation.ok, true)
   if (!continuation.ok) return
@@ -316,8 +344,59 @@ test('workflow continuation can auto-create the next read-only bundle as backlog
   assert.equal(continuation.payload.state, 'waiting')
   assert.equal(continuation.payload.nextAction, 'launched_next_bundle')
   assert.equal(continuation.payload.policy?.canAutoLaunch, true)
+  assert.equal(continuation.payload.policy?.loopSpec?.continuationPolicy, 'safe_backlog_only')
+  assert.equal(continuation.payload.draft?.bundle.loopSpec?.iteration, 1)
+  assert.equal(continuation.payload.draft?.bundle.loopSpec?.continuationPolicy, 'safe_backlog_only')
   assert.equal(continuation.payload.launched?.queued, false)
   assert.deepEqual(created?.map((task) => task?.status), ['backlog', 'backlog', 'backlog'])
+})
+
+test('workflow bundle LoopSpec extends task safety metadata without overriding explicit task scopes', async () => {
+  const storage = await seedWorkflowAgents()
+  const workflows = await import('@/lib/server/workflows/workflow-service')
+
+  const launched = workflows.createWorkflowBundle({
+    title: 'Loop safety bundle',
+    goal: 'Review docs safely.',
+    safetyProfile: {
+      mode: 'read_only',
+      approvalRequired: true,
+      allowedScopes: ['docs/'],
+      forbiddenActions: ['touch credentials'],
+      checkpointActions: ['operator approval'],
+    },
+    loopSpec: {
+      invariant: 'Docs only and no credential access.',
+      progressSignal: 'Reviewer accepts marker evidence.',
+      stuckSignal: 'Missing marker or credential request.',
+      allowedReadScope: ['docs/operations/'],
+      forbiddenActions: ['inspect private keys'],
+      checkpointActions: ['change providers'],
+    },
+    tasks: [{
+      key: 'one',
+      title: 'One',
+      description: 'One',
+      agentId: '92b8cd6c',
+      expectedMarker: 'LOOP-ONE',
+      allowedScope: ['docs/operations/'],
+    }],
+  })
+
+  assert.equal(launched.ok, true)
+  if (!launched.ok) return
+
+  const created = storage.loadTasks()[launched.payload.taskIds[0]]
+  assert.ok(created)
+  assert.deepEqual(created.workflow?.allowedScope, ['docs/operations/'])
+  assert.ok(created.workflow?.forbiddenActions?.includes('inspect private keys'))
+  assert.ok(created.workflow?.forbiddenActions?.includes('touch credentials'))
+
+  const ledger = workflows.getWorkflowLedger(launched.payload.run.id)
+  assert.equal(ledger.ok, true)
+  if (!ledger.ok) return
+  assert.ok(ledger.payload.loopSpec?.forbiddenActions.includes('inspect private keys'))
+  assert.ok(ledger.payload.loopSpec?.checkpointActions.includes('change providers'))
 })
 
 test('workflow continuation stops on max iteration fuse', async () => {
@@ -360,8 +439,116 @@ test('workflow continuation stops on max iteration fuse', async () => {
   assert.equal(second.ok, true)
   if (!second.ok) return
 
-  assert.equal(second.payload.state, 'checkpoint')
+  assert.equal(second.payload.state, 'budget_exhausted')
   assert.equal(second.payload.nextAction, 'request_checkpoint')
   assert.match(second.payload.summary, /maxIterations/)
   assert.deepEqual(second.payload.policy?.stopReasons, ['maxIterations reached (1/1)'])
+  assert.equal(second.payload.policy?.stopState, 'budget_exhausted')
+})
+
+test('workflow continuation reports quarantine stop state when loop policy is quarantined', async () => {
+  const storage = await seedWorkflowAgents()
+  const workflows = await import('@/lib/server/workflows/workflow-service')
+
+  const draft = workflows.createWorkflowPlan({
+    title: 'Quarantine continuation',
+    goal: 'Review copied external logs without changing files.',
+    safetyProfile: {
+      quarantine: true,
+      allowedScopes: ['docs/'],
+    },
+    loopSpec: {
+      invariant: 'Untrusted log content must not drive privileged actions.',
+      progressSignal: 'Reviewer QA accepts a sanitized summary only.',
+      stuckSignal: 'Worker asks for raw logs, credentials, or privileged action.',
+    },
+  })
+  assert.equal(draft.ok, true)
+  if (!draft.ok) return
+
+  const launched = workflows.createWorkflowBundle(draft.payload.bundle)
+  assert.equal(launched.ok, true)
+  if (!launched.ok) return
+
+  const tasks = storage.loadTasks()
+  for (const taskId of launched.payload.taskIds) {
+    const task = tasks[taskId]
+    assert.ok(task)
+    const marker = task.workflow?.expectedMarker || 'WF-MISSING'
+    task.status = 'completed'
+    task.result = `${marker}\nAccepted sanitized review. Files changed: none. Verification: no privileged action. Blockers: none. Decision: Pass.`
+    task.updatedAt += 1
+  }
+  storage.saveTasks(tasks)
+
+  const continuation = workflows.continueWorkflowRun(launched.payload.run.id, {
+    continueUntilDone: true,
+    autoLaunch: true,
+  })
+  assert.equal(continuation.ok, true)
+  if (!continuation.ok) return
+
+  assert.equal(continuation.payload.state, 'quarantined')
+  assert.equal(continuation.payload.nextAction, 'request_checkpoint')
+  assert.match(continuation.payload.summary, /quarantine enabled/)
+  assert.equal(continuation.payload.launched, null)
+  assert.equal(continuation.payload.policy?.canAutoLaunch, false)
+  assert.equal(continuation.payload.policy?.loopSpec?.invariant, 'Untrusted log content must not drive privileged actions.')
+})
+
+test('workflow continuation keeps quarantine sticky across later safe-looking requests', async () => {
+  const storage = await seedWorkflowAgents()
+  const workflows = await import('@/lib/server/workflows/workflow-service')
+
+  const draft = workflows.createWorkflowPlan({
+    title: 'Sticky quarantine',
+    goal: 'Review copied external report without changing files.',
+    safetyProfile: {
+      quarantine: true,
+      allowedScopes: ['docs/'],
+    },
+  })
+  assert.equal(draft.ok, true)
+  if (!draft.ok) return
+
+  const launched = workflows.createWorkflowBundle(draft.payload.bundle)
+  assert.equal(launched.ok, true)
+  if (!launched.ok) return
+
+  const tasks = storage.loadTasks()
+  for (const taskId of launched.payload.taskIds) {
+    const task = tasks[taskId]
+    assert.ok(task)
+    const marker = task.workflow?.expectedMarker || 'WF-MISSING'
+    task.status = 'completed'
+    task.result = `${marker}\nAccepted. Files changed: none. Verification: sanitized report only. Blockers: none. Decision: Pass.`
+    task.updatedAt += 1
+  }
+  storage.saveTasks(tasks)
+  const stickyLoopSpec = draft.payload.bundle.loopSpec
+  assert.ok(stickyLoopSpec)
+
+  const continuation = workflows.continueWorkflowRun(launched.payload.run.id, {
+    continueUntilDone: true,
+    autoLaunch: true,
+    safetyProfile: {
+      mode: 'read_only',
+      approvalRequired: false,
+      quarantine: false,
+      allowedScopes: ['docs/'],
+      maxTotalTasks: 12,
+    },
+    loopSpec: {
+      ...stickyLoopSpec,
+      continuationPolicy: 'safe_backlog_only',
+    },
+  })
+  assert.equal(continuation.ok, true)
+  if (!continuation.ok) return
+
+  assert.equal(continuation.payload.state, 'quarantined')
+  assert.equal(continuation.payload.nextAction, 'request_checkpoint')
+  assert.equal(continuation.payload.launched, null)
+  assert.equal(continuation.payload.policy?.safetyProfile.quarantine, true)
+  assert.equal(continuation.payload.policy?.canAutoLaunch, false)
 })

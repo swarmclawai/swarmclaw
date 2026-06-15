@@ -1,6 +1,6 @@
 # SwarmClaw Next-Agent Quickstart
 
-Last verified: 2026-06-09
+Last verified: 2026-06-15
 
 Audience: Codex and future agents operating Zmey's local SwarmClaw instance.
 
@@ -113,6 +113,14 @@ For full-app work, use `docs/operations/swarmclaw-parallel-app-build-template.md
 
 For workflow-bundle operation, use `docs/operations/swarmclaw-dynamic-workflow-operator-recipe.md`. It covers Draft -> Review -> Backlog -> Queue -> Fan-in -> Continue, checkpoint triggers, and the verified Wave 1-3 smoke run.
 
+For feedback-heavy work that may continue across waves, draft a LoopSpec from
+`docs/operations/swarmclaw-loop-engineering-plan.md` before splitting tasks. The
+LoopSpec must define invariant, progress signal, stuck signal, retry policy,
+evaluator, stop conditions, and checkpoint triggers.
+Use `docs/operations/swarmclaw-loop-template-catalog.md` for reusable LoopSpec
+starters such as project understanding, implementation fan-in, test-fix, bug
+hunt, graph refresh, release gate, and crypto safety review.
+
 ## Browser And QA Evidence
 
 For browser-visible work, require concrete evidence:
@@ -136,6 +144,9 @@ If browser automation reports that the virtual clipboard is not installed while 
 - Repo skills in `skills/` are product artifacts. Workspace copies in `state/skills/` can make no-rebuild local testing easier, but managed skill records and agent pinning still require checkpoint.
 - CLI-backed task workers may not be able to read in-app Knowledge directly. Embed short sanitized excerpts in task prompts when the worker must use a specific source.
 - agentmemory stores durable cross-session lessons. Save only verified, concise, non-secret facts.
+- Graph sidecars are optional sanitized inputs for large/messy repo orientation.
+  agentmemory is durable verified recall. Neither replaces live source/runtime
+  checks or Reviewer QA fan-in.
 - If a manual already exists as a Knowledge source, pressing sync may not update it if the source stores inline content. Update stored source content only after checkpoint.
 
 ## Stop And Ask

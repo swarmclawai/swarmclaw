@@ -7,6 +7,7 @@ import type {
   WorkflowBundleSpec,
   WorkflowContinuationResult,
   WorkflowLedger,
+  WorkflowLoopSpec,
   WorkflowPlanDraft,
 } from '@/types'
 
@@ -22,6 +23,7 @@ export interface WorkflowPlanRequest {
   projectId?: string | null
   allowedScopes?: string[]
   safetyProfile?: Record<string, unknown>
+  loopSpec?: Partial<WorkflowLoopSpec> | null
 }
 
 export function useWorkflowLedgerQuery(runId: string | null, options: { enabled?: boolean } = {}) {

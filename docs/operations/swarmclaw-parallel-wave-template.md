@@ -1,6 +1,6 @@
 # SwarmClaw Parallel Wave Template
 
-Last verified: 2026-06-08
+Last verified: 2026-06-15
 
 Audience: Codex and future agents operating Zmey's local SwarmClaw instance.
 
@@ -37,6 +37,28 @@ Default worker routing:
 
 Current local constraint: the CLI-backed Coordinator is worker-only for stored orchestration, so direct task assignment by exact worker ID is the reliable path. Do not depend on automatic stored-agent `spawn_subagent` routing.
 
+## Loop Overlay
+
+A parallel wave can be one iteration inside a larger loop. Before using this
+template as part of a loop, create or reference a LoopSpec from
+`docs/operations/swarmclaw-loop-engineering-plan.md`.
+
+Minimum loop fields for a parallel wave:
+
+- progress signal,
+- stuck signal,
+- retry policy,
+- stop conditions,
+- evaluator role,
+- deterministic checks,
+- checkpoint-required actions,
+- budget/fuses.
+
+Do not run "loop until done" by repeatedly launching parallel waves unless the
+fan-in review accepted the prior wave and the progress signal improved. Stop
+after the same failure class repeats twice, after a missing marker repeats, or
+after any checkpoint-required action appears.
+
 ## When To Parallelize
 
 Good wave candidates:
@@ -63,6 +85,9 @@ Use this before creating tasks:
 
 ```markdown
 Wave name:
+Loop ID:
+Loop iteration:
+Loop hypothesis:
 Project:
 Goal:
 Inputs:
@@ -74,6 +99,14 @@ Fan-in reviewer:
 Required markers:
 Verification commands/checks:
 Checkpoint-required actions:
+Loop progress signal:
+Loop stuck signal:
+Loop retry policy:
+Loop stop conditions:
+Loop invariant:
+Observed signal:
+Continue/stop decision:
+Graph snapshot, if used:
 Fallback if a worker is blocked:
 ```
 
@@ -90,6 +123,12 @@ Optional worktree fields, only for checkpointed worktree waves:
 | Task ID | Worktree Path | Branch | Base SHA | Merge Status | Cleanup Status |
 |---|---|---|---|---|---|
 | | | | | | |
+
+Optional loop fields, when this wave is part of a LoopSpec:
+
+| Loop ID | Iteration | Hypothesis | Invariant Checked | Observed Signal | Progress/Stuck Decision | Continue/Stop Decision | Graph Snapshot | Checkpoint/Rollback |
+|---|---|---|---|---|---|---|---|---|
+| | | | | | | | | |
 
 Rules:
 

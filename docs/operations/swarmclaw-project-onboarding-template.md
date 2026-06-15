@@ -1,6 +1,6 @@
 # SwarmClaw Project Onboarding Template
 
-Last verified: 2026-06-11
+Last verified: 2026-06-15
 
 Audience: Codex and future agents operating Zmey's local SwarmClaw instance.
 
@@ -34,6 +34,24 @@ SwarmClaw should treat each external project as a project pack:
 6. An evidence ledger and concise final handoff.
 
 Default routing remains direct managed task assignment by exact stored worker ID. Do not rely on the stored Coordinator as a true automatic `spawn_subagent` coordinator in Zmey's current CLI-provider setup.
+
+## Loop Engineering Fit
+
+Use `docs/operations/swarmclaw-loop-engineering-plan.md` when project work
+should continue across more than one wave. The onboarding template answers
+"what project are we operating on"; the LoopSpec answers "how do we keep moving
+without drifting, looping forever, or crossing safety boundaries."
+
+For messy projects, create the LoopSpec after the first read-only discovery and
+risk review, not before. Early loops should be conservative:
+
+- one discovery or graph-refresh step,
+- one independent risk/evaluator step,
+- one fan-in decision,
+- one explicit continue/retry/block choice.
+
+Do not automate code-writing, DB access, live trading, deployment, schedules,
+provider changes, autonomy, state repair, or public exposure from onboarding.
 
 ## Preflight
 
@@ -196,6 +214,27 @@ code-only zones produced a useful sanitized summary. Final Reviewer QA task
 `8edbdccb` accepted the next read-only onboarding wave from sanitized inputs and
 blocked raw graph/report Knowledge import.
 
+### Graph Refresh In Bounded Loops
+
+Graph refresh is a named input phase, not an always-on actor.
+
+Use it only when the LoopSpec calls for it:
+
+- explicit operator request,
+- first onboarding of a large or messy repo,
+- accepted implementation wave that materially changes architecture,
+- fan-in says the previous graph is stale, incomplete, or noisy.
+
+Do not run Graphify on every loop iteration, schedule, heartbeat, file watcher,
+or "continue until done" cycle. If a continuation proposes graph work, create at
+most a scoped read-only backlog task with temporary artifacts. It must not queue
+itself, mutate agent config, install hooks, start MCP/HTTP surfaces, sync
+Knowledge, or choose the next wave.
+
+Graph refresh evidence must include tool version, corpus root, include/exclude
+list, counts, artifact path if retained temporarily, secret-hygiene result, and
+Reviewer QA decision on coverage and false confidence.
+
 ## Artifact Decision Table
 
 Choose the lightest artifact that makes the project operable.
@@ -221,9 +260,10 @@ Choose the lightest artifact that makes the project operable.
 | 0.5 | Main Codex helper | Optional Graphify sidecar pilot for large or messy repos. | Temporary artifact only | Sanitized graph/report reviewed, or discarded as noisy/unsafe. |
 | 1 | Builder `92b8cd6c` | Read-only project discovery. | None | Structure, key files, tests, risks, unknowns. |
 | 2 | Reviewer QA `c2cd6ff9` | Read-only domain/risk review. | None | Safety risks and checkpoint-required actions listed. |
-| 3 | Coordinator `default` or Builder `92b8cd6c` | Orchestration plan. | None | Goal, workstreams, dependencies, first wave. |
-| 4 | Reviewer QA `c2cd6ff9` | Fan-in review of plan and risks. | None | Accept, request changes, or block. |
-| 5 | Main Codex helper | Final operator summary and next checkpoint. | Repo docs only if approved | Evidence ledger complete. |
+| 3 | Main Codex helper | Draft LoopSpec if work may need repeated waves. | None | Progress/stuck signals, invariant, retry policy, stop conditions, and checkpoint gates are explicit. |
+| 4 | Coordinator `default` or Builder `92b8cd6c` | Orchestration plan. | None | Goal, workstreams, dependencies, first wave. |
+| 5 | Reviewer QA `c2cd6ff9` | Fan-in review of plan and risks. | None | Accept, request changes, or block. |
+| 6 | Main Codex helper | Final operator summary and next checkpoint. | Repo docs only if approved | Evidence ledger complete. |
 
 Use `docs/operations/swarmclaw-parallel-wave-template.md` once the fan-in review accepts the first wave.
 
@@ -264,6 +304,11 @@ Allowed write scope:
 Tests or validation commands:
 Success metrics:
 Checkpoint-required actions:
+Loop needed:
+Loop invariant:
+Loop progress signal:
+Loop stuck signal:
+Loop stop conditions:
 ```
 
 If repo path is missing, stop before creating repo-inspection tasks.

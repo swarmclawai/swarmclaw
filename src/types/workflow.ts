@@ -24,7 +24,55 @@ export type WorkflowContinuationState =
   | 'implement'
   | 'checkpoint'
   | 'blocked'
+  | 'needs_human'
+  | 'budget_exhausted'
+  | 'quarantined'
+  | 'defer'
   | 'needs_plan'
+
+export type WorkflowLoopStopState =
+  | 'done'
+  | 'checkpoint'
+  | 'blocked'
+  | 'needs_human'
+  | 'budget_exhausted'
+  | 'quarantined'
+  | 'retry'
+  | 'defer'
+
+export type WorkflowLoopContinuationPolicy =
+  | 'draft_only'
+  | 'safe_backlog_only'
+  | 'manual_only'
+
+export interface WorkflowLoopSpec {
+  id: string
+  name: string
+  goal: string
+  stateSource?: string | null
+  triggerCadence?: string | null
+  owner?: string | null
+  iteration: number
+  invariant: string
+  progressSignal: string
+  stuckSignal: string
+  evaluatorRole: string
+  quarantineRules: string[]
+  allowedReadScope: string[]
+  allowedWriteScope: string[]
+  forbiddenActions: string[]
+  checkpointActions: string[]
+  deterministicChecks: string[]
+  evaluatorChecks: string[]
+  retryPolicy: string
+  continuationPolicy: WorkflowLoopContinuationPolicy
+  stopStates: WorkflowLoopStopState[]
+  budgetFuses: string[]
+  ledgerFields: string[]
+  traceEvalFields: string[]
+  graphSidecarUse?: string | null
+  worktreePolicy?: string | null
+}
 
 export interface WorkflowSafetyProfile {
   mode: 'read_only' | 'standard' | 'implementation' | 'release'
@@ -66,6 +114,7 @@ export interface WorkflowBundleSpec {
   cwd?: string | null
   projectId?: string | null
   safetyProfile: WorkflowSafetyProfile
+  loopSpec?: WorkflowLoopSpec | null
   tasks: WorkflowBundleTaskSpec[]
   queueImmediately?: boolean
   templateId?: string | null
@@ -136,6 +185,7 @@ export interface WorkflowLedger {
   runId: string
   runTitle: string
   status: ProtocolRun['status']
+  loopSpec?: WorkflowLoopSpec | null
   entries: WorkflowLedgerEntry[]
   eventCount: number
   generatedAt: number
@@ -145,6 +195,7 @@ export interface WorkflowContinuationPolicy {
   continueUntilDone: boolean
   autoLaunch: boolean
   safetyProfile: WorkflowSafetyProfile
+  loopSpec?: WorkflowLoopSpec | null
   iteration: number
   maxIterations: number
   maxActiveTasks: number
@@ -154,6 +205,7 @@ export interface WorkflowContinuationPolicy {
   elapsedMinutes: number
   canAutoLaunch: boolean
   stopReasons: string[]
+  stopState?: WorkflowContinuationState
 }
 
 export interface WorkflowContinuationResult {

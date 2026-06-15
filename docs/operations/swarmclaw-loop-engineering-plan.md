@@ -1,0 +1,465 @@
+# SwarmClaw Loop Engineering Plan
+
+Last verified: 2026-06-15
+
+Audience: Codex and future agents operating Zmey's local SwarmClaw instance.
+
+Purpose: make SwarmClaw operate through bounded, inspectable control loops instead
+of open-ended prompting. A loop prompts agents, checks their work, records
+evidence, decides whether to continue, and stops cleanly on success, budget, or
+blocker.
+
+This plan is repo-local guidance. It does not install tools, enable schedules,
+enable autonomy, change providers, create durable agents, change credentials,
+touch `.env.local`, mutate state repair paths, restart servers, or expose ports.
+
+## Implementation Status
+
+Status date: 2026-06-15.
+
+Done:
+
+- Research and plan: target-state note, dynamic workflow references, subagent
+  references, worktree references, Graphify role, and workflow-store robustness
+  sources were reviewed and distilled into this plan.
+- Phase 0 manual LoopSpec: fields, lifecycle, stop states, quarantine,
+  evidence rules, Graphify sidecar policy, and worktree policy are documented.
+- Phase 1 LoopSpec templates: reusable templates now live in
+  `docs/operations/swarmclaw-loop-template-catalog.md`.
+- Operator docs: the dynamic workflow recipe, next-agent quickstart, parallel
+  wave template, project onboarding template, crypto operating brief, and
+  failure catalog reference loop engineering where relevant.
+- Failure hygiene: F036 covers loops without stop rules; F037 covers host
+  source-test failures when dev dependencies such as `tsx` are absent.
+- Productized LoopSpec first pass: `WorkflowLoopSpec` is typed, normalized,
+  included in workflow plans/bundles/ledgers, shown in the Workflow UI, and
+  carried through continuation payloads.
+- Continuation safety: default continuation is `draft_only`; auto-created
+  backlog requires `safe_backlog_only`, read-only mode, no quarantine, no stop
+  fuses, and no approval requirement.
+- Safety ratchet: quarantine is sticky across continuation, forbidden and
+  checkpoint actions are inherited, and LoopSpec metadata cannot broaden the
+  executable safety scope.
+- Validation: Docker build-stage production build/type check passed, focused
+  workflow/API tests passed 12/12, ESLint passed on changed workflow/UI files,
+  `git diff --check` passed, secret-pattern scan passed, and health/local-only
+  checks passed.
+- Live activation: Zmey approved container recreation; the SwarmClaw service was
+  recreated from `swarmclaw-subscription:1.9.36`, reported healthy, remained
+  bound to `127.0.0.1:3456-3457`, served `/protocols` with HTTP 200, and kept
+  workflow plan POSTs protected from unauthenticated shell calls with HTTP 401.
+
+Not done yet:
+
+- Commit/push of the LoopSpec patch.
+- Live authenticated GUI click-through smoke for Workflow Bundles; browser
+  control was not exposed in the Codex tool list during this verification turn.
+- Add or sync these docs into in-app Knowledge; this remains a separate
+  checkpoint after review.
+- Full browser UI regression coverage for Workflow Bundles beyond the focused
+  service/API tests and production build.
+- Crypto bot application of LoopSpec to the next approved code-writing wave.
+- Worktree-isolated parallel write workflow; still checkpoint-required.
+- Durable specialist agents or managed skills for loop roles; templates remain
+  task-template-first.
+
+## Sources Reviewed
+
+- Zmey's pasted target-state note, 2026-06-15: loops over prompts, bounded
+  control, human verification first, worker/evaluator separation, trace logging,
+  progress detection, retry caps, and human handoff after repeated failure.
+- [Ken Huang: Claude Code Orchestration](https://kenhuangus.substack.com/p/claude-code-orchestration-dynamic),
+  2026-05-29: choose between workflows, subagents, and teams based on task
+  shape; use dynamic workflows only when split strategy is unknown and quality
+  matters more than token economy.
+- [Claude: Introducing Dynamic Workflows](https://claude.com/blog/introducing-dynamic-workflows-in-claude-code),
+  2026-05-28: fan-out across subagents, independent verification, convergence,
+  resumability, inspection, and higher token cost.
+- [Claude: A Harness For Every Task](https://claude.com/blog/a-harness-for-every-task-dynamic-workflows-in-claude-code),
+  2026-06-02: classify-and-act, fan-out-and-synthesize, adversarial
+  verification, generate-and-filter, tournament judging, and loop-until-done.
+- [Claude Code Subagents](https://code.claude.com/docs/en/sub-agents): precise
+  subagent descriptions, least-privilege tools, spawn allowlists, hooks, and
+  lifecycle events.
+- [OpenAI Codex Subagents](https://developers.openai.com/codex/concepts/subagents):
+  use subagents for bounded exploration, tests, triage, and summarization; keep
+  write-heavy parallel work more constrained.
+- [OpenAI Codex Worktrees](https://developers.openai.com/codex/app/worktrees):
+  worktrees isolate parallel repository work and preserve foreground/background
+  separation.
+- [OpenAI Agents Guardrails And Human Review](https://developers.openai.com/api/docs/guides/agents/guardrails-approvals):
+  guardrails and approvals define whether a run continues, pauses, or stops.
+- [OpenAI Agents Observability](https://developers.openai.com/api/docs/guides/agents/integrations-observability):
+  traces should capture model calls, tool calls, handoffs, guardrails, and custom
+  spans for debugging and later evals.
+- [OpenSwarm](https://matars.github.io/OpenSwarm/): parallel AI workers across
+  Git worktrees.
+- [Graphify README](https://raw.githubusercontent.com/safishamsi/graphify/main/README.md):
+  code/docs graph sidecar with AST extraction, graph output, watch/update, MCP,
+  wiki, and hook modes.
+- [Engineering Robustness into Personal Agents with the AI Workflow Store](https://arxiv.org/abs/2605.10907):
+  hardened reusable workflows can be safer than improvised on-the-fly agent
+  chains.
+- [Dive into Claude Code](https://arxiv.org/abs/2604.14228): the model loop is
+  simple; reliability comes from permissions, compaction, extensibility,
+  subagent/worktree isolation, and durable session storage around the loop.
+
+## Current Fit
+
+SwarmClaw is close enough to start manual loop engineering now:
+
+- Projects store durable context.
+- Tasks are the worker execution unit with exact `agentId`, `cwd`, quality gate,
+  retries, dependencies, and terminal state.
+- Protocols and Workflow Bundles already represent graphs, joins, continuation,
+  and ledger events.
+- Runs provide execution evidence.
+- Reviewer QA is already the evaluator/fan-in gate.
+- Graphify has been verified as a scratch sidecar for repo orientation.
+- agentmemory records durable decisions and lessons across sessions.
+
+Main missing layer: a formal `LoopSpec` that turns a goal into an explicit
+control loop with stop rules, progress signals, stuck detection, retry caps,
+checkpoint gates, and evidence requirements.
+
+Use `docs/operations/swarmclaw-loop-template-catalog.md` for reusable LoopSpec
+starters. Initial messy-project discovery may be a pre-loop intake step; any
+repeated, multi-wave, or auto-continuing work needs a LoopSpec before launch.
+
+## LoopSpec
+
+Use this before creating a workflow bundle or a multi-task wave.
+
+```markdown
+Loop ID:
+Loop name:
+Project:
+Goal:
+Why a loop is needed:
+Truth sources:
+State source:
+Trigger/cadence:
+Owner:
+Iteration:
+Invariant:
+Allowed read scope:
+Allowed write scope:
+Forbidden actions:
+Checkpoint-required actions:
+Safety profile:
+Classification:
+Initial bundle:
+Worker roles:
+Evaluator role:
+Quarantine rules:
+Graph sidecar use:
+Worktree policy:
+Progress signal:
+Stuck signal:
+Deterministic checks:
+Evaluator checks:
+Retry policy:
+Continuation policy:
+Stop conditions:
+Budget/fuses:
+Ledger fields:
+Trace/eval fields:
+Handoff/memory update:
+```
+
+Required defaults:
+
+- `Invariant` must name the thing that must stay true across every iteration,
+  for example "paper mode only", "no secret inspection", or "65 fields and 18
+  forbidden selectors remain enforced".
+- `Evaluator role` must be Reviewer QA or an explicitly named independent
+  verifier. A worker must not be the sole judge of its own result.
+- `Progress signal` must be observable, such as fewer failing checks, more
+  accepted files, new verified findings, or a Reviewer QA accept decision.
+- `Stuck signal` must be concrete, such as same failure twice, no new findings,
+  missing marker, repeated silent worker, blocked safety gate, or conflicting
+  counts.
+- `Retry policy` defaults to one targeted retry, two maximum for the same
+  failure class, then human handoff.
+- `Continuation policy` defaults to draft-only. Auto-create backlog is allowed
+  only for read-only, non-quarantined, checkpoint-free continuations.
+- `Stop conditions` must include success, blocker, budget, repeated same
+  failure, checkpoint-required action, quarantine, and safety violation.
+- `Trace/eval fields` should capture task IDs, run/session IDs, worker IDs,
+  handoffs, approvals, guardrail trips, tool evidence, changed files, tests,
+  worktree SHA, Reviewer QA findings, and budget usage when available.
+
+## Lifecycle
+
+1. Preflight: read memory and handoff, verify local-only health if runtime work
+   is involved, confirm repo path, and restate safety boundaries.
+2. Classify: choose read-only discovery, implementation, review, migration,
+   bug hunt, research, triage, release gate, or graph refresh.
+3. Draft LoopSpec: define scopes, roles, checks, fuses, and stop rules before
+   tasks are created.
+4. Review: run Reviewer QA or main Codex review against safety, scope,
+   missing checks, and unclear stop rules.
+5. Approve: create backlog tasks first. Queue only after the task bodies,
+   worker IDs, cwd, and quality gates are checked.
+6. Execute one wave: keep worker scopes disjoint or read-only. Require first-line
+   markers and short, structured outputs.
+7. Evaluate: independent reviewer validates evidence, contradictions,
+   invariants, observed signal, and continuation readiness.
+8. Continue or stop: continue only if the policy allows it. Otherwise stop with
+   `done`, `blocked`, `needs_human`, `budget_exhausted`, `quarantined`,
+   `retry`, `checkpoint`, or `defer`.
+9. Harden: if the loop works repeatedly, convert it into a reusable template,
+   Workflow Bundle, skill prompt, or later product feature.
+
+## Loop Patterns
+
+Use the smallest pattern that fits the work.
+
+| Pattern | Use When | SwarmClaw Shape |
+|---|---|---|
+| Classify-and-act | The goal type determines the safe path. | One classifier/planner task, then deterministic bundle selection. |
+| Fan-out-and-synthesize | Independent scopes need clean contexts. | N workers, one Reviewer QA fan-in, one operator summary. |
+| Adversarial verification | Wrong output is expensive. | Worker task plus separate reviewer task against a rubric. |
+| Generate-and-filter | Many candidate approaches are possible. | Candidate workers, filter/reviewer, choose one path. |
+| Tournament | Same task benefits from competing approaches. | Small N competing plans, pairwise judge, final Reviewer QA. |
+| Loop until done | Unknown number of passes. | Continue only while progress signal improves and fuses allow. |
+| Graph refresh | Architecture map may be stale. | Scratch Graphify run, secret scan, sanitized summary, reviewer gate. |
+
+## No Loopmaxxing Rules
+
+Do not create loops with:
+
+- vague goals,
+- no independent evaluator,
+- no deterministic checks,
+- no progress signal,
+- no stuck signal,
+- no max iteration, task, retry, elapsed-time, or token fuse,
+- privileged actions hidden inside worker prompts,
+- workers editing shared files without an isolation policy,
+- raw Graphify output or raw logs treated as safe Knowledge,
+- progress judged from agent confidence instead of evidence,
+- continuation that can change credentials, providers, schedules, autonomy,
+  deployment, state repair, live trading, DB writes, or public exposure.
+
+## Stop States
+
+Use these stop states consistently in ledgers and summaries:
+
+| State | Meaning | Next Action |
+|---|---|---|
+| `done` | Success criteria passed and independent evaluator accepted. | Summarize, save durable memory if useful, and close. |
+| `checkpoint` | The next action is safe to describe but requires operator approval. | Ask Zmey with exact action, risk, and rollback. |
+| `blocked` | The next required input or tool is unavailable. | Preserve evidence and ask for the missing input or unblocker. |
+| `needs_human` | A policy or judgment checkpoint is required. | Pause and ask Zmey with exact action, risk, and rollback. |
+| `budget_exhausted` | Token, task, retry, elapsed-time, or cost fuse hit. | Stop; summarize remaining work and options. |
+| `quarantined` | Unsafe input, suspicious tool behavior, or guardrail trip occurred. | Freeze writes/network/continuation until review. |
+| `retry` | One targeted retry is allowed by policy. | Retry only the failed class with tighter prompt/evidence. |
+| `defer` | Safe to continue later but not worth running now. | Create backlog/TODO only after checkpoint if state changes. |
+
+## Quarantine
+
+Quarantine is stronger than a normal blocker.
+
+Move a loop to `quarantined` when:
+
+- a worker requests credential/env/auth/token/wallet/private-key access,
+- a task wants live trading, deployment, schedule/autonomy, state repair, or
+  public exposure,
+- untrusted public content or raw logs try to drive privileged actions,
+- a sidecar proposes hooks, MCP, watch mode, global install, or config mutation,
+- a guardrail or Reviewer QA identifies unsafe tool behavior,
+- task output includes secret-like material or raw credential-bearing content.
+
+While quarantined:
+
+- do not queue more tasks,
+- do not auto-continue,
+- do not write files or state,
+- do not run network, DB, trading, deployment, schedule, provider, or autonomy
+  actions,
+- ask Zmey for a checkpoint with the exact evidence and safest recovery path.
+
+## Evidence Over Confidence
+
+A loop progresses only when evidence improves. Agent confidence, "looks good",
+or a fluent summary is not enough.
+
+Good progress evidence:
+
+- failing checks decrease,
+- targeted tests pass,
+- accepted file set grows,
+- verified findings are deduped,
+- Reviewer QA accepts a specific decision,
+- a graph snapshot is reviewed and sanitized,
+- a blocker is removed without crossing safety boundaries.
+
+Stall evidence:
+
+- same failure class repeats,
+- no new findings,
+- no marker or malformed output repeats,
+- worker stays silent,
+- counts conflict,
+- graph output is stale/noisy,
+- verification commands are missing or skipped,
+- Reviewer QA blocks or asks for the same change again.
+
+## Graphify In Loops
+
+Graphify is a loop input, not the loop engine.
+
+Refresh triggers:
+
+- explicit operator request,
+- first onboarding of a large or messy repo,
+- accepted implementation wave that materially changes architecture,
+- fan-in finding that the prior graph is stale, incomplete, or noisy.
+
+Safe role:
+
+- refresh architecture context for large or messy repos,
+- query symbol-heavy relationships,
+- produce sanitized summaries for SwarmClaw tasks,
+- detect changed source areas between waves.
+
+Blocked by default:
+
+- global install,
+- every-iteration refresh,
+- watch mode,
+- git hook install,
+- MCP server,
+- Knowledge import,
+- raw graph/report commit,
+- DB/dataset/log/output scan,
+- secret or credential scan,
+- any non-localhost surface.
+
+Use Graphify only when the LoopSpec says why the graph is needed and how the
+artifact will be reviewed or discarded.
+
+Evidence gate:
+
+- tool version,
+- corpus root,
+- include/exclude list,
+- node/edge/community counts when available,
+- artifact path if retained temporarily,
+- secret-hygiene scan result,
+- Reviewer QA coverage and false-confidence review,
+- decision: reuse sanitized summary, rerun scoped, or discard.
+
+## Worktree Policy
+
+Worktrees are checkpoint-required. They are useful only after the loop has
+disjoint write scopes and a merge owner.
+
+Minimum fields before use:
+
+- worker task ID,
+- worktree path,
+- branch,
+- base SHA,
+- allowed files,
+- verification command,
+- diff review owner,
+- merge order,
+- cleanup verification.
+
+Default remains direct assignment with no parallel writes to the same files.
+
+## Product Roadmap
+
+### Phase 0: Manual LoopSpec
+
+Use this document plus `swarmclaw-parallel-wave-template.md` for manual loops.
+This is ready now.
+
+Acceptance:
+
+- LoopSpec exists before task creation.
+- Every wave has an evidence ledger and independent review.
+- Continuation happens only after a clear accept/retry/block decision.
+
+### Phase 1: LoopSpec Templates
+
+Add repo templates for common loops:
+
+- read-only project understanding,
+- implementation with review,
+- test-fix loop,
+- bug hunt,
+- graph refresh,
+- release gate,
+- crypto safety review.
+
+Acceptance:
+
+- Templates include exact scopes, checks, fuses, and stop conditions.
+- Templates are Knowledge-safe after review.
+
+### Phase 2: Productized LoopSpec
+
+Add a first-class LoopSpec schema that compiles into Workflow Bundles and
+Protocols.
+
+Likely fields:
+
+- `goal`,
+- `classification`,
+- `safetyProfile`,
+- `allowedScope`,
+- `forbiddenActions`,
+- `workerPlan`,
+- `evaluatorPlan`,
+- `progressSignal`,
+- `stuckSignal`,
+- `retryPolicy`,
+- `budget`,
+- `stopConditions`,
+- `ledgerRequirements`,
+- `quarantineRules`,
+- `traceEvalFields`,
+- `checkpointTriggers`.
+
+Acceptance:
+
+- Drafting creates no tasks.
+- Approval creates backlog tasks first.
+- Ledger exposes progress/stuck status.
+- Unsafe continuation is blocked before task creation.
+
+### Phase 3: Bounded Autopilot
+
+Extend existing Workflow continuation so it can run the next safe wave without
+manual task creation only when the LoopSpec allows it.
+
+Acceptance:
+
+- Resumes after interruption.
+- Stops on `done`, `blocked`, `needs_human`, `budget_exhausted`,
+  `quarantined`, repeated failure, checkpoint, or safety violation.
+- Never auto-launches privileged work.
+- Produces a concise operator summary and memory candidate.
+
+## First Application: Crypto Bot
+
+Use LoopSpec manually before any code-writing checkpoint.
+
+Recommended first loop:
+
+- `Goal`: align runtime contract tests/docs around the accepted 65-field and
+  18-forbidden-selector target.
+- `Classification`: focused implementation after checkpoint.
+- `Allowed write scope`: the exact test/doc files Zmey approves.
+- `Progress signal`: targeted test passes and Reviewer QA accepts count and
+  safety claims.
+- `Stuck signal`: same test failure twice, count contradiction, secret/DB/log
+  boundary, or runtime action request.
+- `Stop`: pass plus QA accept, blocker, checkpoint-required action, or two same
+  failures.
+
+No live trading, DB reads/writes, credential/env inspection, deployments,
+schedules, provider/autonomy changes, or broad cleanup.

@@ -1,8 +1,15 @@
 # SwarmClaw Dynamic Workflow Operator Recipe
 
-Last verified: 2026-06-11, local subscription image `swarmclaw-subscription:1.9.36`.
+Last verified: 2026-06-15, local subscription image `swarmclaw-subscription:1.9.36`.
 
 Purpose: operate SwarmClaw-native dynamic workflows safely through Protocols, Tasks, Runs, and the Workflow Bundles panel. This is the short runbook for future agents; use the GUI operator manual for page-by-page detail.
+
+For loop-engineering policy, use
+`docs/operations/swarmclaw-loop-engineering-plan.md`. This recipe is the
+operator runbook; the loop plan defines LoopSpec fields, progress/stuck signals,
+retry caps, evaluator separation, Graphify sidecar rules, and productization
+phases. For ready-to-copy loop shapes, use
+`docs/operations/swarmclaw-loop-template-catalog.md`.
 
 ## Preconditions
 
@@ -15,13 +22,43 @@ Purpose: operate SwarmClaw-native dynamic workflows safely through Protocols, Ta
 ## Safe Workflow Loop
 
 1. Open `/protocols` and use **Workflow Bundles**.
-2. Draft the goal first when risk or scope is unclear. Drafting must create no tasks.
-3. Review the plan for scope, agent IDs, cwd, forbidden actions, expected markers, and checkpoints.
-4. Create Backlog tasks first. Queue independent workers only after review.
-5. Let dependent fan-in tasks unblock from completed workers. Do not mark a wave accepted until fan-in returns an explicit decision.
-6. Use **Continue selected run** after all workflow tasks are terminal.
-7. For bounded autopilot, enable **Continue until done** only after the current run is clean. Enable **Auto-create safe backlog** only for read-only, non-quarantined, checkpoint-free continuations.
-8. Stop on any blocker, failed marker, blocked QA disposition, repeated same failure, or checkpoint-required action.
+2. For repeated, multi-wave, or auto-continuing work, draft a LoopSpec first:
+   goal, truth sources,
+   scope, forbidden actions, evaluator, progress signal, stuck signal, retry
+   policy, stop conditions, and budget/fuses.
+3. For an unknown messy project, a first read-only discovery/risk review can be
+   pre-loop intake. Write the LoopSpec before launching a second wave or any
+   continuation.
+4. Draft the workflow when risk or scope is unclear. Drafting must create no
+   tasks.
+5. Review the plan for scope, agent IDs, cwd, forbidden actions, expected
+   markers, progress/stuck criteria, retries, stop conditions, and checkpoints.
+6. Create Backlog tasks first. Queue independent workers only after review.
+7. Let dependent fan-in tasks unblock from completed workers. Do not mark a
+   wave accepted until fan-in returns an explicit decision.
+8. Use **Continue selected run** after all workflow tasks are terminal.
+9. For bounded autopilot, enable **Continue until done** only after the current
+   run is clean. Enable **Auto-create safe backlog** only for read-only,
+   non-quarantined, checkpoint-free continuations.
+10. Stop on any blocker, failed marker, blocked QA disposition, repeated same
+   failure, missing progress signal, quarantine signal, safety violation, or
+   checkpoint-required action.
+
+## Loop Engineering Rules
+
+- A loop must have a concrete progress signal and a concrete stuck signal before
+  launch.
+- A worker must not be the only evaluator of its own output.
+- Retry the same failure class once by default, twice maximum, then hand off to
+  Zmey with evidence.
+- Deterministic checks should decide deterministic questions. Use model workers
+  for judgment, synthesis, and adversarial review.
+- Loop continuation is draft-only unless the LoopSpec explicitly permits safe
+  backlog creation.
+- Graphify can refresh context for a loop, but raw graph/report output is not a
+  trusted source until reviewed and sanitized.
+- Worktree writes remain checkpoint-required and must record branch, base SHA,
+  merge order, and cleanup status.
 
 ## Evidence Contract
 
