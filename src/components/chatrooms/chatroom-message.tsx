@@ -13,6 +13,7 @@ import { useAppStore } from '@/stores/use-app-store'
 import { useNavigate } from '@/lib/app/navigation'
 import { AgentHoverCard } from './agent-hover-card'
 import { ChatroomToolRequestBanner } from './chatroom-tool-request-banner'
+import { ToolActivityPill, ToolEventsSection } from '@/components/chat/tool-events-section'
 import { TransferAgentPicker } from '@/components/chat/transfer-agent-picker'
 import { ConnectorPlatformIcon, getConnectorPlatformLabel } from '@/components/shared/connector-platform-icon'
 import type { ChatroomMessage, Chatroom, Agent } from '@/types'
@@ -105,8 +106,20 @@ export function ChatroomMessageBubble({ message, agents, onToggleReaction, onRep
   const [showPicker, setShowPicker] = useState(false)
   const [showTransferPicker, setShowTransferPicker] = useState(false)
   const [showModMenu, setShowModMenu] = useState(false)
+  const [toolOpen, setToolOpen] = useState(false)
   const userAvatarSeed = useAppStore((s) => s.appSettings.userAvatarSeed)
   const wide = isStructuredMarkdown(message.text)
+
+  // Adapt persisted chatroom tool events to the shared tool-display shape.
+  const displayToolEvents = (message.toolEvents ?? []).map((ev, i) => ({
+    id: ev.toolCallId || `${message.time}-${ev.name}-${i}`,
+    name: ev.name,
+    input: ev.input,
+    output: ev.output,
+    status: (ev.error ? 'error' : 'done') as 'error' | 'done',
+    reasoning: ev.reasoning,
+  }))
+  const hasToolEvents = message.senderId !== 'system' && message.role === 'assistant' && displayToolEvents.length > 0
 
   // System event messages (join/leave)
   if (message.senderId === 'system') {
@@ -207,10 +220,24 @@ export function ChatroomMessageBubble({ message, agents, onToggleReaction, onRep
                   Muted
                 </span>
               )}
+              {hasToolEvents && (
+                <ToolActivityPill
+                  toolEvents={displayToolEvents}
+                  isOpen={toolOpen}
+                  onToggle={() => setToolOpen((v) => !v)}
+                />
+              )}
               <span className="label-mono" title={new Date(message.time).toISOString()}>{formatRelativeTime(message.time, now)}</span>
             </div>
           )
         })()}
+
+        {/* Tool activity (calls + reasoning) — shown above the answer text */}
+        {hasToolEvents && toolOpen && (
+          <div className="mb-1.5 rounded-[16px] border border-white/[0.08] bg-surface/72 backdrop-blur-sm overflow-hidden">
+            <ToolEventsSection toolEvents={displayToolEvents} controlled />
+          </div>
+        )}
 
         {/* Reply quote */}
         {replyToMessage && (

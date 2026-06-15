@@ -29,7 +29,8 @@ import { markProviderFailure, markProviderSuccess } from '@/lib/server/provider-
 import { applyAgentReactionsFromText, stripAgentReactionTokens } from '@/lib/server/chatrooms/chatroom-agent-signals'
 import { resolvePrimaryAgentRoute } from '@/lib/server/agents/agent-runtime-config'
 import { shouldSuppressHiddenControlText, stripHiddenControlTokens } from '@/lib/server/agents/assistant-control'
-import type { Chatroom, ChatroomMessage, Agent } from '@/types'
+import type { Chatroom, ChatroomMessage, Agent, MessageToolEvent } from '@/types'
+import { collectToolEvent } from '@/lib/server/chat-execution/chat-execution-tool-events'
 import { errorMessage } from '@/lib/shared-utils'
 import { persistChatroomInteractionMemory } from '@/lib/server/chatrooms/chatroom-memory-bridge'
 
@@ -232,6 +233,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
             let fullText = ''
             let agentError = ''
+            const toolEventsBag: MessageToolEvent[] = []
             const forwardProviderEvents = (raw: string) => {
               const lines = raw.split('\n').filter(Boolean)
               for (const line of lines) {
@@ -242,6 +244,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
                     fullText += parsed.text
                     writeEvent({ t: 'd', text: parsed.text, agentId: agent.id, agentName: agent.name })
                   } else if (parsed.t === 'tool_call' || parsed.t === 'tool_result') {
+                    collectToolEvent(parsed, toolEventsBag)
                     writeEvent({ ...parsed, agentId: agent.id, agentName: agent.name })
                   } else if (parsed.t === 'err' && parsed.text) {
                     agentError = parsed.text
@@ -311,6 +314,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
                 mentions: newMentions,
                 reactions: [],
                 time: Date.now(),
+                toolEvents: toolEventsBag.length ? toolEventsBag : undefined,
               }
               const latestChatrooms = loadChatrooms()
               const latestChatroom = latestChatrooms[id] as Chatroom
