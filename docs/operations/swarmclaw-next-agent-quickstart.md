@@ -168,6 +168,12 @@ signals such as visible controls, scoped headings, stable `data-testid` values,
 or final URL. Do not use broad body-text checks for auth/readiness; they can
 false-positive on unrelated page content. See F042.
 
+After direct navigation, do not count `domcontentloaded` or `document.title`
+alone as route readiness. Wait until the app shell/sidebar is visible and the
+page is no longer showing `Restoring agent workspace`, then verify a
+route-specific control, heading, stable `data-testid`, or expected redirect. See
+F005.
+
 Direct-assigned CLI task Knowledge grounding was fixed and live-verified on
 2026-06-17. The task attempt prompt and visible queue seed now include
 task-specific `## Source Grounding` from compact task queries and normalized

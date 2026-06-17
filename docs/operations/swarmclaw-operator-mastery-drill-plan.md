@@ -92,3 +92,27 @@ private keys, raw DB dumps, or raw logs.
   protocol runs are `7 completed / 1 paused / 1 failed`, F047 Knowledge chunks
   are indexed across the operator sources, and project metadata was checked by
   ID/name plus description/objective lengths only.
+
+## 2026-06-17 Extended AppView Control Sweep
+
+- Authenticated read-only browser sweep covered all 29 `AppView` routes from
+  `src/lib/app/navigation.ts`: `/home`, `/agents`, `/org-chart`, `/inbox`,
+  `/chatrooms`, `/protocols`, `/projects`, `/swarmfeed`, `/marketplace`,
+  `/tasks`, `/missions`, `/schedules`, `/memory`, `/runs`, `/quality`,
+  `/knowledge`, `/skills`, `/connectors`, `/webhooks`, `/mcp-servers`,
+  `/extensions`, `/providers`, `/secrets`, `/wallets`, `/usage`, `/activity`,
+  `/autonomy`, `/logs`, and `/settings`.
+- Result: all 29 app views loaded with route-specific sidebar/control signals
+  and zero new browser console errors. `/agents` redirected to
+  `/agents/default`, which is expected for the default agent shortcut. Supporting
+  authenticated reference routes `/user`, `/setup`, and `/login` redirected to
+  `/home`, which is expected after setup/authentication.
+- Readiness correction: the first pass showed that `domcontentloaded` can still
+  capture only `Restoring agent workspace`; wait for the sidebar shell plus a
+  route-specific signal before accepting a route as loaded. This is F005, not a
+  new app failure.
+- Deeper control checks covered `/protocols`, `/tasks`, `/runs`, `/quality`,
+  `/knowledge`, `/agents`, `/projects`, `/providers`, `/secrets`, `/wallets`,
+  `/autonomy`, and `/settings`. Sensitive pages were checked only by headings,
+  buttons, and safe control labels; no secret values, provider keys, wallet
+  material, logs, auth JSON, env files, or raw Knowledge chunks were inspected.
