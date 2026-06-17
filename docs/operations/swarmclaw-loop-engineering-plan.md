@@ -60,6 +60,11 @@ Done:
   `safe_backlog_only` content, run-until-done fuse content, and crypto safety
   boundary content. A one-off Docker verification run with a writable
   transformers cache mount avoided cache permission warnings; see F038.
+- Knowledge delta sync: the 2026-06-17 Loop Engineering Plan and Failure
+  Catalog updates were synced through a one-off service script in the
+  dev-dependency image with a writable transformers cache. Verification query
+  found the Failure Catalog and Loop Engineering Plan entries for the F041
+  browser e2e assertion fix.
 - Authenticated GUI smoke: `/protocols` rendered under the logged-in `zmey`
   account, the Workflow Bundles panel appeared, a selected run ledger rendered
   completed task rows, and `Draft plan`, `Create backlog tasks`, `Continue
@@ -70,6 +75,11 @@ Done:
   `/protocols?runId=...` renders Workflow Bundles, selected ledger, LoopSpec
   invariant text, disabled draft/backlog controls, and safe continuation
   controls.
+- Browser e2e execution: a temporary dev/e2e Docker image with Playwright and
+  `tsx` ran the full isolated browser smoke on 2026-06-17 and passed. Focused
+  workflow service/API tests also passed 12/12 in the same dependency
+  environment. The e2e blocker was test brittleness around CSS-transformed
+  uppercase labels, fixed in the smoke script; see F041.
 - Crypto bot LoopSpec first application: the runtime-contract test/docs work
   was verified locally but not staged. Verification passed:
   `python -m unittest tests.test_pumpfun_runtime_contract` ran 5 tests OK, and
@@ -82,14 +92,6 @@ Done:
 
 Not done yet:
 
-- Execute the updated browser e2e smoke in a dev-dependency environment. Host
-  `node_modules` is absent and the production subscription runner image lacks
-  `tsx`; see F037 and F039.
-- Sync the 2026-06-17 Loop Engineering Plan and Failure Catalog deltas into
-  in-app Knowledge after a safe service-run path is available. Shell API calls
-  are authenticated, browser page evaluation lacks `fetch`, browser text entry
-  is unsuitable for large content, and raw SQLite edits are not allowed; see
-  F004, F014, F017, F037, and F039.
 - Isolate the crypto runtime-contract patch before committing: split line-ending
   churn from functional changes, include the untracked contract module with its
   dependent runtime call sites, then rerun the focused unit/syntax checks.

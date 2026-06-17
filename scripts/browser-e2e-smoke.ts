@@ -307,8 +307,8 @@ async function waitForPageText(page: Page, url: string, options: { anyText: stri
   await page.waitForSelector('body', { timeout: PAGE_TIMEOUT_MS })
   await page.waitForFunction(
     (needles) => {
-      const text = document.body?.innerText || ''
-      return needles.some((needle) => text.includes(needle))
+      const text = (document.body?.innerText || '').toLowerCase()
+      return needles.some((needle) => text.includes(needle.toLowerCase()))
     },
     options.anyText,
     { timeout: PAGE_TIMEOUT_MS },
@@ -438,14 +438,15 @@ async function runBrowserSmoke(baseUrl: string): Promise<void> {
       })
       await page.waitForFunction(() => {
         const text = document.body?.innerText || ''
+        const lowerText = text.toLowerCase()
         const draftButton = document.querySelector('[data-testid="workflow-draft-plan"]') as HTMLButtonElement | null
         const createBacklogButton = document.querySelector('[data-testid="workflow-create-backlog"]') as HTMLButtonElement | null
         const continueButton = document.querySelector('[data-testid="workflow-continue-selected-run"]') as HTMLButtonElement | null
         const continueUntilDone = document.querySelector('[data-testid="workflow-continue-until-done"]') as HTMLInputElement | null
         const autoCreateBacklog = document.querySelector('[data-testid="workflow-auto-create-safe-backlog"]') as HTMLInputElement | null
         return Boolean(
-          text.includes('Workflow Bundles')
-          && text.includes('Selected Run Ledger')
+          lowerText.includes('workflow bundles')
+          && lowerText.includes('selected run ledger')
           && text.includes('E2E workflow smoke remains read-only and backlog-only.')
           && text.includes('3 tasks · 0 done')
           && draftButton?.disabled === true

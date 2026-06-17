@@ -187,10 +187,11 @@ export default function ProtocolsPage() {
 
   useEffect(() => {
     setSelectedRunId((current) => {
+      if (requestedRunId) return requestedRunId
       if (current && runs.some((run) => run.id === current)) return current
       return runs[0]?.id || null
     })
-  }, [runs])
+  }, [requestedRunId, runs])
 
   const selectedTemplate = useMemo(() => templates.find((template) => template.id === form.templateId) || null, [form.templateId, templates])
   const customTemplates = useMemo(() => templates.filter((template) => !template.builtIn), [templates])
