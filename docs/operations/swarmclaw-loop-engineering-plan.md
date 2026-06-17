@@ -80,6 +80,13 @@ Done:
   workflow service/API tests also passed 12/12 in the same dependency
   environment. The e2e blocker was test brittleness around CSS-transformed
   uppercase labels, fixed in the smoke script; see F041.
+- Live continuation/autopilot drill: run `dbc47bed` proved the read-only
+  LoopSpec path end to end. Drafting created no tasks, approved launch created
+  three backlog tasks, fan-in auto-woke after worker completion, continuation
+  marked the run completed, and safe auto-backlog created run `52efa735`.
+  Auto-created backlog tasks `d601861e`, `5a68851a`, and `ce30a812` were
+  archived through the GUI after evidence capture. Health remained local-only
+  on `127.0.0.1:3456-3457`.
 - Crypto bot LoopSpec first application: the runtime-contract test/docs work
   was verified locally but not staged. Verification passed:
   `python -m unittest tests.test_pumpfun_runtime_contract` ran 5 tests OK, and

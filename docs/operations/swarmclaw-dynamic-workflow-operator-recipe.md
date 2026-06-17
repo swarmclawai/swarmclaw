@@ -109,6 +109,28 @@ Run `bf0f448e` verified the core path:
 - Clicking **Continue selected run** marked the workflow run completed with summary: `Workflow continuation marked the run completed after all workflow tasks finished.`
 - Docker health after rebuild remained healthy and local-only on `127.0.0.1:3456-3457`.
 
+## Verified Continuation Autopilot Drill
+
+Run `dbc47bed` verified bounded read-only continuation:
+
+- Drafting a read-only workflow created no tasks or protocol runs; counts stayed
+  at 175 tasks and 7 protocol runs until approval.
+- Wording matters: `files changed` contains the classifier trigger `change` and
+  produced an implementation draft. Redraft with neutral read-only wording before
+  launching; see F046.
+- Approved backlog launch created discovery `9f94ca3d`, safety review
+  `a41e3f53`, and fan-in `e7ea7347`.
+- Discovery and safety review were queued from the task-sheet controls. After
+  both completed, fan-in auto-woke through workflow dependency handling and
+  completed without manual queueing.
+- Ledger markers matched `WF-READ-ONLY-DISCOVERY-*` and the run completed after
+  **Continue until done** plus **Auto-create safe backlog**.
+- Continuation event `d60056e4` created next run `52efa735` with backlog tasks
+  `d601861e`, `5a68851a`, and `ce30a812`.
+- Those auto-created backlog tasks were archived through the GUI after evidence
+  capture to keep the board clean. SwarmClaw remained healthy and bound only to
+  `127.0.0.1:3456-3457`.
+
 ## Graphify Sidecar Pilot
 
 2026-06-10 SwarmClaw platform scratch pilot:
@@ -162,7 +184,16 @@ Run `bf0f448e` verified the core path:
 
 - F017: browser text entry can fail in task forms because the browser automation surface lacks virtual clipboard support. Do not loop retries on `fill`, `type`, CUA typing, DOM typing, or file upload. Use character-by-character `locator.press()` for short fields; use manual GUI entry or a checkpointed app-service fallback for large content.
 - Workflow dependency edges are not continuation edges. Fan-in tasks must receive upstream result summaries, not reuse a worker's execution session.
-- The task board Queue button can be brittle under browser automation. If visible clicking does not persist, stop and use a checkpointed service/API fallback rather than broad raw DB edits.
+- The task board card-hover Queue button can be brittle under browser
+  automation. Prefer opening the task sheet and using the sheet footer Queue or
+  Archive action, then verify stored status. If visible clicking still does not
+  persist, stop and use a checkpointed service/API fallback rather than broad
+  raw DB edits.
+- Read-only workflow draft goals must avoid classifier trigger words such as
+  `change`, `fix`, `debug`, `implement`, `build`, `deploy`, or `release`.
+  Even phrases like `files changed: none` can route the draft as
+  implementation; use neutral read-only wording and rely on task contracts for
+  `files changed` reporting.
 - Shell calls to protected workflow APIs may return `401`; prefer the authenticated GUI for protected actions.
 - Broad browser body-text auth/readiness checks can false-positive on unrelated
   page content. Verify exact URL and scoped route controls instead; see F042.
