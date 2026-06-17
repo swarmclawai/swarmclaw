@@ -6,6 +6,12 @@ Audience: Codex and future agents operating Zmey's local SwarmClaw instance.
 
 Purpose: a short boot checklist for agents that need to operate SwarmClaw without rereading every long manual first. Use this with `docs/operations/swarmclaw-gui-operator-manual.md`, `docs/operations/swarmclaw-dynamic-workflow-operator-recipe.md`, and `docs/operations/swarmclaw-operator-failure-catalog.md`.
 
+For active operator training or regression checks, use
+`docs/operations/swarmclaw-operator-mastery-drill-plan.md`. It tracks the
+10-drill mastery suite for task lifecycle, workflows, triage, Knowledge,
+routing, parallel fan-out/fan-in, project onboarding, admin read-only checks,
+browser reliability, and handoff quality.
+
 Date convention: operator doc dates use Zmey's local Europe/Sofia calendar date unless a timestamp explicitly says UTC. Docker, task, and API timestamps may display UTC or epoch milliseconds.
 
 ## First 10 Minutes
@@ -100,7 +106,9 @@ Prompt hygiene for task validators:
 - Do not let workers echo the prompt or announce that they are starting.
 - For planning/review tasks that mention app delivery or feature work, include source-path evidence and an explicit `Verification: ... ok` line.
 - If the GUI agent picker does not persist the intended worker, use a title/body mention such as `@Reviewer` or `@Reviewer QA`, then verify the stored `agentId` before queueing.
+- For multi-word workers such as Reviewer QA, prefer the explicit Agent picker over mention-only routing. Mention-only `@Reviewer QA` can still persist as Builder; verify exact `agentId` before queueing. See F023.
 - For reasoning-only tasks, disabled quality gates must persist as `qualityGate.enabled=false`; `qualityGate:null` can still fall back to the default gate when the prompt contains implementation-like wording.
+- For pure read-only smoke tasks, set `Min Evidence Signals` to `1` or explicitly relax/disable the quality gate after checkpoint. The default of `2` can dead-letter a valid marker-first smoke result. See F045.
 - If a retrying task has a valid marker/result but fails on `Task has a non-empty error field`, treat it as F025 stale retry-error hygiene. The 2026-06-07 live image contains the fix; if the signal returns, verify `recordCurrentTaskRunError` exists in `/app/src/lib/server/tasks/task-lifecycle.ts` before blaming the worker output.
 - The optimized subscription image no longer copies full dev `node_modules` into the runner. Verify runtime behavior with build, health, and smoke containers; run source tests/lint from the repo or a build/dev environment, not by assuming `tsx` or eslint exist inside the live production container.
 
