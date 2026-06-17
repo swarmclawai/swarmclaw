@@ -116,3 +116,25 @@ private keys, raw DB dumps, or raw logs.
   `/autonomy`, and `/settings`. Sensitive pages were checked only by headings,
   buttons, and safe control labels; no secret values, provider keys, wallet
   material, logs, auth JSON, env files, or raw Knowledge chunks were inspected.
+
+## 2026-06-17 Settings/Admin Deep Read-Only Drill
+
+- Authenticated Settings drill switched only local Settings tabs and did not
+  save or submit forms. Verified visible Settings sections: `General`,
+  `Appearance`, `Agents & Automation`, `Memory & AI`, and `Integrations`.
+- Read-only admin route checks covered `/providers`, `/secrets`, `/wallets`,
+  `/autonomy`, `/schedules`, `/webhooks`, `/connectors`, `/mcp-servers`,
+  `/extensions`, `/usage`, `/activity`, and `/logs`. All routes returned the
+  expected pathname and zero new browser console errors.
+- Sensitive handling: provider and integration pages were checked by provider
+  names/status labels and model families only; no provider detail sheets were
+  opened and no key values were read. Secrets/wallets/webhooks/connectors/MCP
+  pages were checked by empty-state and create-control labels only. Autonomy was
+  checked by safety-state headings and action labels only; no estop/resume
+  controls were clicked.
+- Operator method update: for admin drills, collect evidence from the main panel
+  after the route heading. A raw snapshot can be dominated by sidebar labels and
+  produce weak evidence even when the page is loaded correctly. For logs,
+  activity, and usage, prefer filter/control names and aggregate counts over row
+  bodies unless a specific failure investigation requires a narrow sanitized
+  excerpt.

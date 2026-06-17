@@ -174,6 +174,11 @@ page is no longer showing `Restoring agent workspace`, then verify a
 route-specific control, heading, stable `data-testid`, or expected redirect. See
 F005.
 
+For admin and Settings drills, scope evidence to the main panel after the route
+heading. Sidebar labels alone are weak evidence. On `/logs`, `/activity`, and
+`/usage`, prefer filter/control names and aggregate counts; do not copy raw log
+or activity bodies unless investigating one narrow sanitized failure.
+
 Direct-assigned CLI task Knowledge grounding was fixed and live-verified on
 2026-06-17. The task attempt prompt and visible queue seed now include
 task-specific `## Source Grounding` from compact task queries and normalized
