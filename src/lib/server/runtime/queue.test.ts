@@ -48,6 +48,41 @@ function makeTask(overrides: Partial<import('@/types').BoardTask> = {}): import(
   }
 }
 
+describe('buildTaskInitialSessionMessage', () => {
+  it('includes source grounding in the visible seeded task session message', () => {
+    const task = makeTask({
+      id: 'task-grounding',
+      title: 'Strict source grounding smoke',
+      description: 'Report only visible source titles.',
+      upstreamResults: [{
+        taskId: 'worker-1',
+        taskTitle: 'Discovery worker',
+        agentId: 'agent-1',
+        resultPreview: 'DISCOVERY_OK',
+      }],
+    })
+
+    const message = queue.buildTaskInitialSessionMessage({
+      task,
+      taskCwd: '/workspace',
+      reusedExistingSession: false,
+      resumeContext: null,
+      sourceGrounding: [
+        '## Source Grounding',
+        'Source-backed Knowledge retrieved for this task:',
+        '- [1/2] SwarmClaw GUI Operator Manual: Check health before operating.',
+      ].join('\n'),
+    })
+
+    assert.match(message, /Starting task: \*\*Strict source grounding smoke\*\*/)
+    assert.match(message, /## Context from upstream tasks/)
+    assert.match(message, /DISCOVERY_OK/)
+    assert.match(message, /## Source Grounding/)
+    assert.match(message, /SwarmClaw GUI Operator Manual/)
+    assert.match(message, /I'll begin working on this now\./)
+  })
+})
+
 // ---------------------------------------------------------------------------
 // dequeueNextRunnableTask
 // ---------------------------------------------------------------------------

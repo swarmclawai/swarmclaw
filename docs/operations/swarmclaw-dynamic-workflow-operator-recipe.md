@@ -166,6 +166,11 @@ Run `bf0f448e` verified the core path:
 - Shell calls to protected workflow APIs may return `401`; prefer the authenticated GUI for protected actions.
 - Broad browser body-text auth/readiness checks can false-positive on unrelated
   page content. Verify exact URL and scoped route controls instead; see F042.
+- Direct-assigned CLI tasks should receive task-specific `## Source Grounding`
+  in both the visible queue seed and the task attempt prompt on images containing
+  the 2026-06-17 F043 fix. If a worker reports no literal Source Grounding,
+  classify it as F043 and rerun the strict smoke before trusting Knowledge
+  delivery.
 - Task creation resolves assignment-like text in descriptions. Embedded
   evidence containing strings such as `Agent ID: ...` can override an explicit
   `agentId`; use neutral labels like `worker` when summarizing predecessor

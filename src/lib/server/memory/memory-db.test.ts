@@ -163,6 +163,35 @@ describe('memory-db', () => {
       assert.ok(titles.includes('Kubernetes Deployment'))
     })
 
+    it('filters FTS search by category before mixed results are merged', () => {
+      const db = memDb.getMemoryDb()
+      const agentId = `agent-category-${Date.now()}`
+      for (let i = 0; i < 60; i += 1) {
+        db.add({
+          agentId,
+          category: 'note',
+          title: `Operator Drill Session ${i}`,
+          content: 'Operator drill F043 source grounding smoke SwarmClaw GUI Operator Manual',
+        })
+      }
+      db.add({
+        agentId: null,
+        category: 'knowledge',
+        title: 'SwarmClaw GUI Operator Manual',
+        content: 'Operator drill F043 source grounding smoke guidance for task Knowledge retrieval.',
+      })
+
+      const results = db.search(
+        'Operator drill F043 source grounding smoke SwarmClaw GUI Operator Manual',
+        undefined,
+        { category: 'knowledge' },
+      )
+
+      assert.equal(results.length >= 1, true)
+      assert.equal(results[0].category, 'knowledge')
+      assert.equal(results[0].title, 'SwarmClaw GUI Operator Manual')
+    })
+
     it('returns empty for skip-query patterns', () => {
       const db = memDb.getMemoryDb()
       assert.deepEqual(db.search(''), [])

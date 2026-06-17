@@ -61,7 +61,9 @@ Use this path for normal worker work:
 
 1. Open `/tasks`.
 2. Draft a bounded title, description, agent, project, tags, allowed scope, non-goals, and evidence marker.
-3. Create the task with the exact stored agent selected. New Task creates a backlog item by default.
+3. Create executable work through the full `Task`/`New Task` sheet with the
+   exact stored agent selected. Avoid board quick-add fields for executable
+   tasks unless stored `agentId` is verified; see F044.
 4. Close the sheet and use the task card's exact `Queue` button to run it. Avoid broad `Queue` selectors because `Queued` controls can also match.
 5. Verify the stored task status moved to `queued`, `running`, or `completed`, and verify the stored `agentId` matches the intended worker before counting the run as evidence.
 6. Monitor `/tasks`, `/runs`, `/quality`, and sanitized `/logs`.
@@ -148,6 +150,12 @@ checks must use the authenticated in-app browser and route-specific ready
 signals such as visible controls, scoped headings, stable `data-testid` values,
 or final URL. Do not use broad body-text checks for auth/readiness; they can
 false-positive on unrelated page content. See F042.
+
+Direct-assigned CLI task Knowledge grounding was fixed and live-verified on
+2026-06-17. The task attempt prompt and visible queue seed now include
+task-specific `## Source Grounding` from compact task queries and normalized
+`Retrieval topic:` fallback segments. Smoke task `9e4746cb` completed with
+`SWARMCLAW_F043_TOPIC_FALLBACK_SOURCE_GROUNDING_OK`. See F043.
 
 If browser automation reports that the virtual clipboard is not installed while filling form fields, stop retrying clipboard-backed `fill`, `type`, CUA typing, or DOM typing. For short fields, click the field and use `locator.press()` character-by-character. For large content or file imports, close the unsaved dialog, verify no partial record was created, and use a checkpointed app service/API path only if the state change is still required. The current in-app browser backend does not support file uploads.
 

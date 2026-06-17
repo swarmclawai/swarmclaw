@@ -48,6 +48,10 @@ import { notifyOrchestrators } from '@/lib/server/runtime/orchestrator-events'
 import type { Agent, BoardTask, Message, Session } from '@/types'
 import { buildAgentDisabledMessage, isAgentDisabled } from '@/lib/server/agents/agent-availability'
 import {
+  buildTaskKnowledgeRetrievalTrace,
+  formatTaskSourceGroundingSection,
+} from '@/lib/server/execution-engine/task-attempt'
+import {
   didTaskValidationChange,
   markInvalidCompletedTaskFailed,
   markValidatedTaskCompleted,
@@ -384,6 +388,54 @@ function buildTaskContinuationNote(
     notes.push('Stored CLI resume handles are available for continuation.')
   }
   return notes.length ? `\n\n${notes.join(' ')}` : ''
+}
+
+export function buildTaskInitialSessionMessage(input: {
+  task: BoardTask
+  taskCwd: string
+  reusedExistingSession: boolean
+  resumeContext: TaskResumeContext | null
+  sourceGrounding?: string | null
+  delegator?: Agent | null
+  delegatorId?: string | null
+}): string {
+  const {
+    task,
+    taskCwd,
+    reusedExistingSession,
+    resumeContext,
+    sourceGrounding,
+    delegator,
+    delegatorId,
+  } = input
+  const continuationNote = buildTaskContinuationNote(reusedExistingSession, resumeContext)
+  const baseText = delegatorId !== undefined
+    ? [
+        `[delegation-source:${delegatorId || ''}:${delegator?.name || 'Agent'}:${delegator?.avatarSeed || ''}]`,
+        `Delegated by **${delegator?.name || 'another agent'}** | [${task.title}](#task:${task.id})`,
+        '',
+        task.description || '',
+        '',
+        `Working directory: \`${taskCwd}\`${continuationNote}`,
+      ].join('\n')
+    : `Starting task: **${task.title}**\n\n${task.description || ''}\n\nWorking directory: \`${taskCwd}\`${continuationNote}`
+
+  const contextSections: string[] = []
+  if (Array.isArray(task.upstreamResults) && task.upstreamResults.length > 0) {
+    const upstreamBlock = task.upstreamResults
+      .map((ur) => `### ${ur.taskTitle}\n${ur.resultPreview || '(no result)'}`)
+      .join('\n\n')
+    contextSections.push(`## Context from upstream tasks\n\n${upstreamBlock}`)
+  }
+  if (sourceGrounding?.trim()) {
+    contextSections.push(sourceGrounding.trim())
+  }
+
+  return [
+    baseText,
+    ...contextSections,
+    "I'll begin working on this now.",
+  ].filter((part) => part.trim().length > 0).join('\n\n')
 }
 
 const DEV_TASK_HINT = /\b(dev(?:\s+server)?|start(?:ing)?\s+(?:the\s+)?server|run(?:ning)?\s+(?:the\s+)?(?:app|project|site)|serve|localhost|http\s+server|web\s+server|npm\b|pnpm\b|yarn\b|bun\b|vite|next(?:\.js)?|react|build|compile)\b/i
@@ -1387,28 +1439,40 @@ export async function processNext() {
         const sessionExists = Boolean(loadSessions()[sessionId])
         if (sessionExists) {
           const isDelegation = (task as unknown as Record<string, unknown>).sourceType === 'delegation'
-          let initialText: string
+          const taskKnowledgeTrace = await buildTaskKnowledgeRetrievalTrace(task)
+          const sourceGrounding = formatTaskSourceGroundingSection(taskKnowledgeTrace)
           if (isDelegation) {
             const delegatorId = (task as unknown as Record<string, unknown>).delegatedByAgentId as string | undefined
             const delegator = delegatorId ? agents[delegatorId] : null
-            const prefix = `[delegation-source:${delegatorId || ''}:${delegator?.name || 'Agent'}:${delegator?.avatarSeed || ''}]`
-            initialText = `${prefix}\nDelegated by **${delegator?.name || 'another agent'}** | [${task.title}](#task:${task.id})\n\n${task.description || ''}\n\nWorking directory: \`${taskCwd}\`${buildTaskContinuationNote(Boolean(reusedExistingSession), resumeContext)}\n\nI'll begin working on this now.`
+            const initialText = buildTaskInitialSessionMessage({
+              task,
+              taskCwd,
+              reusedExistingSession: Boolean(reusedExistingSession),
+              resumeContext,
+              sourceGrounding,
+              delegator,
+              delegatorId: delegatorId || '',
+            })
+            appendMessage(sessionId, {
+              role: 'assistant',
+              text: initialText,
+              time: Date.now(),
+              kind: 'system' as const,
+            })
           } else {
-            initialText = `Starting task: **${task.title}**\n\n${task.description || ''}\n\nWorking directory: \`${taskCwd}\`${buildTaskContinuationNote(Boolean(reusedExistingSession), resumeContext)}\n\nI'll begin working on this now.`
+            const initialText = buildTaskInitialSessionMessage({
+              task,
+              taskCwd,
+              reusedExistingSession: Boolean(reusedExistingSession),
+              resumeContext,
+              sourceGrounding,
+            })
+            appendMessage(sessionId, {
+              role: 'assistant',
+              text: initialText,
+              time: Date.now(),
+            })
           }
-          // Inject upstream task results context
-          if (Array.isArray(task.upstreamResults) && task.upstreamResults.length > 0) {
-            const upstreamBlock = task.upstreamResults
-              .map((ur) => `### ${ur.taskTitle}\n${ur.resultPreview || '(no result)'}`)
-              .join('\n\n')
-            initialText += `\n\n## Context from upstream tasks\n\n${upstreamBlock}`
-          }
-          appendMessage(sessionId, {
-            role: 'assistant',
-            text: initialText,
-            time: Date.now(),
-            ...(isDelegation ? { kind: 'system' as const } : {}),
-          })
         }
       }
 

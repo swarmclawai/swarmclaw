@@ -707,8 +707,7 @@ export async function searchKnowledgeHits(options: {
   const includeArchived = options.includeArchived === true
   const viewerAgentId = typeof options.viewerAgentId === 'string' ? options.viewerAgentId.trim() : ''
   const sourceMap = new Map(listStoredSources().map((source) => [source.id, source] as const))
-  const matches = getMemoryDb().search(query)
-    .filter((entry) => entry.category === 'knowledge')
+  const matches = getMemoryDb().search(query, undefined, { category: 'knowledge' })
 
   const hits: KnowledgeSearchHit[] = []
   for (const entry of matches) {

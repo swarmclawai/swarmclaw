@@ -57,6 +57,7 @@ export interface MemoryScopeFilter {
 
 export interface MemorySearchOptions {
   scope?: MemoryScopeFilter
+  category?: string
   rerankMode?: MemoryRerankMode
   vectorSimilarityThreshold?: number
 }
@@ -706,6 +707,12 @@ function initDb() {
       WHERE memories_fts MATCH ?
       LIMIT ${MAX_FTS_RESULT_ROWS}
     `),
+    searchByCategory: db.prepare(`
+      SELECT m.* FROM memories m
+      INNER JOIN memories_fts f ON m.rowid = f.rowid
+      WHERE memories_fts MATCH ? AND m.category = ?
+      LIMIT ${MAX_FTS_RESULT_ROWS}
+    `),
     searchByAgent: db.prepare(`
       SELECT m.* FROM memories m
       INNER JOIN memories_fts f ON m.rowid = f.rowid
@@ -716,6 +723,12 @@ function initDb() {
       SELECT m.* FROM memories m
       INNER JOIN memories_fts f ON m.rowid = f.rowid
       WHERE memories_fts MATCH ? AND (m.agentId = ? OR m.sharedWith LIKE ?)
+      LIMIT ${MAX_FTS_RESULT_ROWS}
+    `),
+    searchByCategoryAgentOrShared: db.prepare(`
+      SELECT m.* FROM memories m
+      INNER JOIN memories_fts f ON m.rowid = f.rowid
+      WHERE memories_fts MATCH ? AND m.category = ? AND (m.agentId = ? OR m.sharedWith LIKE ?)
       LIMIT ${MAX_FTS_RESULT_ROWS}
     `),
     // Remove a linked ID from all memories that reference it (cleanup on delete)
@@ -1078,6 +1091,7 @@ function initDb() {
       const startedAt = Date.now()
       const normalizedAgentId = normalizeScopeIdentifier(agentId)
       const { vectorSimilarityThreshold } = options
+      const categoryFilter = normalizeScopeIdentifier(options.category)
       const rerankMode: MemoryRerankMode = options.rerankMode === 'semantic' || options.rerankMode === 'lexical'
         ? options.rerankMode
         : 'balanced'
@@ -1097,9 +1111,13 @@ function initDb() {
       const ftsQuery = buildFtsQuery(query)
       const fastAgentOnlyScope = scopeMode === 'agent' && !!normalizedAgentId
       const ftsResults: MemoryEntry[] = ftsQuery
-        ? (fastAgentOnlyScope
-            ? stmts.searchByAgentOrShared.all(ftsQuery, normalizedAgentId, `%"${normalizedAgentId}"%`) as any[]
-            : stmts.search.all(ftsQuery) as any[]
+        ? (categoryFilter
+            ? (fastAgentOnlyScope
+                ? stmts.searchByCategoryAgentOrShared.all(ftsQuery, categoryFilter, normalizedAgentId, `%"${normalizedAgentId}"%`) as any[]
+                : stmts.searchByCategory.all(ftsQuery, categoryFilter) as any[])
+            : (fastAgentOnlyScope
+                ? stmts.searchByAgentOrShared.all(ftsQuery, normalizedAgentId, `%"${normalizedAgentId}"%`) as any[]
+                : stmts.search.all(ftsQuery) as any[])
           ).map(rowToEntry)
         : []
       const ftsHitIds = new Set<string>(ftsResults.map((entry) => entry.id))
@@ -1118,6 +1136,7 @@ function initDb() {
             : getAllWithEmbeddings.all() as any[]
 
           const scored = rows
+            .filter((row) => !categoryFilter || row.category === categoryFilter)
             .map((row) => {
               const emb = deserializeEmbedding(row.embedding)
               const score = cosineSimilarity(queryEmbedding, emb)

@@ -337,6 +337,8 @@ Failure IDs to check first:
   and missing first-line markers.
 - F036 and F041 for loop stop rules and brittle browser/e2e assertions.
 - F042 for broad body-text readiness or auth checks that misclassify the page.
+- F043 for CLI task source-grounding gaps and the task-prompt Knowledge
+  injection fix.
 
 ### Workflow Bundles GUI Drill
 
@@ -431,9 +433,11 @@ Use this only after Zmey checkpoints a Knowledge update or sync.
 4. Recheck title, chunk count, status, timestamp, and hygiene state.
 5. Verify with a non-secret expected phrase query and report source title plus
    hit count only.
-6. If CLI-backed workers must use the new content, embed a short sanitized
-   excerpt in their task prompt. Do not assume the worker can access in-app
-   Knowledge as an MCP resource; see F007 and F016.
+6. CLI-backed task attempts now receive concise source-backed Knowledge from
+   task title/description and `Retrieval topic:` lines when the live image
+   contains the 2026-06-17 F043 fix. If operating an older image or a worker
+   still reports no literal `## Source Grounding`, embed a short sanitized
+   excerpt in the task prompt; see F007, F016, and F043.
 7. If embeddings or one-off service scripts are used, mount a throwaway
    writable transformers cache and remove it after verification; see F038.
 
@@ -452,8 +456,11 @@ Use this only after Zmey checkpoints a Knowledge update or sync.
 2. Use board/list view depending on whether status or detail matters.
 3. Inspect task status, assignment, project, tags, dependencies, comments, artifacts, and run history.
 4. For new work, draft the exact task title, agent, project, tags, status, and acceptance criteria before creating it.
-5. New Task creates a backlog task by default. To run it, close the sheet and use the card's `Queue` button, then verify the stored status moved to `queued` or `running`.
-6. Ask before creating, queueing, retrying, cancelling, completing, archiving, or importing tasks.
+5. Use the full `Task`/`New Task` sheet for executable work. Do not use the
+   board quick-add fields (`+ Add to backlog...`, `+ Add to queued...`) for
+   executable tasks unless stored `agentId` has been verified; see F044.
+6. New Task creates a backlog task by default. To run it, close the sheet and use the card's `Queue` button, then verify the stored status moved to `queued` or `running`.
+7. Ask before creating, queueing, retrying, cancelling, completing, archiving, or importing tasks.
 
 ### Direct Assignment Drill
 
@@ -461,7 +468,7 @@ Use this when proving that a stored SwarmClaw worker, not just a generic CLI
 helper, performed work.
 
 1. Open `/tasks`.
-2. Open the unique `+ New Task` control.
+2. Open the full `Task`/`+ New Task` control, not the board quick-add fields.
 3. Verify the sheet heading is `New Task`, not `Edit Task`, and that title and
    description fields are blank.
 4. Select the exact stored worker in task metadata. Record the intended ID, for
