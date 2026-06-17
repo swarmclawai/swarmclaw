@@ -1,6 +1,6 @@
 # SwarmClaw Operator Failure Catalog
 
-Last verified: 2026-06-15
+Last verified: 2026-06-17
 
 Audience: Codex and future agents operating Zmey's local SwarmClaw instance.
 
@@ -61,6 +61,7 @@ When a task, run, browser check, or GUI action fails:
 | F037 | Host-side source test command fails with `ERR_MODULE_NOT_FOUND: Cannot find package 'tsx'`. | The host workspace may not have dev dependencies installed even when the Docker/runtime environment can run the app. | Do not install or mutate host `node_modules` by default. Prefer the known project/Docker test environment, or report verification blocked until dependencies are available. | Preserve the failed command and continue with non-mutating checks such as `git diff --check`, source inspection, and Docker/build-target tests when approved. |
 | F038 | One-off Knowledge sync or search emits repeated `Unable to add response to browser cache` warnings for `@huggingface/transformers/.cache`. | The temporary service container ran as UID 1000 against image-owned `node_modules`, while local embeddings tried to cache under the package directory. | When running one-off `tsx` service scripts in a Docker build-stage image, keep the state mount UID/GID-safe and mount a throwaway writable cache at `/app/node_modules/@huggingface/transformers/.cache`. Remove the scratch cache afterward. | Rerun the service verification with the writable cache mount. Verified on 2026-06-15: Knowledge search returned LoopSpec and crypto safety hits without cache warnings. |
 | F039 | `scripts/browser-e2e-smoke.ts` cannot run from the live subscription runner image with `node --import tsx`; the command fails with `ERR_MODULE_NOT_FOUND: Cannot find package 'tsx'`. | `swarmclaw-subscription:1.9.36` is a production runner image copied from Next standalone output, so dev dependencies and source-test tooling such as `tsx` are intentionally absent. | Run TypeScript e2e scripts from a dev-dependency environment, a build-stage image, or a host workspace with installed `node_modules`. Do not install dev dependencies into the live production runner container. | Keep the live container untouched. Verify what can be verified through the authenticated GUI and source inspection, then rerun the e2e script only after a proper dev test environment is available. |
+| F040 | A narrow test/doc commit looks safe, but the test depends on untracked modules or already-dirty runtime files. | The candidate patch is not actually isolated; committing only the visible test/doc files would produce an incomplete or misleading change. In the crypto repo, `tests/test_pumpfun_runtime_contract.py` depended on untracked `services/pumpfun_runtime_contract.py` and modified runtime call sites with large line-ending churn. | Before staging, trace imports and assertions to their source files, check `git status --short -- <exact paths>`, and compare normal diff size with `git diff --ignore-space-at-eol --shortstat`. | Do not stage a partial patch. Record the blocker, split line-ending churn from functional edits, include all dependent call sites in a reviewed staging list, then rerun focused tests before commit. |
 
 ## Current Known Failure Signals
 
@@ -83,6 +84,7 @@ When a task, run, browser check, or GUI action fails:
 | `Crypto Bot read-only audit bundle` | Worker prompt/progress outputs and Codex fan-in runtime failures; OpenCode backup fan-in passed. | Use F030 and F031. Final accepted task is `cafo31b3` with marker `CRYPTO_AUDIT_FANIN_BLOCKED`; code-writing is blocked until Zmey approves a narrow test-first crypto patch. |
 | `Crypto Bot Graphify onboarding wave` | Accepted with repairs. | Use F032/F033. Final accepted fan-in is `9b1c3037` with marker `CRYPTO_ONBOARD_FANIN_ACCEPTED`; Copilot manifest/test outputs were superseded by marker repair `4e6612ae`. |
 | `Crypto Bot contract trace fan-in` | Accepted after F034/F035 fixes and live rebuild. | Accepted worker evidence is `cfd16de6`, `794dae24`, `e282952d`, and `1e7b00cd`; final accepted fan-in is `6f78749c` with marker `CRYPTO_CONTRACT_TRACE_FANIN_ACCEPTED`. Superseded fan-ins: `e3d990cf`, `47a84617`, `0789df92`, and `7dac8e0a`. |
+| `Crypto Bot runtime-contract patch staging` | Blocked by non-isolated source dependencies. | Use F040. The focused test passed locally, but no crypto commit was made because the candidate included an untracked contract module and dirty runtime call sites with line-ending churn. |
 
 ## After A New Failure
 

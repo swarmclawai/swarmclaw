@@ -1,6 +1,6 @@
 # SwarmClaw Loop Engineering Plan
 
-Last verified: 2026-06-15
+Last verified: 2026-06-17
 
 Audience: Codex and future agents operating Zmey's local SwarmClaw instance.
 
@@ -15,7 +15,7 @@ touch `.env.local`, mutate state repair paths, restart servers, or expose ports.
 
 ## Implementation Status
 
-Status date: 2026-06-15.
+Status date: 2026-06-17.
 
 Done:
 
@@ -70,20 +70,29 @@ Done:
   `/protocols?runId=...` renders Workflow Bundles, selected ledger, LoopSpec
   invariant text, disabled draft/backlog controls, and safe continuation
   controls.
-- Crypto bot LoopSpec first application: the narrow test/docs checkpoint was
-  applied to `tests/test_pumpfun_runtime_contract.py` and
-  `docs/current_runtime/RUNTIME_VERIFICATION_STATUS.md`. Verification passed:
+- Crypto bot LoopSpec first application: the runtime-contract test/docs work
+  was verified locally but not staged. Verification passed:
   `python -m unittest tests.test_pumpfun_runtime_contract` ran 5 tests OK, and
   `python -m py_compile tests/test_pumpfun_runtime_contract.py services/pumpfun_runtime_contract.py`
-  passed. No runtime services, DBs, logs, outputs, env files, credentials, or
-  trading actions were used.
+  passed. The staging review found the test depends on an untracked contract
+  module plus already-dirty runtime service files with large line-ending churn,
+  so the safe decision is to isolate that crypto patch separately before any
+  commit. No runtime services, DBs, logs, outputs, env files, credentials, or
+  trading actions were used; see F040.
 
 Not done yet:
 
 - Execute the updated browser e2e smoke in a dev-dependency environment. Host
   `node_modules` is absent and the production subscription runner image lacks
   `tsx`; see F037 and F039.
-- Review/stage/commit decision for the narrow crypto test/docs changes.
+- Sync the 2026-06-17 Loop Engineering Plan and Failure Catalog deltas into
+  in-app Knowledge after a safe service-run path is available. Shell API calls
+  are authenticated, browser page evaluation lacks `fetch`, browser text entry
+  is unsuitable for large content, and raw SQLite edits are not allowed; see
+  F004, F014, F017, F037, and F039.
+- Isolate the crypto runtime-contract patch before committing: split line-ending
+  churn from functional changes, include the untracked contract module with its
+  dependent runtime call sites, then rerun the focused unit/syntax checks.
 - Worktree-isolated parallel write workflow; still checkpoint-required.
 - Durable specialist agents or managed skills for loop roles; templates remain
   task-template-first.
