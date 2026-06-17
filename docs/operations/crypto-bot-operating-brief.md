@@ -1,7 +1,9 @@
 # Crypto Bot Operating Brief
 
 Last verified: 2026-06-15
-Status: remediation planning accepted by SwarmClaw fan-in task `209d1e87`; next step needs a focused test/docs code-writing checkpoint.
+Status: remediation planning accepted by SwarmClaw fan-in task `209d1e87`;
+the focused 65-field / 18-forbidden-selector test/docs checkpoint was applied
+locally on 2026-06-15.
 Purpose: give Codex and future SwarmClaw workers a concise, sanitized operating
 brief for Zmey's crypto trading bot.
 
@@ -96,6 +98,12 @@ Checkpoint-required scopes:
   task `209d1e87` accepted that basis for a focused test/docs checkpoint.
 - R03-derived planning that cites 76 contract fields or 15 forbidden selectors
   is superseded and must be corrected to 65 and 18.
+- Focused checkpoint applied: `tests/test_pumpfun_runtime_contract.py` now locks
+  65 total contract fields, uniqueness, 18 forbidden selector fields, 13 fields
+  per `s30/s60/s120` checkpoint, source-level artifact-list spreading, and the
+  token-ready discovery-context boundary. `RUNTIME_VERIFICATION_STATUS.md` now
+  reflects `ENABLE_MONITORING=True` and the aggregate-only
+  `entry_runtime_contract_v1` handoff.
 
 ## SwarmClaw Operating Pattern
 
@@ -120,23 +128,21 @@ compact current loop map.
 | Runtime contract/selector loop | `entry_runtime_contract_v1` remains 65 fields and 18 forbidden selectors. | Targeted test/docs evidence aligns to 65/18 and Reviewer QA accepts. | Tests pass plus QA accept, or same failure twice, count conflict, secret/DB/log boundary, or checkpoint-required action. |
 | Shadow/paper/execute safety loop | Agents do not promote beyond paper/shadow or submit live orders. | Safety review confirms no live trading, exchange action, env override, schedule, or deployment change. | Any live-action request, credential/env need, runtime stack start, or safety contradiction. |
 
+## Possible Later Additions
+
+- TradingAgents-inspired research wave: parked for later. If revisited, use it
+  only as a SwarmClaw-native debate/checkpoint/evidence pattern for pump.fun
+  freshness, latency, security, creator/wallet, and paper/shadow analysis. Do
+  not import `Buy/Sell/Hold`, position sizing, stock-style roles, generic ticker
+  data, LangGraph orchestration, or execution authority.
+
 ## Next Actions
 
-Next safest action: ask Zmey for a focused code-writing checkpoint limited to
-count-alignment tests/docs for the 65-field contract and 18 forbidden-selector
-target, plus targeted verification of the relevant contract test file only.
-
-First possible code-writing candidates remain deferred until checkpoint:
-
-- `tests/test_pumpfun_runtime_contract.py`: explicit 65-field count,
-  uniqueness, 18 forbidden selectors, 13 fields per checkpoint, and
-  `token_ready` boundary assertions.
-- `docs/current_runtime/RUNTIME_VERIFICATION_STATUS.md`: corrected
-  `ENABLE_MONITORING=True` note and explicit `entry_runtime_contract_v1`
-  reference after tests/docs checkpoint approval.
-- No runtime stack, DB, logs, datasets, generated output, model artifacts,
-  secrets, live trading, deployment, schedules, provider/autonomy changes, or
-  broad repo cleanup.
+Next safest action: review the narrow crypto diff and decide whether to stage or
+commit only the focused test/docs changes. Any broader crypto code wave, DB/log
+research, runtime smoke, generated output inspection, live trading, deployment,
+schedules, provider/autonomy changes, or broad repo cleanup still requires a
+fresh checkpoint.
 
 Sanitized Knowledge import is allowed only as a scoped orientation note that
 preserves the limitations and checkpoint gates above.

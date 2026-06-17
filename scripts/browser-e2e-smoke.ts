@@ -24,6 +24,17 @@ interface AuthSession {
   cookieHeader: string
 }
 
+interface WorkflowPlanSmokeResponse {
+  bundle?: Record<string, unknown>
+}
+
+interface WorkflowBundleSmokeResponse {
+  run?: {
+    id?: unknown
+  }
+  taskIds?: unknown[]
+}
+
 function authHeaders(auth: AuthSession, contentType = true): Record<string, string> {
   return {
     ...(contentType ? { 'Content-Type': 'application/json' } : {}),
@@ -379,6 +390,69 @@ async function runBrowserSmoke(baseUrl: string): Promise<void> {
           && flowRect.height > 240
           && visibleNodes.length >= 3
           && !text.includes('No visual steps'),
+        )
+      }, { timeout: PAGE_TIMEOUT_MS })
+    })
+    await page.close()
+
+    const workflowPlanRes = await fetchWithTimeout(new URL('/api/workflows/plans', baseUrl).toString(), {
+      method: 'POST',
+      headers: authHeaders(auth),
+      body: JSON.stringify({
+        title: 'E2E workflow bundle smoke',
+        goal: 'Verify Workflow Bundles renders draft-safe controls and selected ledger without queueing work.',
+        allowedScopes: ['docs/operations/'],
+        loopSpec: {
+          invariant: 'E2E workflow smoke remains read-only and backlog-only.',
+          progressSignal: 'Workflow panel and selected ledger render in the browser.',
+          stuckSignal: 'Workflow controls or selected ledger fail to render.',
+        },
+      }),
+    }, 10_000)
+    if (!workflowPlanRes.ok) {
+      throw new Error(`Could not draft workflow smoke plan: ${workflowPlanRes.status} ${await workflowPlanRes.text().catch(() => '')}`)
+    }
+    const workflowPlan = await workflowPlanRes.json().catch(() => null) as WorkflowPlanSmokeResponse | null
+    if (!workflowPlan?.bundle || typeof workflowPlan.bundle !== 'object') {
+      throw new Error(`Workflow smoke plan returned an unexpected payload: ${JSON.stringify(workflowPlan)}`)
+    }
+
+    const workflowBundleRes = await fetchWithTimeout(new URL('/api/workflows/bundles', baseUrl).toString(), {
+      method: 'POST',
+      headers: authHeaders(auth),
+      body: JSON.stringify(workflowPlan.bundle),
+    }, 10_000)
+    if (!workflowBundleRes.ok) {
+      throw new Error(`Could not create workflow smoke bundle: ${workflowBundleRes.status} ${await workflowBundleRes.text().catch(() => '')}`)
+    }
+    const workflowBundle = await workflowBundleRes.json().catch(() => null) as WorkflowBundleSmokeResponse | null
+    const workflowRunId = typeof workflowBundle?.run?.id === 'string' ? workflowBundle.run.id : ''
+    if (!workflowRunId || !Array.isArray(workflowBundle?.taskIds) || workflowBundle.taskIds.length < 1) {
+      throw new Error(`Workflow smoke bundle returned an unexpected payload: ${JSON.stringify(workflowBundle)}`)
+    }
+
+    page = await newSmokePage()
+    await smokeStep('workflow bundles panel renders selected ledger', async () => {
+      await waitForPageText(page, `/protocols?runId=${encodeURIComponent(workflowRunId)}`, {
+        anyText: ['Workflow Bundles', 'Selected Run Ledger'],
+      })
+      await page.waitForFunction(() => {
+        const text = document.body?.innerText || ''
+        const draftButton = document.querySelector('[data-testid="workflow-draft-plan"]') as HTMLButtonElement | null
+        const createBacklogButton = document.querySelector('[data-testid="workflow-create-backlog"]') as HTMLButtonElement | null
+        const continueButton = document.querySelector('[data-testid="workflow-continue-selected-run"]') as HTMLButtonElement | null
+        const continueUntilDone = document.querySelector('[data-testid="workflow-continue-until-done"]') as HTMLInputElement | null
+        const autoCreateBacklog = document.querySelector('[data-testid="workflow-auto-create-safe-backlog"]') as HTMLInputElement | null
+        return Boolean(
+          text.includes('Workflow Bundles')
+          && text.includes('Selected Run Ledger')
+          && text.includes('E2E workflow smoke remains read-only and backlog-only.')
+          && text.includes('3 tasks · 0 done')
+          && draftButton?.disabled === true
+          && createBacklogButton?.disabled === true
+          && continueButton
+          && continueUntilDone
+          && autoCreateBacklog?.disabled === true,
         )
       }, { timeout: PAGE_TIMEOUT_MS })
     })

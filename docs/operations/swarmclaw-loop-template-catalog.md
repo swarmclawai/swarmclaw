@@ -133,6 +133,28 @@ Use for crypto trading bot research or cleanup.
 - Stop: next safe read-only wave accepted, code-writing checkpoint required,
   unsafe credential/live-order request, or count/contract conflict.
 
+## Deferred Optional: TradingAgents-Inspired Crypto Research
+
+Use only after Zmey asks to revisit TradingAgents-style research. This is not an
+external-framework integration and not an execution path.
+
+- Borrow: role separation, adversarial debate, structured outputs,
+  checkpoint/resume ideas, and evidence logging.
+- Reject: stock-style fundamentals, generic ticker data, LangGraph orchestration,
+  `Buy/Sell/Hold`, position sizing, simulated exchange execution, or any live
+  trading authority.
+- Invariant: research-only and paper/shadow-only; freshness, latency,
+  pump.fun lifecycle state, creator/wallet structure, security gates, and runtime
+  contract fields are first-class evidence.
+- Workers: Freshness Path Auditor, Latency Budget Analyst, Fresh TX Integrity
+  Reviewer, Lane Policy Analyst, Security/Creator/Wallet Reviewer, Edge Thesis
+  Analyst, Failure/Staleness Analyst, and Reviewer QA fan-in.
+- Allowed decisions: `observe_only`, `research_candidate`, `needs_replay`,
+  `shadow_candidate`, `paper_candidate`, `needs_db_read_checkpoint`,
+  `blocked_sensitive`, `reject_unsafe`, and `reject_insufficient_evidence`.
+- Stop: accepted next safe research action, DB/log/output checkpoint required,
+  unsafe credential/live-action request, or insufficient freshness evidence.
+
 ## Loop Repair / Recovery
 
 Use when a workflow is already running without clear stop rules.

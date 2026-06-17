@@ -60,19 +60,38 @@ Done:
   `safe_backlog_only` content, run-until-done fuse content, and crypto safety
   boundary content. A one-off Docker verification run with a writable
   transformers cache mount avoided cache permission warnings; see F038.
+- Authenticated GUI smoke: `/protocols` rendered under the logged-in `zmey`
+  account, the Workflow Bundles panel appeared, a selected run ledger rendered
+  completed task rows, and `Draft plan`, `Create backlog tasks`, `Continue
+  selected run`, `Continue until done`, and `Auto-create safe backlog` controls
+  were visible. No side-effect controls were pressed.
+- Browser regression coverage: `scripts/browser-e2e-smoke.ts` now creates an
+  isolated workflow plan/bundle in the e2e temp data dir and verifies
+  `/protocols?runId=...` renders Workflow Bundles, selected ledger, LoopSpec
+  invariant text, disabled draft/backlog controls, and safe continuation
+  controls.
+- Crypto bot LoopSpec first application: the narrow test/docs checkpoint was
+  applied to `tests/test_pumpfun_runtime_contract.py` and
+  `docs/current_runtime/RUNTIME_VERIFICATION_STATUS.md`. Verification passed:
+  `python -m unittest tests.test_pumpfun_runtime_contract` ran 5 tests OK, and
+  `python -m py_compile tests/test_pumpfun_runtime_contract.py services/pumpfun_runtime_contract.py`
+  passed. No runtime services, DBs, logs, outputs, env files, credentials, or
+  trading actions were used.
 
 Not done yet:
 
-- Live authenticated GUI click-through smoke for Workflow Bundles; browser
-  control was not exposed in the Codex tool list during this verification turn.
-  Shell health, route, protected API, build, tests, and service-level Knowledge
-  checks are done, but authenticated clicking is not honestly verified.
-- Full browser UI regression coverage for Workflow Bundles beyond the focused
-  service/API tests and production build.
-- Crypto bot application of LoopSpec to the next approved code-writing wave.
+- Execute the updated browser e2e smoke in a dev-dependency environment. Host
+  `node_modules` is absent and the production subscription runner image lacks
+  `tsx`; see F037 and F039.
+- Review/stage/commit decision for the narrow crypto test/docs changes.
 - Worktree-isolated parallel write workflow; still checkpoint-required.
 - Durable specialist agents or managed skills for loop roles; templates remain
   task-template-first.
+- Deferred optional pattern: a TradingAgents-inspired crypto research wave is
+  parked for later. If used, borrow only debate structure, structured outputs,
+  checkpoint/resume, and evidence logging; do not import stock-style roles,
+  LangGraph orchestration, generic ticker data, `Buy/Sell/Hold`, sizing, or
+  execution authority.
 
 ## Sources Reviewed
 
@@ -108,6 +127,10 @@ Not done yet:
 - [Graphify README](https://raw.githubusercontent.com/safishamsi/graphify/main/README.md):
   code/docs graph sidecar with AST extraction, graph output, watch/update, MCP,
   wiki, and hook modes.
+- [TradingAgents README](https://github.com/TauricResearch/TradingAgents) and
+  structured-output schemas: useful later as role/debate/checkpoint inspiration,
+  but not as strategy, data, orchestration, or execution logic for Zmey's
+  pump.fun freshness-focused crypto bot.
 - [Engineering Robustness into Personal Agents with the AI Workflow Store](https://arxiv.org/abs/2605.10907):
   hardened reusable workflows can be safer than improvised on-the-fly agent
   chains.
