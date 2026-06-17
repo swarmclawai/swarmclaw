@@ -26,6 +26,9 @@ Date convention: operator doc dates use Zmey's local Europe/Sofia calendar date 
    - Expected binding: `127.0.0.1:3456-3457->3456-3457/tcp`
 6. Use the in-app browser for GUI operation. Begin read-only unless Zmey has checkpointed a write.
 7. Before claiming a task worked, capture task ID, assigned agent ID, session/run ID if visible, status, and evidence marker.
+8. When a failure appears, classify and fix it immediately when safe instead
+   of deferring it until the end of a long run. Record the root cause in the
+   failure catalog only after recovery is verified.
 
 ## Non-Negotiables
 
@@ -110,6 +113,10 @@ Prompt hygiene for task validators:
 - For reasoning-only tasks, disabled quality gates must persist as `qualityGate.enabled=false`; `qualityGate:null` can still fall back to the default gate when the prompt contains implementation-like wording.
 - For pure read-only smoke tasks, set `Min Evidence Signals` to `1` or explicitly relax/disable the quality gate after checkpoint. The default of `2` can dead-letter a valid marker-first smoke result. See F045.
 - If a retrying task has a valid marker/result but fails on `Task has a non-empty error field`, treat it as F025 stale retry-error hygiene. The 2026-06-07 live image contains the fix; if the signal returns, verify `recordCurrentTaskRunError` exists in `/app/src/lib/server/tasks/task-lifecycle.ts` before blaming the worker output.
+- If workflow continuation reports `blocked/request_checkpoint`, verify the
+  stored protocol run status and `workflow_continue` event. Source with the
+  F047 fix persists blocked continuations as `paused`; older images can leave
+  them `waiting` until rebuild/recreate.
 - The optimized subscription image no longer copies full dev `node_modules` into the runner. Verify runtime behavior with build, health, and smoke containers; run source tests/lint from the repo or a build/dev environment, not by assuming `tsx` or eslint exist inside the live production container.
 
 ## Parallel Agenting

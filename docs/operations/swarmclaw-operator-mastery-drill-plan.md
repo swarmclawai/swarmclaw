@@ -63,3 +63,17 @@ private keys, raw DB dumps, or raw logs.
 5. Add or update failure-catalog rows only after root cause and recovery are
    verified.
 6. Save only concise, verified, non-secret outcomes to agentmemory.
+
+## 2026-06-17 Failure-Recovery Addendum
+
+- Completed workflow cleanup through the GUI: runs `52efa735`, `3cab8150`,
+  `930f36cc`, and `941ed65d` are now stored as `completed`.
+- Preserved four intentional crypto TODO backlog tasks; old Wave 2 planner
+  smoke backlog tasks `a200eb58`, `3708e5bf`, and `2205aab4` were archived
+  through the GUI.
+- Legacy run `072a8e34` remains the regression evidence for F047 until the live
+  image is rebuilt. The UI reported `blocked/request_checkpoint`, but the old
+  live code left the stored run `waiting`.
+- Source fix verified: focused workflow tests passed 11/11 and ESLint passed on
+  the touched workflow files in a temporary Docker test image. Runtime
+  activation still requires a rebuild/recreate checkpoint.

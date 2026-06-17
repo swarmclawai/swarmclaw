@@ -1124,10 +1124,25 @@ export function continueWorkflowRun(runId: string, value: unknown = {}): Service
       markerMismatches.length ? `${markerMismatches.length} completed task${markerMismatches.length === 1 ? '' : 's'} missed expected first-line markers` : '',
       blockedDispositions.length ? `${blockedDispositions.length} completed task${blockedDispositions.length === 1 ? '' : 's'} reported a blocked disposition` : '',
     ].filter(Boolean).join('; ')
+    const summary = `Workflow is blocked: ${details}.`
+    const blockedAt = Date.now()
+    patchProtocolRun(runId, (current) => current ? {
+      ...current,
+      status: 'paused',
+      summary,
+      waitingReason: 'Workflow continuation needs operator checkpoint.',
+      lastError: details,
+      updatedAt: blockedAt,
+    } : null)
+    appendContinuationEvent(runId, policy, summary, {
+      nextAction: 'request_checkpoint',
+      markerMismatchTaskIds: markerMismatches.map((entry) => entry.taskId),
+      blockedDispositionTaskIds: blockedDispositions.map((entry) => entry.taskId),
+    })
     return serviceOk({
       runId,
       state: 'blocked',
-      summary: `Workflow is blocked: ${details}.`,
+      summary,
       nextAction: 'request_checkpoint',
       draft: null,
       launched: null,

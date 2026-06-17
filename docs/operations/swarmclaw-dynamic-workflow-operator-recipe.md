@@ -130,6 +130,13 @@ Run `dbc47bed` verified bounded read-only continuation:
 - Those auto-created backlog tasks were archived through the GUI after evidence
   capture to keep the board clean. SwarmClaw remained healthy and bound only to
   `127.0.0.1:3456-3457`.
+- Follow-up cleanup on 2026-06-17 continued run `52efa735` with
+  **Continue until done** and **Auto-create safe backlog** disabled. The run
+  closed as `completed` with `done/none`, and no new tasks were created.
+- Historical waiting runs `3cab8150`, `930f36cc`, and `941ed65d` were also
+  reconciled through the GUI and closed as `completed`. Legacy run `072a8e34`
+  exposed F047: blocked continuation results must persist a paused checkpoint
+  state and a `workflow_continue` event.
 
 ## Graphify Sidecar Pilot
 
@@ -194,6 +201,10 @@ Run `dbc47bed` verified bounded read-only continuation:
   Even phrases like `files changed: none` can route the draft as
   implementation; use neutral read-only wording and rely on task contracts for
   `files changed` reporting.
+- When **Continue selected run** reports `blocked/request_checkpoint`, verify
+  the stored run status and `workflow_continue` event. Images with the F047
+  source fix pause the run and record mismatch/blocker task IDs. Older images
+  can return the blocked UI result while leaving the stored run `waiting`.
 - Shell calls to protected workflow APIs may return `401`; prefer the authenticated GUI for protected actions.
 - Broad browser body-text auth/readiness checks can false-positive on unrelated
   page content. Verify exact URL and scoped route controls instead; see F042.

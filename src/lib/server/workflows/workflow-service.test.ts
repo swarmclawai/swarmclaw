@@ -195,6 +195,21 @@ test('workflow continuation blocks completed runs with marker mismatches or bloc
   assert.equal(continuation.payload.nextAction, 'request_checkpoint')
   assert.match(continuation.payload.summary, /missed expected first-line markers/)
   assert.match(continuation.payload.summary, /blocked disposition/)
+
+  const storedRun = storage.loadProtocolRun(launched.payload.run.id)
+  const events = storage.loadProtocolRunEventsByRunId(launched.payload.run.id)
+  const continuationEvent = events.find((event) => event.data?.workflowEvent === 'workflow_continue')
+  assert.equal(storedRun?.status, 'paused')
+  assert.match(storedRun?.summary || '', /Workflow is blocked/)
+  assert.match(storedRun?.waitingReason || '', /operator checkpoint/)
+  assert.match(storedRun?.lastError || '', /missed expected first-line markers/)
+  assert.equal(continuationEvent?.data?.nextAction, 'request_checkpoint')
+  assert.deepEqual(continuationEvent?.data?.markerMismatchTaskIds, [
+    launched.payload.tasks.find((task) => task.workflow?.bundleTaskKey === 'discovery')?.id,
+  ])
+  assert.deepEqual(continuationEvent?.data?.blockedDispositionTaskIds, [
+    launched.payload.tasks.find((task) => task.workflow?.bundleTaskKey === 'fan_in')?.id,
+  ])
 })
 
 test('workflow continuation marks protocol run completed when all workflow tasks pass', async () => {

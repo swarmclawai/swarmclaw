@@ -87,6 +87,13 @@ Done:
   Auto-created backlog tasks `d601861e`, `5a68851a`, and `ce30a812` were
   archived through the GUI after evidence capture. Health remained local-only
   on `127.0.0.1:3456-3457`.
+- Workflow cleanup pass: run `52efa735` was continued safely through the GUI
+  with auto-backlog disabled and closed as completed. Historical waiting runs
+  `3cab8150`, `930f36cc`, and `941ed65d` were also reconciled through the GUI.
+  Legacy blocked run `072a8e34` exposed F047, where a blocked continuation
+  result did not persist state. Source now pauses blocked continuations, records
+  the checkpoint reason, and appends a `workflow_continue` event; focused
+  workflow tests passed 11/11 in a temporary Docker test image.
 - Crypto bot LoopSpec first application: the runtime-contract test/docs work
   was verified locally but not staged. Verification passed:
   `python -m unittest tests.test_pumpfun_runtime_contract` ran 5 tests OK, and
@@ -102,6 +109,9 @@ Not done yet:
 - Isolate the crypto runtime-contract patch before committing: split line-ending
   churn from functional changes, include the untracked contract module with its
   dependent runtime call sites, then rerun the focused unit/syntax checks.
+- Rebuild/recreate the live SwarmClaw container after checkpoint so the F047
+  blocked-continuation persistence fix is active in the running image, then
+  verify with a safe workflow continuation smoke.
 - Worktree-isolated parallel write workflow; still checkpoint-required.
 - Durable specialist agents or managed skills for loop roles; templates remain
   task-template-first.
