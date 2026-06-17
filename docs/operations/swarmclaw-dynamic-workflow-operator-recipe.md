@@ -1,6 +1,6 @@
 # SwarmClaw Dynamic Workflow Operator Recipe
 
-Last verified: 2026-06-15, local subscription image `swarmclaw-subscription:1.9.36`.
+Last verified: 2026-06-17, local subscription image `swarmclaw-subscription:1.9.36`.
 
 Purpose: operate SwarmClaw-native dynamic workflows safely through Protocols, Tasks, Runs, and the Workflow Bundles panel. This is the short runbook for future agents; use the GUI operator manual for page-by-page detail.
 
@@ -43,6 +43,31 @@ phases. For ready-to-copy loop shapes, use
 10. Stop on any blocker, failed marker, blocked QA disposition, repeated same
    failure, missing progress signal, quarantine signal, safety violation, or
    checkpoint-required action.
+
+## Workflow Bundles GUI Drill
+
+Use this after workflow code changes, rebuilds, or operator-training passes.
+Keep it read-only unless the current checkpoint explicitly includes drafting,
+creating backlog tasks, queueing, or continuation.
+
+1. Open `/protocols`.
+2. Verify the final URL and the Workflow Bundles panel using scoped controls,
+   not exact-case chrome text. Browser `innerText` may reflect CSS uppercase;
+   see F041.
+3. Confirm these controls are present when the panel is loaded:
+   `workflow-title-input`, `workflow-cwd-input`, `workflow-goal-input`,
+   `workflow-allowed-scopes-input`, `workflow-draft-plan`,
+   `workflow-create-backlog`, `workflow-review-approved`,
+   `workflow-continue-selected-run`, `workflow-continue-until-done`, and
+   `workflow-auto-create-safe-backlog`.
+4. For a selected run, record title/status, task counts, ledger markers, worker
+   IDs, and current continuation controls. Do not copy raw transcripts.
+5. Treat `/login` in a worker browser as access-gate evidence only, not as proof
+   that the authenticated `/protocols` UI works. Main-operator checks should use
+   the authenticated in-app browser.
+6. If testing draft-only behavior, prove that task counts did not change. Use
+   an isolated test environment or explicit checkpoint for any state-changing
+   workflow launch.
 
 ## Loop Engineering Rules
 
@@ -139,6 +164,8 @@ Run `bf0f448e` verified the core path:
 - Workflow dependency edges are not continuation edges. Fan-in tasks must receive upstream result summaries, not reuse a worker's execution session.
 - The task board Queue button can be brittle under browser automation. If visible clicking does not persist, stop and use a checkpointed service/API fallback rather than broad raw DB edits.
 - Shell calls to protected workflow APIs may return `401`; prefer the authenticated GUI for protected actions.
+- Broad browser body-text auth/readiness checks can false-positive on unrelated
+  page content. Verify exact URL and scoped route controls instead; see F042.
 - Task creation resolves assignment-like text in descriptions. Embedded
   evidence containing strings such as `Agent ID: ...` can override an explicit
   `agentId`; use neutral labels like `worker` when summarizing predecessor

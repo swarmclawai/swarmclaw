@@ -1,6 +1,6 @@
 # SwarmClaw Next-Agent Quickstart
 
-Last verified: 2026-06-15
+Last verified: 2026-06-17
 
 Audience: Codex and future agents operating Zmey's local SwarmClaw instance.
 
@@ -31,7 +31,7 @@ Date convention: operator doc dates use Zmey's local Europe/Sofia calendar date 
 
 ## Current Operating Baseline
 
-Current local setup as of 2026-06-07:
+Current local setup as of 2026-06-17:
 
 | Item | Value |
 |---|---|
@@ -66,6 +66,12 @@ Use this path for normal worker work:
 5. Verify the stored task status moved to `queued`, `running`, or `completed`, and verify the stored `agentId` matches the intended worker before counting the run as evidence.
 6. Monitor `/tasks`, `/runs`, `/quality`, and sanitized `/logs`.
 7. Do not retry, cancel, archive, mark complete, edit gates, or repair state without checkpoint.
+
+For a focused operator drill, use the full manual's **Tasks, Runs, And Quality
+Drill**. The short version is: inspect `/tasks`, verify exact task/agent/quality
+metadata before queueing, monitor `/runs` for replay and evidence, use
+`/quality` for failed-run and approval context, then classify any failure
+against the failure catalog before retrying.
 
 Task prompts should include:
 
@@ -136,7 +142,18 @@ For browser-visible work, require concrete evidence:
 
 Worker browsers may be unauthenticated. For protected SwarmClaw GUI routes, reaching `/login` and seeing the access gate can be valid evidence. Do not read `.env.local` or enter an access key without checkpoint.
 
+Reaching `/login` proves only that a protected route rejected an unauthenticated
+worker browser. It does not prove the protected page works. Main-operator GUI
+checks must use the authenticated in-app browser and route-specific ready
+signals such as visible controls, scoped headings, stable `data-testid` values,
+or final URL. Do not use broad body-text checks for auth/readiness; they can
+false-positive on unrelated page content. See F042.
+
 If browser automation reports that the virtual clipboard is not installed while filling form fields, stop retrying clipboard-backed `fill`, `type`, CUA typing, or DOM typing. For short fields, click the field and use `locator.press()` character-by-character. For large content or file imports, close the unsaved dialog, verify no partial record was created, and use a checkpointed app service/API path only if the state change is still required. The current in-app browser backend does not support file uploads.
+
+For short-field keypress entry, verify focus first, enter one field at a time,
+and re-read the field value before saving. Do not use this for long manuals,
+large task bodies, file uploads, or credential material.
 
 ## Knowledge, Skills, And Memory
 
@@ -148,6 +165,24 @@ If browser automation reports that the virtual clipboard is not installed while 
   agentmemory is durable verified recall. Neither replaces live source/runtime
   checks or Reviewer QA fan-in.
 - If a manual already exists as a Knowledge source, pressing sync may not update it if the source stores inline content. Update stored source content only after checkpoint.
+- For Knowledge sync verification, record source title/type, chunk count,
+  indexed/synced status, and a non-secret search hit count only. Do not copy raw
+  chunks into operator notes.
+
+## Rebuild Verification Short Path
+
+Use this only after Zmey approves the rebuild/recreate.
+
+1. Build the approved image and record image tag plus final image ID/digest.
+2. Recreate only the approved service.
+3. Verify Docker still binds `127.0.0.1:3456-3457->3456-3457/tcp`.
+4. Verify `/api/healthz` returns ok.
+5. Verify protected APIs still return `401` to unauthenticated shell calls when
+   expected.
+6. Run one authenticated GUI smoke on the affected page.
+7. Run source/e2e checks from a dev/build-stage dependency environment, not the
+   live production runner image.
+8. Remove temporary images, scripts, and caches when done.
 
 ## Stop And Ask
 

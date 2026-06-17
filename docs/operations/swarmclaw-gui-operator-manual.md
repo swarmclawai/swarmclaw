@@ -1,6 +1,6 @@
 # SwarmClaw GUI Operator Manual
 
-Last verified: 2026-06-06
+Last verified: 2026-06-17
 
 Audience: Codex and other agents operating Zmey's local SwarmClaw instance.
 
@@ -82,6 +82,13 @@ Known conflicts and caveats:
 - Worker routing has two distinct paths in local source: `delegate` hands work to external CLI backends, while `spawn_subagent` targets stored SwarmClaw agents by `agentId`. Do not treat a CLI delegate runtime nickname as stored-agent evidence.
 - The agent named Coordinator is an operating role by convention in this local setup, but the stored agent record is a worker-only Codex CLI record. Source prompt sections for coordinator workers depend on stored role/delegation settings, so UI/source metadata must be checked before relying on automatic coordinator orchestration.
 - Current source constraint: `WORKER_ONLY_PROVIDER_IDS` includes all CLI providers. A true stored `spawn_subagent` coordinator therefore requires a non-worker provider coordinator or a code/product change, both of which require a separate checkpoint.
+- 2026-06-17 workflow update: LoopSpec workflow controls are implemented,
+  rebuilt into the live subscription container, smoke-tested, documented,
+  committed, and pushed. The app remained healthy and bound only to
+  `127.0.0.1:3456-3457`.
+- 2026-06-17 drill update: workflow e2e brittleness is cataloged as F041, and
+  broad browser body-text auth checks that can false-positive on authenticated
+  pages are cataloged as F042.
 
 ## Official Docs Cross-Check
 
@@ -247,6 +254,114 @@ Each playbook lists the normal operating purpose, visible controls observed or s
 
 ## Common Workflows
 
+### Read-Only GUI Drill Matrix
+
+Use this matrix when training an operator, checking that the GUI still works
+after a rebuild, or preparing a more specific workflow drill. These are
+read-only until Zmey checkpoints a write.
+
+| Surface | Safe drill | Evidence to capture | Checkpoint before |
+|---|---|---|---|
+| `/org-chart` | Topology and navigation controls. | Final URL, visible agent/team filters, node/edge/team-region counts, search/zoom/fit controls visible, and no drag/drop or reparent action. | Reparenting, editing delegation, or opening action menus that save changes. |
+| `/protocols` | Workflow Bundles panel and selected run ledger. | Final URL, panel label matched case-insensitively, workflow control `data-testid` values, selected run title/status, ledger/task counts, and disabled/enabled state for draft/backlog/continue controls. | Drafting, creating backlog tasks, queueing, continuing, or enabling auto-backlog. |
+| `/tasks` | Direct-assignment and queue readiness. | Task board/list loaded, `+ New Task` control visible, exact task-card queue controls counted, no generic `Queue` click used, and no status mutations. | Creating, editing, queueing, retrying, cancelling, archiving, importing, or repairing tasks. |
+| `/knowledge` | Knowledge source visibility and hygiene surface. | Source titles only, tags, chunk counts, source status, search field, Maintain/New Source controls, and no raw chunk text copied. | Adding, syncing, editing, archiving, superseding, deleting, uploading, or running maintenance. |
+| `/logs` | Sanitized observability and local-only check. | Health endpoint ok, Docker binding uses `127.0.0.1`, `/logs` controls visible, warning/error counts only, and no raw payload expansion. | Exporting logs, clearing logs, copying raw stacks, or investigating secrets/credential values. |
+| Sensitive admin pages | Controls-only inventory. | Page loaded, non-secret labels/control names, masked status only. | Providers, secrets, wallets, schedules, autonomy, connectors, webhooks, MCP servers, extensions, settings. |
+
+Do not use broad `document.body` text as the only readiness signal. It can
+false-positive on unrelated sidebar, task, Knowledge, or log text; use
+route-specific controls and scoped panels instead. See F042.
+
+### Org Chart Read-Only Topology Drill
+
+1. Open `/org-chart`.
+2. Verify the final URL is `/org-chart` and the authenticated operator chrome is
+   visible.
+3. Record only counts and controls: agent filter count, team filter count,
+   visible node count, visible edge count if available, search field, zoom,
+   fit-to-screen, and layout controls.
+4. Use search only if the target term is non-sensitive and Zmey asked for it.
+5. Do not drag nodes, open save-confirming menus, reparent agents, or change
+   delegation.
+6. If counts conflict with `/agents` or `/protocols`, record the conflict and
+   prefer the page-specific behavior for that surface. The org chart may omit
+   the default Coordinator shortcut even when protocol participant selectors
+   show it.
+
+### Tasks, Runs, And Quality Drill
+
+Use this drill when learning or operating the execution loop. It is read-only
+until Zmey explicitly approves task creation, queueing, retrying, eval runs,
+approvals, or status changes.
+
+1. Open `/tasks` and prefer List view for triage. Board view is useful for
+   status shape, but List view avoids hidden duplicate controls and offscreen
+   columns.
+2. For each candidate task, record title, task ID, status, exact `agentId`,
+   project, tags, `cwd` if visible, dependencies, quality gate state, result,
+   error, validation state, comments, and run/session links.
+3. Before queueing, confirm the task is in `backlog`, the intended worker ID is
+   stored, dependencies are satisfied, quality gate settings match the work
+   type, and the first-line evidence marker is in the prompt.
+4. Queue only from the target card or sheet after the card identity is proven.
+   Verify the stored status moves to `queued` or `running`; do not infer success
+   from a click.
+5. Open `/runs`, filter by status/source/search, and inspect the run detail
+   sheet: brief, timing, message, error, result, evidence shelf, and replay
+   events. Copy handoff only when useful and non-sensitive.
+6. Open `/quality`, start with Overview, then use Run Review for failed runs,
+   Approval Desk for pending human-loop decisions, and Eval Lab only after a
+   checkpoint. Do not approve, deny, run evals, set baselines, or start QA
+   missions during a read-only drill.
+7. Accept a task result only when the marker, exact task ID, exact worker ID,
+   inspected scope, files changed, verification, blockers, and next action are
+   all present. For pure planning or review tasks, manually validate marker and
+   sections if the quality gate was intentionally disabled.
+8. Retry only after classifying the failure against the failure catalog. One
+   targeted retry is the default; stop after the same failure class repeats or
+   when the next action would touch credentials, providers, schedules, autonomy,
+   state repair, public exposure, destructive cleanup, live trading, or DB
+   writes.
+
+Failure IDs to check first:
+
+- F002, F020-F025 for marker, prompt, assignment, disabled-gate, and stale
+  retry-error quality failures.
+- F003, F006, F017, and F027 for task-board queueing and browser automation
+  friction.
+- F028 for OpenCode `cwd` isolation.
+- F029, F032, F034, and F035 for fan-in, dependency, upstream-result, and
+  session-reuse issues.
+- F030-F031 and F033 for broad review tasks, runtime initialization failures,
+  and missing first-line markers.
+- F036 and F041 for loop stop rules and brittle browser/e2e assertions.
+- F042 for broad body-text readiness or auth checks that misclassify the page.
+
+### Workflow Bundles GUI Drill
+
+Use this drill for `/protocols` after workflow code, docs, or rebuild work.
+
+1. Open `/protocols`.
+2. Verify the Workflow Bundles panel by scoped controls, not by exact casing of
+   visible chrome text. CSS may transform labels to uppercase; see F041.
+3. Confirm the presence of `workflow-title-input`, `workflow-cwd-input`,
+   `workflow-goal-input`, `workflow-allowed-scopes-input`,
+   `workflow-draft-plan`, `workflow-create-backlog`,
+   `workflow-review-approved`, `workflow-continue-selected-run`,
+   `workflow-continue-until-done`, and `workflow-auto-create-safe-backlog`.
+4. Inspect the selected run ledger only by title/status/task counts/markers.
+   Do not copy raw transcripts or task output unless they are already sanitized
+   evidence markers or summaries.
+5. Drafting must create no tasks. If this is being tested, capture task-count
+   before and after and use an isolated test environment or explicit
+   checkpoint.
+6. Creating backlog tasks, queueing, continuing, enabling run-until-done, or
+   enabling auto-create safe backlog are state changes. Stop for checkpoint
+   unless the current task explicitly includes them.
+7. Accept the drill only when the selected run, control states, local-only
+   health, and console/page-error count are all recorded.
+
 ### Inspect Current Status
 
 1. Confirm health with `/api/healthz`.
@@ -256,6 +371,22 @@ Each playbook lists the normal operating purpose, visible controls observed or s
 5. If an item looks actionable, navigate to the specific page and inspect before recommending a change.
 
 No checkpoint needed unless acting on an item.
+
+### Logs And Local-Only Verification Drill
+
+1. Run `curl -fsS http://127.0.0.1:3456/api/healthz` and record only the
+   `ok/service` result.
+2. Run `docker compose -f compose.subscription.yml ps` and verify the port
+   mapping is `127.0.0.1:3456-3457->3456-3457/tcp`.
+3. Open `/logs` and verify the page with controls such as level filters, live
+   mode, search, export/save labels, and visible log rows.
+4. Record warning/error counts and short sanitized categories only. Do not copy
+   raw stack traces, payloads, DB rows, env output, credential values, tokens,
+   auth JSON, or private keys.
+5. If checking for public exposure, search or filter by sanitized terms and
+   report counts/categories, not raw log bodies.
+6. If a credential or secret warning appears, treat it as a checkpoint-required
+   investigation. Do not open files or state tables to compare values.
 
 ### Review A Failed Task
 
@@ -285,6 +416,27 @@ Read-only smoke caveat: a task can produce the requested marker and still fail v
 4. Ask before adding, editing, syncing, archiving, superseding, or deleting any source.
 5. This manual is already indexed as `SwarmClaw GUI Operator Manual`. Future manual syncs, edits, archive/delete actions, or source replacements require checkpoint.
 
+#### Knowledge Sync Verification Drill
+
+Use this only after Zmey checkpoints a Knowledge update or sync.
+
+1. Identify whether the source is file-backed, URL-backed, upload-backed, or
+   inline/manual. Inline sources may not reread repo files when `Sync` is
+   pressed; see F014.
+2. Capture the source title, source type/path label, tags, archived flag,
+   hygiene status, chunk count, and last indexed/synced timestamp before the
+   change. Do not copy raw chunks.
+3. Apply the checkpointed sync/edit/supersede action through the GUI or
+   approved app service path.
+4. Recheck title, chunk count, status, timestamp, and hygiene state.
+5. Verify with a non-secret expected phrase query and report source title plus
+   hit count only.
+6. If CLI-backed workers must use the new content, embed a short sanitized
+   excerpt in their task prompt. Do not assume the worker can access in-app
+   Knowledge as an MCP resource; see F007 and F016.
+7. If embeddings or one-off service scripts are used, mount a throwaway
+   writable transformers cache and remove it after verification; see F038.
+
 ### Triage Quality Incidents
 
 1. Open `/quality`.
@@ -303,6 +455,30 @@ Read-only smoke caveat: a task can produce the requested marker and still fail v
 5. New Task creates a backlog task by default. To run it, close the sheet and use the card's `Queue` button, then verify the stored status moved to `queued` or `running`.
 6. Ask before creating, queueing, retrying, cancelling, completing, archiving, or importing tasks.
 
+### Direct Assignment Drill
+
+Use this when proving that a stored SwarmClaw worker, not just a generic CLI
+helper, performed work.
+
+1. Open `/tasks`.
+2. Open the unique `+ New Task` control.
+3. Verify the sheet heading is `New Task`, not `Edit Task`, and that title and
+   description fields are blank.
+4. Select the exact stored worker in task metadata. Record the intended ID, for
+   example Builder `92b8cd6c` or Reviewer QA `c2cd6ff9`.
+5. Keep assignment-looking phrases out of the prompt body: avoid `agent:`,
+   `agent id:`, `assigned to`, `for agent`, and `@agent` unless recovering from
+   the known picker-persistence issue in F023.
+6. Create as backlog first.
+7. Before queueing, verify stored metadata: task ID, status `backlog`, exact
+   `agentId`, project, `cwd` if relevant, quality gate state, dependencies, and
+   first-line marker.
+8. Queue only from the exact task card/sheet. Verify stored status moved to
+   `queued`, `running`, or `completed`.
+9. Count the drill as passed only when the result includes task ID, worker ID,
+   first-line marker, files changed, verification evidence, blockers, and
+   validation state.
+
 ### Browser Automation Pitfalls
 
 1. After direct navigation, `domcontentloaded` is not enough. Wait for route-specific app text before extracting headings, buttons, or state; otherwise a probe can see an almost empty shell and produce false negatives.
@@ -315,6 +491,25 @@ Read-only smoke caveat: a task can produce the requested marker and still fail v
 8. After any queue/retry/status action, verify the task status from both the GUI and sanitized task metadata. If status does not change, treat the action as failed and do not assume execution started.
 9. The in-app browser's protected page evaluation surface may not expose `fetch`; do not assume it can perform authenticated API writes. Prefer visible GUI controls first.
 10. If the GUI path is blocked by automation limits, ask Zmey before using a more direct API or state-repair path.
+11. Do not classify authentication or readiness by broad body text. Exact URL,
+    route-specific headings, scoped controls, and stable `data-testid` values
+    are better evidence. See F042.
+
+### Protected API/Auth Checks
+
+1. Treat shell `401` from protected app APIs as expected unless the task is
+   explicitly testing unauthenticated access.
+2. Do not inspect auth files, cookies, local storage, credential tables, tokens,
+   `.env.local`, or full env output to bypass auth.
+3. Prefer authenticated GUI operation for approved writes. Use direct API or
+   service paths only after checkpoint and only through app/service boundaries,
+   not raw database edits.
+4. Worker browsers may be unauthenticated. Reaching `/login` is valid evidence
+   that a route is protected, but it is not proof that the protected page's
+   internal controls work.
+5. For authenticated main-operator checks, prove final URL and route-specific
+   controls. For unauthenticated worker checks, prove redirect/access gate and
+   stop there.
 
 ### CLI Task Knowledge Pitfalls
 
@@ -351,7 +546,9 @@ Read-only smoke caveat: a task can produce the requested marker and still fail v
 
 ## Current Local Instance Snapshot
 
-Verified on 2026-06-06.
+Health and exposure verified on 2026-06-17. Historical task/project counts in
+this section were first recorded on 2026-06-06 and are no longer a live
+inventory; use the current GUI for current counts.
 
 ### Health And Exposure
 
@@ -378,6 +575,8 @@ All observed heartbeat flags were off.
 
 ### Projects, Tasks, Knowledge, Integrations
 
+This table is a historical baseline, not a live inventory.
+
 | Surface | Snapshot |
 |---|---|
 | Project | `SwarmClaw Local Ops` |
@@ -400,6 +599,12 @@ All observed heartbeat flags were off.
 ### Current Test Coverage
 
 - Read-only browser sweep: all 29 top-level `AppView` routes loaded in safe-shell mode.
+- Read-only operation drill on 2026-06-17: `/org-chart`, `/protocols`,
+  `/tasks`, `/knowledge`, and `/logs` rendered under the authenticated operator
+  browser without console errors. Workflow control `data-testid` values were
+  visible on `/protocols`, task-card queue/view controls were present on
+  `/tasks`, Knowledge controls were visible on `/knowledge`, and `/logs` was
+  inspected by controls/counts only.
 - Direct managed task assignment: Builder, Reviewer QA, Copilot Mini Worker, OpenCode Builder, and OpenCode Go Helper have completed direct-assignment smokes with safe evidence markers.
 - Worker runtime smoke: after `Dockerfile.subscription` added `python3` to the runner image and the container was recreated, task `a0c4a84d` completed with `validation.ok=true`; Builder `92b8cd6c` verified `/usr/bin/python3` and `Python 3.11.2`.
 - Coordinator: soft/manual planning coordinator only. The current Codex CLI stored agent remains worker-only and does not provide true stored `spawn_subagent` orchestration.
@@ -444,6 +649,26 @@ Maintenance steps:
 8. Run a secret-string scan against this file.
 9. Review `git diff -- docs/operations/swarmclaw-gui-operator-manual.md`. If the file is still untracked, review `git diff --no-index -- /dev/null docs/operations/swarmclaw-gui-operator-manual.md`.
 10. Checkpoint separately before adding or editing in-app Knowledge, updating the external handoff, or saving a durable agentmemory note unless Zmey has explicitly scoped those actions into the current task.
+
+### Local-Only Rebuild Verification Ladder
+
+Use this after Zmey approves a rebuild/recreate.
+
+1. Run the intended build command and record the image tag and final image ID or
+   digest. Do not treat a successful build as proof the live container changed.
+2. Recreate only the approved service. Do not replace other services or expose
+   additional ports.
+3. Verify `docker compose -f compose.subscription.yml ps` shows the live service
+   healthy and bound to `127.0.0.1:3456-3457->3456-3457/tcp`.
+4. Verify `curl -fsS http://127.0.0.1:3456/api/healthz` returns ok.
+5. Verify protected workflow/task APIs still reject unauthenticated shell calls
+   with `401` when appropriate. This proves protection, not failure.
+6. Run an authenticated GUI smoke on the page affected by the change. For
+   workflow changes, use `/protocols` and the Workflow Bundles GUI Drill.
+7. Run source tests or TypeScript e2e scripts from a dev/build-stage
+   dependency environment, not the live production runner image; see F039.
+8. Remove temporary images, scripts, caches, and test worktrees after they are
+   no longer needed. Verify cleanup.
 
 ## Validation Checklist
 
