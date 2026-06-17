@@ -94,6 +94,17 @@ Done:
   result did not persist state. Source now pauses blocked continuations, records
   the checkpoint reason, and appends a `workflow_continue` event; focused
   workflow tests passed 11/11 in a temporary Docker test image.
+- F047 runtime activation: Zmey approved rebuild/recreate from commit
+  `c94fe1bd`; live image `5e47249c7dbc` stayed healthy and local-only on
+  `127.0.0.1:3456-3457`. Authenticated `/protocols?runId=072a8e34` and
+  metadata checks verified the run is now `paused` with checkpoint reason and
+  `workflow_continue` event `132d6b48`.
+- Post-rebuild operator sweep: authenticated GUI routes `/home`, `/protocols`,
+  `/tasks`, `/runs`, `/quality`, `/knowledge`, `/agents`, `/org-chart`,
+  `/projects`, `/logs`, `/providers`, `/secrets`, `/wallets`, `/autonomy`,
+  `/schedules`, and `/settings` loaded with expected route controls/headings
+  and zero browser console errors. Sensitive routes were checked by headings
+  and controls only; no secret values or raw logs were inspected.
 - Crypto bot LoopSpec first application: the runtime-contract test/docs work
   was verified locally but not staged. Verification passed:
   `python -m unittest tests.test_pumpfun_runtime_contract` ran 5 tests OK, and
@@ -109,9 +120,6 @@ Not done yet:
 - Isolate the crypto runtime-contract patch before committing: split line-ending
   churn from functional changes, include the untracked contract module with its
   dependent runtime call sites, then rerun the focused unit/syntax checks.
-- Rebuild/recreate the live SwarmClaw container after checkpoint so the F047
-  blocked-continuation persistence fix is active in the running image, then
-  verify with a safe workflow continuation smoke.
 - Worktree-isolated parallel write workflow; still checkpoint-required.
 - Durable specialist agents or managed skills for loop roles; templates remain
   task-template-first.

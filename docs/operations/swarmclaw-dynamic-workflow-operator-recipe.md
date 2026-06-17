@@ -137,6 +137,9 @@ Run `dbc47bed` verified bounded read-only continuation:
   reconciled through the GUI and closed as `completed`. Legacy run `072a8e34`
   exposed F047: blocked continuation results must persist a paused checkpoint
   state and a `workflow_continue` event.
+- After approved rebuild/recreate from commit `c94fe1bd`, live image
+  `5e47249c7dbc` verified the F047 behavior: run `072a8e34` is stored as
+  `paused` with checkpoint reason and `workflow_continue` event `132d6b48`.
 
 ## Graphify Sidecar Pilot
 
@@ -205,6 +208,7 @@ Run `dbc47bed` verified bounded read-only continuation:
   the stored run status and `workflow_continue` event. Images with the F047
   source fix pause the run and record mismatch/blocker task IDs. Older images
   can return the blocked UI result while leaving the stored run `waiting`.
+  Zmey's local image `5e47249c7dbc` is live-verified with the F047 fix.
 - Shell calls to protected workflow APIs may return `401`; prefer the authenticated GUI for protected actions.
 - Broad browser body-text auth/readiness checks can false-positive on unrelated
   page content. Verify exact URL and scoped route controls instead; see F042.

@@ -71,9 +71,24 @@ private keys, raw DB dumps, or raw logs.
 - Preserved four intentional crypto TODO backlog tasks; old Wave 2 planner
   smoke backlog tasks `a200eb58`, `3708e5bf`, and `2205aab4` were archived
   through the GUI.
-- Legacy run `072a8e34` remains the regression evidence for F047 until the live
-  image is rebuilt. The UI reported `blocked/request_checkpoint`, but the old
-  live code left the stored run `waiting`.
-- Source fix verified: focused workflow tests passed 11/11 and ESLint passed on
-  the touched workflow files in a temporary Docker test image. Runtime
-  activation still requires a rebuild/recreate checkpoint.
+- Legacy run `072a8e34` is the live verification evidence for F047 after the
+  approved rebuild/recreate. The run is now stored as `paused` with checkpoint
+  reason and `workflow_continue` event `132d6b48`.
+- Source and runtime fix verified: focused workflow tests passed 11/11, ESLint
+  passed on the touched workflow files in a temporary Docker test image, and
+  live image `5e47249c7dbc` stayed healthy and local-only.
+
+## 2026-06-17 Post-Rebuild Confidence Sweep
+
+- Authenticated read-only GUI route sweep passed for `/home`, `/protocols`,
+  `/tasks`, `/runs`, `/quality`, `/knowledge`, `/agents`, `/org-chart`,
+  `/projects`, `/logs`, `/providers`, `/secrets`, `/wallets`, `/autonomy`,
+  `/schedules`, and `/settings`.
+- Route checks used headings, scoped controls, stable `data-testid` values, and
+  console error counts. No secret values, raw logs, auth JSON, full env files,
+  credential values, wallet/private-key material, or raw Knowledge chunks were
+  inspected.
+- Metadata cross-checks: four backlog tasks remain the intentional crypto TODOs,
+  protocol runs are `7 completed / 1 paused / 1 failed`, F047 Knowledge chunks
+  are indexed across the operator sources, and project metadata was checked by
+  ID/name plus description/objective lengths only.

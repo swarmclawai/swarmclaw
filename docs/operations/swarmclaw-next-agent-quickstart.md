@@ -116,7 +116,9 @@ Prompt hygiene for task validators:
 - If workflow continuation reports `blocked/request_checkpoint`, verify the
   stored protocol run status and `workflow_continue` event. Source with the
   F047 fix persists blocked continuations as `paused`; older images can leave
-  them `waiting` until rebuild/recreate.
+  them `waiting` until rebuild/recreate. Current local image `5e47249c7dbc`
+  is live-verified: run `072a8e34` persisted as `paused` with checkpoint reason
+  and `workflow_continue` event `132d6b48`.
 - The optimized subscription image no longer copies full dev `node_modules` into the runner. Verify runtime behavior with build, health, and smoke containers; run source tests/lint from the repo or a build/dev environment, not by assuming `tsx` or eslint exist inside the live production container.
 
 ## Parallel Agenting
