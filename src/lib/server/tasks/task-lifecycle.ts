@@ -8,6 +8,7 @@ import {
   type TaskCompletionValidation,
 } from '@/lib/server/tasks/task-validation'
 import { syncTaskExecutionPolicyState } from '@/lib/server/tasks/task-execution-policy'
+import { computeTaskLiveness } from '@/lib/server/tasks/task-execution-workspace'
 import { createMission, startMission } from '@/lib/server/missions/mission-service'
 import { getMission } from '@/lib/server/missions/mission-repository'
 import { loadSessions } from '@/lib/server/storage'
@@ -209,6 +210,7 @@ export function markValidatedTaskCompleted(
   task.updatedAt = options.now
   task.error = null
   task.checkoutRunId = null
+  task.liveness = computeTaskLiveness(task, {}, { now: options.now })
   return task
 }
 
@@ -235,6 +237,7 @@ export function markInvalidCompletedTaskFailed(
   task.updatedAt = options.now
   task.checkoutRunId = null
   task.error = formatValidationFailure(validation.reasons).slice(0, 500)
+  task.liveness = computeTaskLiveness(task, {}, { now: options.now })
   if (options.comment) {
     if (!task.comments) task.comments = []
     task.comments.push({

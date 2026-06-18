@@ -29,6 +29,10 @@ Date convention: operator doc dates use Zmey's local Europe/Sofia calendar date 
 8. When a failure appears, classify and fix it immediately when safe instead
    of deferring it until the end of a long run. Record the root cause in the
    failure catalog only after recovery is verified.
+9. After each checkpointed operator step, close the loop: sync changed operator
+   docs into in-app Knowledge, run controlled read-only filter/search drills,
+   and run one small direct-assignment task drill. If that closure exposes a
+   new issue, fix or checkpoint it before calling the step done.
 
 ## Non-Negotiables
 
@@ -123,7 +127,10 @@ Prompt hygiene for task validators:
   project workspace directories, treat it as F048 hygiene backlog. Inspect the
   paused run first and checkpoint before any state repair or filesystem cleanup.
   2026-06-18 status: the checkpointed terminal-task liveness repair is done and
-  verified by counts only; terminal mismatch is `0`. The large
+  verified by counts only. The finish-rule direct-assignment smoke then exposed
+  one fresh completed/queued mismatch, which was fixed in source, rebuilt,
+  one-row repaired from a DB backup, and live-verified with task `d37e8317`;
+  terminal mismatch is `0` again. The large
   `state/workspace/projects/crypto-trading-bot` directory is intentional source
   workspace and must not be deleted as metadata cleanup.
 - The optimized subscription image no longer copies full dev `node_modules` into the runner. Verify runtime behavior with build, health, and smoke containers; run source tests/lint from the repo or a build/dev environment, not by assuming `tsx` or eslint exist inside the live production container.

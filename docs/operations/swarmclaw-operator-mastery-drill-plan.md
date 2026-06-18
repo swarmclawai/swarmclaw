@@ -264,3 +264,49 @@ secret-safe auth method.
   task/log snippets. Count a route as verified only after a main-panel heading,
   route-specific control, scoped placeholder, empty-state label, or stable row
   signal is observed. This is F005, not a new failure family.
+
+## 2026-06-18 Finish-Rule Closure Pass
+
+- New operator rule adopted: after each checkpointed operator step, sync changed
+  operator docs into in-app Knowledge, run controlled read-only filter/search
+  drills, and run one small live direct-assignment task drill before calling the
+  step done.
+- Preflight remained healthy and local-only:
+  `/api/healthz` returned ok and Docker reported
+  `127.0.0.1:3456-3457->3456-3457/tcp`.
+- Knowledge sync completed for existing operator sources without raw chunk
+  dumps: quickstart `70f893b23855027b`, failure catalog
+  `75b590287831ac7e`, mastery plan `cd1b9719ee881476`, loop plan
+  `c413dab9a015b67c`, workflow recipe `9333a38a1e5f8a7e`, and GUI manual
+  `c05dc18feaad931c`. Metadata/search-only verification used terms including
+  `F050`, `Statsig`, `remaining route sweep`, `authenticated mastery`, and
+  `Knowledge sync`.
+- Controlled read-only GUI filter/search drills passed: `/tasks` search for
+  `F043`, `/runs` Failed/All plus search clear/reset, `/knowledge` search for
+  `F050`, and `/schedules` status/cadence/agent filter reset. No forms were
+  submitted and no raw logs, secret values, provider keys, wallet material, or
+  raw Knowledge chunks were inspected.
+- Live direct-assignment task drill passed through the GUI full task form:
+  task `ed87e5b0`, Builder `92b8cd6c`, project `SwarmClaw Local Ops`
+  `bad5cf13`, session `6c38b4e5`, marker
+  `SWARMCLAW_FINISH_RULE_DIRECT_ASSIGNMENT_OK`, files changed `none`,
+  validation `ok=true`.
+- The drill also exposed a fresh F048 recurrence: task `ed87e5b0` stored
+  terminal status `completed` while its persisted `liveness.state` remained
+  `queued`. Source fix added in `task-lifecycle.ts` so terminal completion and
+  failure helpers refresh liveness when status changes; focused test
+  `src/lib/server/tasks/task-lifecycle.test.ts` passed 9/9 in an isolated
+  build-stage image, and focused ESLint on the changed task files passed.
+- After checkpoint, rebuilt/recreated only the local `swarmclaw` service,
+  verified health and `127.0.0.1:3456-3457` binding, backed up the DB to
+  `state/data/swarmclaw-before-f048-ed87e5b0-liveness-20260618.db`, and repaired
+  only task `ed87e5b0` by ID/counts.
+- Live fix verification passed: task `d37e8317`, Builder `92b8cd6c`, project
+  `bad5cf13`, session `a63f7d17`, marker
+  `SWARMCLAW_LIVENESS_FIX_DIRECT_ASSIGNMENT_OK`, files changed `none`,
+  validation `ok=true`, and stored terminal state `completed|completed`.
+  Terminal-task liveness mismatch count is `0` after the repair and live smoke.
+- Observation: during execution, task `d37e8317` transiently showed
+  `running|queued` before terminal completion corrected to
+  `completed|completed`. Treat this as a lower-priority display/liveness gap
+  unless it produces an operator-visible failure; F048 terminal drift is fixed.

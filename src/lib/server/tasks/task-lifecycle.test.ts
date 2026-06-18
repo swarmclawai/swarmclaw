@@ -163,13 +163,27 @@ describe('task lifecycle helpers', () => {
   })
 
   it('markValidatedTaskCompleted preserves or sets completedAt as requested', () => {
-    const task = makeTask({ status: 'completed', completedAt: 10, error: 'nope' })
+    const task = makeTask({
+      status: 'completed',
+      completedAt: 10,
+      error: 'nope',
+      liveness: {
+        state: 'queued',
+        reason: 'Ready in the execution queue.',
+        checkedAt: 20,
+        lastActivityAt: 20,
+      },
+    })
     markValidatedTaskCompleted(task, { now: 50, preserveCompletedAt: true })
     assert.equal(task.completedAt, 10)
     assert.equal(task.error, null)
+    assert.equal(task.liveness?.state, 'completed')
+    assert.equal(task.liveness?.checkedAt, 50)
 
     markValidatedTaskCompleted(task, { now: 75 })
     assert.equal(task.completedAt, 75)
+    assert.equal(task.liveness?.state, 'completed')
+    assert.equal(task.liveness?.checkedAt, 75)
   })
 
   it('recordCurrentTaskRunError clears stale retry errors before completion validation', () => {
@@ -195,7 +209,15 @@ describe('task lifecycle helpers', () => {
   })
 
   it('markInvalidCompletedTaskFailed records failure state and comment', () => {
-    const task = makeTask({ status: 'completed' })
+    const task = makeTask({
+      status: 'completed',
+      liveness: {
+        state: 'queued',
+        reason: 'Ready in the execution queue.',
+        checkedAt: 10,
+        lastActivityAt: 10,
+      },
+    })
     markInvalidCompletedTaskFailed(task, {
       ok: false,
       reasons: ['Missing evidence'],
@@ -210,6 +232,8 @@ describe('task lifecycle helpers', () => {
 
     assert.equal(task.status, 'failed')
     assert.equal(task.completedAt, null)
+    assert.equal(task.liveness?.state, 'failed')
+    assert.equal(task.liveness?.checkedAt, 30)
     assert.match(task.error || '', /Completion validation failed/)
     assert.equal(task.comments?.[0]?.author, 'System')
   })
