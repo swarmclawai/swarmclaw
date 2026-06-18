@@ -211,3 +211,32 @@ can return generated access material. If the in-app browser is unauthenticated,
 do not read auth files, local storage, cookies, `.env.local`, or response
 bodies to bypass the gate. Ask Zmey to authenticate the browser or checkpoint a
 secret-safe auth method.
+
+## 2026-06-18 Authenticated Read-Only Mastery Completion
+
+- Zmey restored the authenticated in-app browser. Authenticated readiness was
+  verified from route-specific controls: sidebar links, `Search`, `Tasks`,
+  `Protocols`, `Home`, no access-check shell, and zero app console errors.
+- Command palette drill passed: opened from `Search ⌘K`, showed entries such as
+  `Default Agent Shortcut`, `Provider Credentials`, and `Go to Tasks`, filled
+  the focused search input with `tasks`, verified `Tasks`/`Go to Tasks` search
+  signals, and closed with Escape. No command was executed.
+- Mobile read-only drill passed at `390x844`: `/home` rendered the SwarmClaw
+  Operations Pulse and `/tasks` rendered Task Board signals with zero app
+  console errors. Viewport was reset afterward.
+- New Task sheet drill passed: opened the top `Task` button, verified
+  dialog-scoped `New Task`, title, agent, quality, and cancel controls, then
+  closed with `Cancel`. No task was created, edited, queued, or saved.
+- Notifications drill passed: opened and closed the Notifications panel, saw
+  unread count and `Mark all read`, and did not click notification rows or
+  mark-all controls.
+- Profile drill passed: opened and closed the profile sheet, saw `Profile`,
+  Avatar, `Save`, and `Sign in as different user`, and did not save or sign
+  out.
+- Supporting route drills passed: `/protocols/builder/facilitated_discussion`
+  rendered `Facilitated Discussion` with zero app console errors, and
+  `/s/bad-token` produced a reference-only `404`/Home surface with zero app
+  console errors.
+- Browser tool output included a repeated Statsig networking line from the
+  automation environment. Treat this as F050 when `tab.dev.logs()` reports zero
+  app console errors.

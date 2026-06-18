@@ -192,6 +192,11 @@ heading. Sidebar labels alone are weak evidence. On `/logs`, `/activity`, and
 `/usage`, prefer filter/control names and aggregate counts; do not copy raw log
 or activity bodies unless investigating one narrow sanitized failure.
 
+If browser automation tool output includes a Statsig/networking line, do not
+count it as a SwarmClaw page failure by itself. Verify app errors with
+`tab.dev.logs({ levels: ['error'] })`, route-specific controls, and final URL.
+See F050.
+
 Direct-assigned CLI task Knowledge grounding was fixed and live-verified on
 2026-06-17. The task attempt prompt and visible queue seed now include
 task-specific `## Source Grounding` from compact task queries and normalized
