@@ -127,9 +127,10 @@ Not done yet:
 - Worktree-isolated parallel write workflow; still checkpoint-required.
 - Durable specialist agents or managed skills for loop roles; templates remain
   task-template-first.
-- State metadata hygiene: inspect the paused protocol run and plan a separate
-  checkpointed cleanup for stale terminal-task liveness and extra project
-  workspace directories. Do not repair state inline during unrelated drills.
+- State metadata hygiene: F048 terminal-task liveness cleanup is done after
+  checkpoint and verified by counts only; terminal mismatch is `0`. The paused
+  protocol run remains valid F047 evidence, and the large `crypto-trading-bot`
+  workspace directory is intentional source workspace, not cleanup debris.
 - Deferred optional pattern: a TradingAgents-inspired crypto research wave is
   parked for later. If used, borrow only debate structure, structured outputs,
   checkpoint/resume, and evidence logging; do not import stock-style roles,

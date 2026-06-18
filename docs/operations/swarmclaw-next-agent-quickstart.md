@@ -122,6 +122,10 @@ Prompt hygiene for task validators:
 - If aggregate state metadata shows stale terminal-task liveness or extra
   project workspace directories, treat it as F048 hygiene backlog. Inspect the
   paused run first and checkpoint before any state repair or filesystem cleanup.
+  2026-06-18 status: the checkpointed terminal-task liveness repair is done and
+  verified by counts only; terminal mismatch is `0`. The large
+  `state/workspace/projects/crypto-trading-bot` directory is intentional source
+  workspace and must not be deleted as metadata cleanup.
 - The optimized subscription image no longer copies full dev `node_modules` into the runner. Verify runtime behavior with build, health, and smoke containers; run source tests/lint from the repo or a build/dev environment, not by assuming `tsx` or eslint exist inside the live production container.
 
 ## Parallel Agenting
@@ -170,6 +174,12 @@ checks must use the authenticated in-app browser and route-specific ready
 signals such as visible controls, scoped headings, stable `data-testid` values,
 or final URL. Do not use broad body-text checks for auth/readiness; they can
 false-positive on unrelated page content. See F042.
+
+Do not print `/api/auth` response bodies, auth JSON, cookies, local storage,
+access keys, generated setup material, or credential values. On unauthenticated
+first-time/access-gate sessions, `/api/auth` can return generated access
+material. Use status-only/redacted probes, or ask Zmey to authenticate the
+in-app browser manually. See F049.
 
 After direct navigation, do not count `domcontentloaded` or `document.title`
 alone as route readiness. Wait until the app shell/sidebar is visible and the

@@ -172,3 +172,42 @@ private keys, raw DB dumps, or raw logs.
   `/protocols/builder/[templateId]` render,
   `/s/bad-token` invalid-share handling, and passive deep checks for Missions,
   Protocols, Tasks, Quality, and Autonomy.
+
+## 2026-06-18 F048 Metadata Hygiene Pass
+
+- Done after checkpoint: created DB backup
+  `state/data/swarmclaw-before-f048-liveness-20260618-071209.db`, reconciled
+  terminal task `liveness.state` values to the terminal task status, and removed
+  the temporary repair script.
+- Verified by counts only: terminal task liveness mismatch is now `0`; aggregate
+  status/liveness counts are `completed/completed 135`, `failed/failed 20`,
+  `archived/archived 21`, `cancelled/cancelled 1`, and open backlog tasks remain
+  `backlog/none 4`.
+- Protocol run aggregate stayed unchanged: `7 completed`, `1 failed`, and
+  `1 paused`. The paused `072a8e34` run still represents the checkpointed
+  marker-mismatch workflow evidence from F047.
+- Workspace-directory review: `state/workspace/projects/crypto-trading-bot` was
+  not deleted or archived. It is an intentional large source workspace used by
+  the crypto project; project metadata does not support mapping arbitrary
+  workspace paths, so task `cwd` must carry that path explicitly when needed.
+- No secrets, raw task bodies, raw logs, auth JSON, env files, or credential
+  values were inspected as part of the repair.
+
+## 2026-06-18 Read-Only Mastery Drill Attempt
+
+| Drill | Status | Evidence | Next action |
+|---|---|---|---|
+| Passive app route checks | Done | `/tasks`, `/protocols`, `/missions`, `/quality`, and `/autonomy` rendered route-specific controls with zero app console errors. Sensitive controls were not clicked. | Keep these as current confidence evidence. |
+| Command palette/search-only | Blocked | The automation browser became unauthenticated and showed only the access-check shell, so the Search control was not available. | Resume only after Zmey logs in or approves a secret-safe auth method. |
+| Mobile/collapsed sidebar | Blocked | Route navigation reached the shell but not the authenticated app body. The first locator pass is invalid evidence, not an app failure. | Re-run with authenticated browser and route-specific ready signals after auth is restored. |
+| New Task sheet open/close | Blocked | The authenticated `/tasks` body was not available in the automation tab. No task was created or edited. | Re-run full-form open/close without saving after auth is restored. |
+| Notifications/profile open-close | Blocked | The notification/profile controls were not available because the automation tab was unauthenticated. | Re-run open/close only; do not click notification rows, mark-all controls, Save, or sign-out actions. |
+| Protocol builder render | Blocked | Direct navigation did not reach an authenticated builder surface. | Re-run `/protocols/builder/facilitated_discussion` render-only after auth is restored. |
+| Invalid share route | Blocked | Direct navigation was inconclusive from the access-check shell. | Re-run `/s/bad-token` as a reference-only route after auth is restored. |
+
+Auth safety update: this pass exposed F049. Direct `/api/auth` probes must be
+status-only or redacted because an unauthenticated first-time/access-gate state
+can return generated access material. If the in-app browser is unauthenticated,
+do not read auth files, local storage, cookies, `.env.local`, or response
+bodies to bypass the gate. Ask Zmey to authenticate the browser or checkpoint a
+secret-safe auth method.

@@ -501,6 +501,10 @@ helper, performed work.
 11. Do not classify authentication or readiness by broad body text. Exact URL,
     route-specific headings, scoped controls, and stable `data-testid` values
     are better evidence. See F042.
+12. Do not print `/api/auth` response bodies or auth JSON while probing access.
+    On first-time or unauthenticated local sessions that endpoint can return
+    generated access material. Use status-only/redacted probes, or ask Zmey to
+    authenticate the browser manually. See F049.
 
 ### Protected API/Auth Checks
 
@@ -517,6 +521,10 @@ helper, performed work.
 5. For authenticated main-operator checks, prove final URL and route-specific
    controls. For unauthenticated worker checks, prove redirect/access gate and
    stop there.
+6. If the main operator browser is unauthenticated, stop authenticated drills.
+   Do not read auth files, cookies, local storage, `.env.local`, generated
+   access keys, or response bodies to bypass the gate. Resume only after Zmey
+   logs in or explicitly checkpoints a secret-safe auth method.
 
 ### CLI Task Knowledge Pitfalls
 
