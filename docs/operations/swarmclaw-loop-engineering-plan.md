@@ -1,6 +1,6 @@
 # SwarmClaw Loop Engineering Plan
 
-Last verified: 2026-06-17
+Last verified: 2026-06-18
 
 Audience: Codex and future agents operating Zmey's local SwarmClaw instance.
 
@@ -15,7 +15,7 @@ touch `.env.local`, mutate state repair paths, restart servers, or expose ports.
 
 ## Implementation Status
 
-Status date: 2026-06-17.
+Status date: 2026-06-18.
 
 Done:
 
@@ -114,6 +114,10 @@ Done:
   so the safe decision is to isolate that crypto patch separately before any
   commit. No runtime services, DBs, logs, outputs, env files, credentials, or
   trading actions were used; see F040.
+- Status cleanup: a 2026-06-18 operator review corrected this plan so the
+  productized LoopSpec first pass is treated as done, not as a missing design
+  layer. Remaining loop work is hardening and operational coverage, not initial
+  schema/design discovery.
 
 Not done yet:
 
@@ -123,6 +127,9 @@ Not done yet:
 - Worktree-isolated parallel write workflow; still checkpoint-required.
 - Durable specialist agents or managed skills for loop roles; templates remain
   task-template-first.
+- State metadata hygiene: inspect the paused protocol run and plan a separate
+  checkpointed cleanup for stale terminal-task liveness and extra project
+  workspace directories. Do not repair state inline during unrelated drills.
 - Deferred optional pattern: a TradingAgents-inspired crypto research wave is
   parked for later. If used, borrow only debate structure, structured outputs,
   checkpoint/resume, and evidence logging; do not import stock-style roles,
@@ -188,13 +195,16 @@ SwarmClaw is close enough to start manual loop engineering now:
 - Graphify has been verified as a scratch sidecar for repo orientation.
 - agentmemory records durable decisions and lessons across sessions.
 
-Main missing layer: a formal `LoopSpec` that turns a goal into an explicit
-control loop with stop rules, progress signals, stuck detection, retry caps,
-checkpoint gates, and evidence requirements.
+The formal `LoopSpec` layer now exists as a first productized pass. The
+remaining gaps are operational hardening: exercise worktree-isolated write
+waves after checkpoint, decide whether repeated loop roles deserve durable
+managed agents or skills, improve continuation evidence around paused/blocked
+runs, and keep project-specific LoopSpecs narrow enough for safe execution.
 
 Use `docs/operations/swarmclaw-loop-template-catalog.md` for reusable LoopSpec
 starters. Initial messy-project discovery may be a pre-loop intake step; any
-repeated, multi-wave, or auto-continuing work needs a LoopSpec before launch.
+repeated, multi-wave, or auto-continuing work still needs a LoopSpec before
+launch.
 
 ## LoopSpec
 
@@ -455,7 +465,9 @@ Acceptance:
 
 ### Phase 1: LoopSpec Templates
 
-Add repo templates for common loops:
+Status: first pass done in
+`docs/operations/swarmclaw-loop-template-catalog.md`; keep expanding it only
+from verified workflows. Current templates cover:
 
 - read-only project understanding,
 - implementation with review,
@@ -472,10 +484,11 @@ Acceptance:
 
 ### Phase 2: Productized LoopSpec
 
-Add a first-class LoopSpec schema that compiles into Workflow Bundles and
-Protocols.
+Status: first pass done. `WorkflowLoopSpec` is typed, normalized, carried
+through plans/bundles/ledgers/continuation payloads, and shown in the Workflow
+UI. Future work should harden behavior rather than redesign the schema.
 
-Likely fields:
+Current core fields:
 
 - `goal`,
 - `classification`,
@@ -503,8 +516,10 @@ Acceptance:
 
 ### Phase 3: Bounded Autopilot
 
-Extend existing Workflow continuation so it can run the next safe wave without
-manual task creation only when the LoopSpec allows it.
+Status: partial first pass live. Safe read-only continuation has been verified;
+remaining work is hardening, broader acceptance coverage, and checkpointed
+write-wave behavior. Extend existing Workflow continuation so it can run the
+next safe wave without manual task creation only when the LoopSpec allows it.
 
 Acceptance:
 

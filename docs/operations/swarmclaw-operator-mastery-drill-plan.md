@@ -1,6 +1,6 @@
 # SwarmClaw Operator Mastery Drill Plan
 
-Last verified: 2026-06-17
+Last verified: 2026-06-18
 
 Audience: Codex and future agents operating Zmey's local SwarmClaw instance.
 
@@ -45,7 +45,7 @@ private keys, raw DB dumps, or raw logs.
 | D01 | Done | Full-form task `a682c0ad`, Builder `92b8cd6c`, session `7e89761d`, marker `SWARMCLAW_MASTERY_D01_TASK_LIFECYCLE_V2_OK`, files changed `none`, completed. First attempt `859ce5bc` proved F045: default `minEvidenceItems=2` can dead-letter pure smoke output. | Superseded failed task `859ce5bc` archived on 2026-06-17. For pure read-only smoke tasks, set `Min Evidence Signals` to `1` or explicitly relax/disable the gate after checkpoint. |
 | D02 | Done | Authenticated `/protocols` route showed Workflow Bundle controls: `workflow-title-input`, `workflow-cwd-input`, `workflow-goal-input`, `workflow-allowed-scopes-input`, `workflow-draft-plan`, `workflow-create-backlog`, `workflow-review-approved`, `workflow-continue-selected-run`, `workflow-continue-until-done`, and `workflow-auto-create-safe-backlog`. Run `dbc47bed` then verified read-only draft-no-task behavior, approved backlog launch, worker fan-out, auto-woken fan-in, run completion, and safe auto-backlog continuation to run `52efa735`. | Keep workflow creation/continuation checkpointed unless the current task explicitly approves it. Avoid implementation classifier words in read-only workflow goals; see F046. |
 | D03 | Done | Completed runtime attempts found for D01/D06 sessions: `a682c0ad:attempt-1`, `3d217136:attempt-1`, `181c87c4:attempt-1`, `2f28696f:attempt-1`. Failure triage mapped `18849f25` to F044 and `859ce5bc` to F045. | Superseded task `18849f25` archived on 2026-06-17 after F044 was documented and corrected. Do not repair/archive unrelated failed tasks without checkpoint. |
-| D04 | Done | Knowledge metadata checked without chunk/body dumps. Operator sources include GUI manual `c05dc18feaad931c` with 65 chunks, failure catalog `75b590287831ac7e` with 26 chunks, workflow recipe `9333a38a1e5f8a7e` with 15 chunks, quickstart `70f893b23855027b` with 12 chunks, loop plan `c413dab9a015b67c` with 24 chunks, and mastery plan `cd1b9719ee881476` with 10 chunks. | Verify by title/source ID/chunk count only; do not dump raw chunks. |
+| D04 | Done | Knowledge metadata checked without chunk/body dumps. Operator sources include GUI manual `c05dc18feaad931c`, failure catalog `75b590287831ac7e`, workflow recipe `9333a38a1e5f8a7e`, quickstart `70f893b23855027b`, loop plan `c413dab9a015b67c`, and mastery plan `cd1b9719ee881476`. After the 2026-06-18 Settings/Admin sync, verified chunk counts were quickstart 14, failure catalog 28, and mastery plan 14. | Verify by title/source ID/chunk count only; do not dump raw chunks. |
 | D05 | Done | Agent roster verified from metadata: Builder `92b8cd6c`, Coordinator `default`, Reviewer QA `c2cd6ff9`, OpenCode Builder `a0f79bad`, OpenCode Go Helper `cc51c5e6`, Copilot Mini Worker `e74dd145`. `/agents/default` and `/org-chart` authenticated routes were visible. | Use explicit Agent picker for multi-word workers such as Reviewer QA; see F023. |
 | D06 | Done | Worker A `3d217136`, Builder `92b8cd6c`, session `2df922d9`, marker `SWARMCLAW_MASTERY_D06_WORKER_A_OK`. Worker B corrected `181c87c4`, Reviewer QA `c2cd6ff9`, session `899c54a2`, marker `SWARMCLAW_MASTERY_D06_WORKER_B_V2_OK`. Fan-in `2f28696f`, Reviewer QA `c2cd6ff9`, session `952aa7fe`, marker `SWARMCLAW_MASTERY_D06_FANIN_OK`, accepted wave. | Misrouted unqueued task `5de0521a` archived on 2026-06-17 after F023 was documented and corrected. |
 | D07 | Done | `/projects` authenticated route visible. Metadata shows `SwarmClaw Local Ops` (`bad5cf13`) and `Crypto Trading Bot` (`94e77f5e`) with sanitized objective/description lengths only. | Project-specific write/research waves still require scoped approval and safety gates. |
@@ -138,3 +138,37 @@ private keys, raw DB dumps, or raw logs.
   activity, and usage, prefer filter/control names and aggregate counts over row
   bodies unless a specific failure investigation requires a narrow sanitized
   excerpt.
+
+## 2026-06-18 Settings/Admin Knowledge Sync
+
+- Synced the Settings/Admin drill doc delta into existing Knowledge sources:
+  quickstart `70f893b23855027b`, failure catalog `75b590287831ac7e`, and
+  mastery plan `cd1b9719ee881476`.
+- Verification was metadata/search only. This sync covered only quickstart 14
+  chunks, failure catalog 28 chunks, and mastery plan 14 chunks; other operator
+  Knowledge sources were not changed in this pass. Search hits for
+  Settings/Admin drill terms found the mastery plan and failure catalog. No raw
+  chunks or secret-like content were printed.
+- Temporary Docker image, sync scripts, and transformers cache were removed
+  after verification; SwarmClaw remained healthy and bound only to
+  `127.0.0.1:3456-3457`.
+
+## 2026-06-18 Read-Only Subagent Audit
+
+- Four sidecar agents reviewed docs, navigation/source, state metadata, and
+  orchestration-plan gaps. All were read-only and closed after completion.
+- Remaining product/operator gaps: isolate the dirty crypto runtime-contract
+  patch before commit, exercise worktree-isolated parallel writes only after a
+  checkpoint, decide whether repeated loop roles deserve durable agents/managed
+  skills, and run a project-onboarding fan-in drill before code-writing waves.
+- Metadata hygiene finding: 181 tasks exist, with no running/queued task
+  statuses and no dangling project/agent/protocol/blocker references. One
+  protocol run is paused, stale liveness metadata exists on terminal tasks, and
+  one extra project workspace directory exists. Treat this as F048: inspect the
+  paused run first, then plan a separate checkpointed hygiene pass.
+- Next safe GUI mastery drills: mobile/collapsed sidebar and active states,
+  command palette/search-only behavior with no command execution, global sheet
+  open/close behavior, notifications and profile sheet open/close,
+  `/protocols/builder/[templateId]` render,
+  `/s/bad-token` invalid-share handling, and passive deep checks for Missions,
+  Protocols, Tasks, Quality, and Autonomy.

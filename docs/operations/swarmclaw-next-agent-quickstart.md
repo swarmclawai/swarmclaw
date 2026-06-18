@@ -1,6 +1,6 @@
 # SwarmClaw Next-Agent Quickstart
 
-Last verified: 2026-06-17
+Last verified: 2026-06-18
 
 Audience: Codex and future agents operating Zmey's local SwarmClaw instance.
 
@@ -40,7 +40,7 @@ Date convention: operator doc dates use Zmey's local Europe/Sofia calendar date 
 
 ## Current Operating Baseline
 
-Current local setup as of 2026-06-17:
+Current local setup as of 2026-06-18:
 
 | Item | Value |
 |---|---|
@@ -119,6 +119,9 @@ Prompt hygiene for task validators:
   them `waiting` until rebuild/recreate. Current local image `5e47249c7dbc`
   is live-verified: run `072a8e34` persisted as `paused` with checkpoint reason
   and `workflow_continue` event `132d6b48`.
+- If aggregate state metadata shows stale terminal-task liveness or extra
+  project workspace directories, treat it as F048 hygiene backlog. Inspect the
+  paused run first and checkpoint before any state repair or filesystem cleanup.
 - The optimized subscription image no longer copies full dev `node_modules` into the runner. Verify runtime behavior with build, health, and smoke containers; run source tests/lint from the repo or a build/dev environment, not by assuming `tsx` or eslint exist inside the live production container.
 
 ## Parallel Agenting
