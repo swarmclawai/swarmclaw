@@ -240,3 +240,27 @@ secret-safe auth method.
 - Browser tool output included a repeated Statsig networking line from the
   automation environment. Treat this as F050 when `tab.dev.logs()` reports zero
   app console errors.
+
+## 2026-06-18 Broad Remaining Route Sweep
+
+- Completed a read-only follow-up sweep for less-tested GUI surfaces using
+  route-specific and main-panel evidence. No forms were submitted, no detail
+  sheets were opened on sensitive/admin records, no settings were changed, and
+  no Knowledge source was synced or edited.
+- Verified with zero app console errors: `/agents/default`, `/org-chart`,
+  `/inbox`, `/chatrooms`, `/projects`, `/swarmfeed`, `/marketplace`,
+  `/missions`, `/schedules`, `/memory`, `/runs`, `/knowledge`, `/skills`,
+  `/connectors`, `/webhooks`, `/mcp-servers`, `/extensions`, `/usage`,
+  `/activity`, and `/settings`.
+- Main-panel evidence highlights: Projects showed `Crypto Trading Bot` and
+  `SwarmClaw Local Ops`; Runs showed status filters and run rows; Connectors,
+  Webhooks, and MCP Servers showed empty-state/add controls; Activity showed
+  audit-trail rows and filters; Schedules showed live/archive/runs/history
+  tabs and empty-state scheduler controls; Memory showed scope/tier controls
+  and agent/global memory counts; Inbox and Chatrooms showed empty-state
+  conversation controls; SwarmFeed showed compose/search/feed controls without
+  publishing.
+- Operator lesson reinforced: broad route sweeps can match sidebar labels or
+  task/log snippets. Count a route as verified only after a main-panel heading,
+  route-specific control, scoped placeholder, empty-state label, or stable row
+  signal is observed. This is F005, not a new failure family.
