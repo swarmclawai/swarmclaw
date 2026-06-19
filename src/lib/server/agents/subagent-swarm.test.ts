@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { createRequire, Module } from 'node:module'
 import { afterEach, describe, it } from 'node:test'
 
 import {
@@ -16,7 +17,28 @@ import {
   type SwarmMember,
   type SwarmSnapshot,
 } from '@/lib/server/agents/subagent-swarm'
-import { collectAncestorAgentIds } from '@/lib/server/agents/subagent-runtime'
+import { collectAncestorAgentIds, type SubagentContext, type SubagentHandle, type SubagentResult } from '@/lib/server/agents/subagent-runtime'
+
+type SpawnSubagentForTest = (
+  input: {
+    agentId: string
+    message: string
+    cwd?: string
+    shareBrowserProfile?: boolean
+    waitForCompletion?: boolean
+    executionGroupKey?: string
+  },
+  context: SubagentContext,
+) => Promise<SubagentHandle>
+
+type SwarmModuleForTest = typeof import('@/lib/server/agents/subagent-swarm')
+
+type Deferred<T> = {
+  promise: Promise<T>
+  resolve: (value: T) => void
+}
+
+const requireForSwarmTest = createRequire(import.meta.url)
 
 /**
  * Unit tests for the swarm layer. Since spawnSubagent depends on storage,
@@ -88,6 +110,94 @@ function fakeMember(index: number, overrides?: Partial<SwarmMember>): SwarmMembe
     result: null,
     spawnError: null,
     ...overrides,
+  }
+}
+
+function deferred<T>(): Deferred<T> {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((done) => {
+    resolve = done
+  })
+  return { promise, resolve }
+}
+
+function fakeSubagentResult(index: number, status: SubagentResult['status']): SubagentResult {
+  return {
+    jobId: `job-${index}`,
+    sessionId: `sess-${index}`,
+    lineageId: `lin-${index}`,
+    agentId: `agent-${index}`,
+    agentName: `Agent ${index}`,
+    status,
+    response: status === 'completed' ? `Result from agent ${index}` : null,
+    error: status === 'completed' ? null : `error-${index}`,
+    depth: 1,
+    parentSessionId: 'parent-sess-1',
+    childCount: 0,
+    durationMs: 10,
+  }
+}
+
+async function flushMicrotasks(): Promise<void> {
+  await Promise.resolve()
+  await Promise.resolve()
+}
+
+async function promiseState(promise: Promise<unknown>): Promise<'pending' | 'resolved'> {
+  return Promise.race([
+    promise.then(() => 'resolved' as const),
+    Promise.resolve('pending' as const),
+  ])
+}
+
+async function withMockedSpawnSwarm(
+  spawnSubagent: SpawnSubagentForTest,
+  run: (mod: SwarmModuleForTest) => Promise<void>,
+): Promise<void> {
+  const runtimePath = requireForSwarmTest.resolve('./subagent-runtime.ts')
+  const swarmPath = requireForSwarmTest.resolve('./subagent-swarm.ts')
+  const cache = requireForSwarmTest.cache
+  const previousRuntime = cache[runtimePath]
+  const previousSwarm = cache[swarmPath]
+  const mockRuntime = new Module(runtimePath)
+  mockRuntime.filename = runtimePath
+  mockRuntime.loaded = true
+  mockRuntime.exports = { spawnSubagent }
+
+  delete cache[swarmPath]
+  cache[runtimePath] = mockRuntime
+  try {
+    await run(requireForSwarmTest(swarmPath) as SwarmModuleForTest)
+  } finally {
+    delete cache[swarmPath]
+    if (previousSwarm) cache[swarmPath] = previousSwarm
+    if (previousRuntime) cache[runtimePath] = previousRuntime
+    else delete cache[runtimePath]
+  }
+}
+
+function makeControlledSpawnSubagent(completions: Array<Deferred<SubagentResult>>, aborted: number[] = []): SpawnSubagentForTest {
+  let spawnIndex = 0
+  return async () => {
+    const index = spawnIndex++
+    return {
+      jobId: `job-${index}`,
+      sessionId: `sess-${index}`,
+      lineageId: `lin-${index}`,
+      agentId: `agent-${index}`,
+      agentName: `Agent ${index}`,
+      run: {
+        runId: `run-${index}`,
+        position: 0,
+        promise: Promise.resolve({ runId: `run-${index}`, sessionId: `sess-${index}`, text: '', error: undefined, persisted: true, toolEvents: [], inputTokens: 0, outputTokens: 0, estimatedCost: 0 }),
+        abort: () => {
+          aborted.push(index)
+          completions[index]?.resolve(fakeSubagentResult(index, 'cancelled'))
+        },
+        unsubscribe: () => {},
+      },
+      promise: completions[index].promise,
+    } as SubagentHandle
   }
 }
 
@@ -447,6 +557,112 @@ describe('subagent-swarm', () => {
       const agg = await swarm.quorumSettled(1)
       assert.ok(agg)
       assert.equal(agg.totalSpawned, 0)
+    })
+  })
+
+  describe('quorumSettled real spawnSwarm behavior', () => {
+    it('waits past an early failure, resolves on first success, and cancels remaining members', async () => {
+      const completions = [deferred<SubagentResult>(), deferred<SubagentResult>(), deferred<SubagentResult>()]
+      const aborted: number[] = []
+
+      await withMockedSpawnSwarm(makeControlledSpawnSubagent(completions, aborted), async ({ spawnSwarm }) => {
+        const swarm = await spawnSwarm({
+          tasks: [
+            { agentId: 'agent-0', message: 'zero' },
+            { agentId: 'agent-1', message: 'one' },
+            { agentId: 'agent-2', message: 'two' },
+          ],
+          executionMode: 'parallel',
+        }, { sessionId: 'parent-sess-1', cwd: process.cwd(), _sessions: {} })
+
+        const quorum = swarm.quorumSettled(1, { cancelRemaining: true })
+        completions[1].resolve(fakeSubagentResult(1, 'failed'))
+        await flushMicrotasks()
+
+        assert.equal(await promiseState(quorum), 'pending')
+        assert.deepEqual(aborted, [])
+
+        completions[2].resolve(fakeSubagentResult(2, 'completed'))
+        await flushMicrotasks()
+
+        assert.deepEqual(aborted, [0])
+        const aggregate = await quorum
+
+        assert.equal(aggregate.totalSpawned, 3)
+        assert.equal(aggregate.totalCompleted, 1)
+        assert.equal(aggregate.totalFailed, 1)
+        assert.equal(aggregate.totalCancelled, 1)
+        assert.equal(aggregate.totalSpawnErrors, 0)
+        assert.deepEqual(aggregate.results.map((result) => result.index), [0, 1, 2])
+        assert.deepEqual(aggregate.results.map((result) => result.status), ['cancelled', 'failed', 'completed'])
+      })
+    })
+
+    it('falls back after all members settle when quorum cannot be reached', async () => {
+      const completions = [deferred<SubagentResult>(), deferred<SubagentResult>(), deferred<SubagentResult>()]
+
+      await withMockedSpawnSwarm(makeControlledSpawnSubagent(completions), async ({ spawnSwarm }) => {
+        const swarm = await spawnSwarm({
+          tasks: [
+            { agentId: 'agent-0', message: 'zero' },
+            { agentId: 'agent-1', message: 'one' },
+            { agentId: 'agent-2', message: 'two' },
+          ],
+          executionMode: 'parallel',
+        }, { sessionId: 'parent-sess-1', cwd: process.cwd(), _sessions: {} })
+
+        const quorum = swarm.quorumSettled(1, { cancelRemaining: true })
+        completions[2].resolve(fakeSubagentResult(2, 'failed'))
+        completions[0].resolve(fakeSubagentResult(0, 'timed_out'))
+        await flushMicrotasks()
+
+        assert.equal(await promiseState(quorum), 'pending')
+
+        completions[1].resolve(fakeSubagentResult(1, 'failed'))
+        const aggregate = await quorum
+
+        assert.equal(aggregate.totalSpawned, 3)
+        assert.equal(aggregate.totalCompleted, 0)
+        assert.equal(aggregate.totalFailed, 3)
+        assert.equal(aggregate.totalCancelled, 0)
+        assert.equal(aggregate.totalSpawnErrors, 0)
+        assert.deepEqual(aggregate.results.map((result) => result.index), [0, 1, 2])
+        assert.deepEqual(aggregate.results.map((result) => result.status), ['timed_out', 'failed', 'failed'])
+      })
+    })
+
+    it('does not abort remaining members when cancelRemaining is false', async () => {
+      const completions = [deferred<SubagentResult>(), deferred<SubagentResult>(), deferred<SubagentResult>()]
+      const aborted: number[] = []
+
+      await withMockedSpawnSwarm(makeControlledSpawnSubagent(completions, aborted), async ({ spawnSwarm }) => {
+        const swarm = await spawnSwarm({
+          tasks: [
+            { agentId: 'agent-0', message: 'zero' },
+            { agentId: 'agent-1', message: 'one' },
+            { agentId: 'agent-2', message: 'two' },
+          ],
+          executionMode: 'parallel',
+        }, { sessionId: 'parent-sess-1', cwd: process.cwd(), _sessions: {} })
+
+        const quorum = swarm.quorumSettled(1, { cancelRemaining: false })
+        completions[1].resolve(fakeSubagentResult(1, 'completed'))
+        await flushMicrotasks()
+
+        assert.deepEqual(aborted, [])
+        assert.equal(await promiseState(quorum), 'pending')
+
+        completions[0].resolve(fakeSubagentResult(0, 'failed'))
+        completions[2].resolve(fakeSubagentResult(2, 'completed'))
+        const aggregate = await quorum
+
+        assert.deepEqual(aborted, [])
+        assert.equal(aggregate.totalSpawned, 3)
+        assert.equal(aggregate.totalCompleted, 2)
+        assert.equal(aggregate.totalFailed, 1)
+        assert.equal(aggregate.totalCancelled, 0)
+        assert.deepEqual(aggregate.results.map((result) => result.status), ['failed', 'completed', 'completed'])
+      })
     })
   })
 
