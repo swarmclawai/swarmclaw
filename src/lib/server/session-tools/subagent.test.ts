@@ -3,11 +3,13 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 import { describe, it } from 'node:test'
 
 import { buildSessionTools } from './index'
+import { _awaitSwarmByPolicyForTest } from './subagent'
 
-const repoRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../../../..')
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..')
 
 function runWithTempDataDir(script: string) {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'swarmclaw-subagent-tool-'))
@@ -22,8 +24,9 @@ function runWithTempDataDir(script: string) {
       },
       encoding: 'utf-8',
       timeout: 30_000,
+      maxBuffer: 20 * 1024 * 1024,
     })
-    assert.equal(result.status, 0, result.stderr || result.stdout || 'subprocess failed')
+    assert.equal(result.status, 0, result.stderr || result.stdout || result.error?.message || `subprocess failed: signal=${result.signal ?? 'none'}`)
     const lines = (result.stdout || '')
       .trim()
       .split('\n')
@@ -160,5 +163,103 @@ describe('spawn_subagent runtime access', () => {
     assert.equal(output.agentId, 'builder')
     assert.equal(output.workType, 'coding')
     assert.deepEqual(output.requiredCapabilities, ['coding', 'debugging'])
+  })
+
+  it('joinPolicy:first waits for first success instead of cancelling after first failed completion', async () => {
+    const failedFirstAggregate = {
+      swarmId: 'swarm-first-policy',
+      parentSessionId: 'parent-session',
+      totalSpawned: 2,
+      totalCompleted: 0,
+      totalFailed: 1,
+      totalCancelled: 1,
+      totalSpawnErrors: 0,
+      durationMs: 50,
+      results: [],
+    }
+    const firstSuccessAggregate = {
+      swarmId: 'swarm-first-policy',
+      parentSessionId: 'parent-session',
+      totalSpawned: 2,
+      totalCompleted: 1,
+      totalFailed: 1,
+      totalCancelled: 0,
+      totalSpawnErrors: 0,
+      durationMs: 100,
+      results: [],
+    }
+
+    let cancelAllCalls = 0
+    let quorumCall: { count: number; opts: { cancelRemaining?: boolean } | undefined } | null = null
+    const swarm = {
+      firstSettled: Promise.resolve({
+        index: 0,
+        result: {
+          jobId: 'job-failed',
+          sessionId: 'sess-failed',
+          lineageId: 'lin-failed',
+          agentId: 'agent-failed',
+          agentName: 'Failed Agent',
+          status: 'failed' as const,
+          response: null,
+          error: 'failed first',
+          depth: 1,
+          parentSessionId: 'parent-session',
+          childCount: 0,
+          durationMs: 10,
+        },
+      }),
+      allSettled: Promise.resolve(failedFirstAggregate),
+      quorumSettled: async (count: number, opts?: { cancelRemaining?: boolean }) => {
+        quorumCall = { count, opts }
+        return firstSuccessAggregate
+      },
+      cancelAll: () => {
+        cancelAllCalls++
+      },
+    } as unknown as Parameters<typeof _awaitSwarmByPolicyForTest>[0]
+
+    const aggregate = await _awaitSwarmByPolicyForTest(swarm, { type: 'first' })
+
+    assert.equal(aggregate, firstSuccessAggregate)
+    assert.deepEqual(quorumCall, { count: 1, opts: { cancelRemaining: true } })
+    assert.equal(cancelAllCalls, 0)
+  })
+
+  it('joinPolicy:first returns the all-settled aggregate when no branch succeeds', async () => {
+    const noSuccessAggregate = {
+      swarmId: 'swarm-first-policy-no-success',
+      parentSessionId: 'parent-session',
+      totalSpawned: 2,
+      totalCompleted: 0,
+      totalFailed: 2,
+      totalCancelled: 0,
+      totalSpawnErrors: 0,
+      durationMs: 100,
+      results: [],
+    }
+
+    let cancelAllCalls = 0
+    let quorumCall: { count: number; opts: { cancelRemaining?: boolean } | undefined } | null = null
+    const swarm = {
+      firstSettled: Promise.resolve({
+        index: 0,
+        result: null,
+      }),
+      allSettled: Promise.resolve(noSuccessAggregate),
+      quorumSettled: async (count: number, opts?: { cancelRemaining?: boolean }) => {
+        quorumCall = { count, opts }
+        return noSuccessAggregate
+      },
+      cancelAll: () => {
+        cancelAllCalls++
+      },
+    } as unknown as Parameters<typeof _awaitSwarmByPolicyForTest>[0]
+
+    const aggregate = await _awaitSwarmByPolicyForTest(swarm, { type: 'first' })
+
+    assert.equal(aggregate, noSuccessAggregate)
+    assert.deepEqual(quorumCall, { count: 1, opts: { cancelRemaining: true } })
+    assert.equal(cancelAllCalls, 0)
   })
 })

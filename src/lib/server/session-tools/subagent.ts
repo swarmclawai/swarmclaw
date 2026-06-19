@@ -309,15 +309,15 @@ async function awaitSwarmByPolicy(
   policy: JoinPolicy,
 ): Promise<ReturnType<typeof spawnSwarm> extends Promise<infer T> ? T extends { allSettled: Promise<infer A> } ? A : never : never> {
   if (policy.type === 'first') {
-    await swarm.firstSettled
-    swarm.cancelAll()
-    return swarm.allSettled
+    return swarm.quorumSettled(1, { cancelRemaining: true })
   }
   if (policy.type === 'quorum') {
     return swarm.quorumSettled(policy.count, { cancelRemaining: policy.cancelRemaining })
   }
   return swarm.allSettled
 }
+
+export const _awaitSwarmByPolicyForTest = awaitSwarmByPolicy
 
 // ---------------------------------------------------------------------------
 // Promise-based wait (no polling when handle exists)
@@ -730,7 +730,7 @@ const SubagentExtension: Extension = {
           joinPolicy: {
             type: 'string',
             enum: ['all', 'first', 'quorum'],
-            description: 'How to wait. "all" (default) waits for every branch. "first" resolves when one succeeds and cancels the rest. "quorum" resolves when `quorum` branches succeed.',
+            description: 'How to wait. "all" (default) waits for every branch. "first" waits for the first successful branch, cancels in-flight branches after success, and falls back to all-settled if none succeed. "quorum" resolves when `quorum` branches succeed.',
           },
           quorum: {
             type: 'number',
