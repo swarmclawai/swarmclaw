@@ -128,6 +128,28 @@ export const PROVIDERS: Record<string, BuiltinProviderConfig> = {
       },
     },
   },
+  requesty: {
+    id: 'requesty',
+    name: 'Requesty',
+    models: [
+      'openai/gpt-4o-mini', 'openai/gpt-4o',
+      'anthropic/claude-sonnet-4-5',
+      'google/gemini-2.5-flash', 'google/gemini-2.5-pro',
+      'deepseek/deepseek-chat',
+    ],
+    requiresApiKey: true,
+    requiresEndpoint: false,
+    defaultEndpoint: 'https://router.requesty.ai/v1',
+    handler: {
+      streamChat: (opts) => {
+        const patchedSession = {
+          ...opts.session,
+          apiEndpoint: opts.session.apiEndpoint || 'https://router.requesty.ai/v1',
+        }
+        return streamOpenAiChat({ ...opts, session: patchedSession })
+      },
+    },
+  },
   tokenmix: {
     id: 'tokenmix',
     name: 'TokenMix',

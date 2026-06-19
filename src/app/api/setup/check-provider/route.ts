@@ -520,6 +520,7 @@ export async function POST(req: Request) {
       case 'xai':
       case 'fireworks':
       case 'nebius':
+      case 'requesty':
       case 'deepinfra': {
         const info = OPENAI_COMPATIBLE_DEFAULTS[provider]
         if (!apiKey) return NextResponse.json({ ok: false, message: `${info.name} API key is required.` })

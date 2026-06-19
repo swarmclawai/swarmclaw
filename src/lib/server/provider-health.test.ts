@@ -121,6 +121,7 @@ describe('provider-health', () => {
     const defaults = providerHealth.OPENAI_COMPATIBLE_DEFAULTS
     assert.ok(defaults.openai)
     assert.ok(defaults.openrouter)
+    assert.ok(defaults.requesty)
     assert.ok(defaults.google)
     assert.ok(defaults.deepseek)
     assert.ok(defaults.groq)
