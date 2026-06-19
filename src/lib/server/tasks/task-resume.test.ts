@@ -94,11 +94,11 @@ describe('task resume context', () => {
         resultPreview: 'WORKER_OK',
       }],
     })
-    const sessions: Record<string, Session> = {
+    const sessions: Record<string, Partial<Session>> = {
       'session-worker': {
         id: 'session-worker',
         agentId: 'agent-1',
-        title: 'Worker',
+        name: 'Worker',
         messages: [],
         createdAt: 1,
         updatedAt: 1,

@@ -1,4 +1,5 @@
 export {
+  buildTaskInitialSessionMessage,
   cleanupFinishedTaskSessions,
   dequeueNextRunnableTask,
   disableSessionHeartbeat,
