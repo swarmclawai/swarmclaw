@@ -35,6 +35,12 @@ const TASK_KNOWLEDGE_FALLBACK_LIMIT = 4
 const TASK_KNOWLEDGE_QUERY_HINT_RE = /\b(source|sources|knowledge|manual|quickstart|failure|catalog|recipe|policy|operator|docs?|swarmclaw|workflow|skill|project|runbook)\b/i
 const TASK_KNOWLEDGE_TOPIC_RE = /^\s*(?:retrieval|knowledge|source)\s+topics?\s*:\s*(.+)$/i
 
+function normalizeDynamicImport<T extends object>(module: T): T {
+  return 'default' in module && module.default
+    ? module.default as T
+    : module
+}
+
 interface TaskAttemptState {
   runningByTaskId: Map<string, ExecutionHandle<ExecuteChatTurnResult>>
 }
@@ -204,8 +210,8 @@ async function buildFallbackTaskKnowledgeRetrievalTrace(
   queries: string[],
   viewerAgentId?: string | null,
 ): Promise<KnowledgeRetrievalTrace | null> {
-  const { getMemoryDb } = await import('@/lib/server/memory/memory-db')
-  const memoryDb = getMemoryDb()
+  const memoryApi = normalizeDynamicImport(await import('@/lib/server/memory/memory-db'))
+  const memoryDb = memoryApi.getMemoryDb()
   const hits: KnowledgeCitation[] = []
   const seenChunkIds = new Set<string>()
   for (const query of queries) {
@@ -236,8 +242,8 @@ export async function buildTaskKnowledgeRetrievalTrace(task: BoardTask): Promise
   const query = buildTaskKnowledgeQuery(task)
   if (query.length <= 12) return null
   try {
-    const { buildKnowledgeRetrievalTrace } = await import('@/lib/server/knowledge-sources')
-    const trace = await buildKnowledgeRetrievalTrace({
+    const knowledgeApi = normalizeDynamicImport(await import('@/lib/server/knowledge-sources'))
+    const trace = await knowledgeApi.buildKnowledgeRetrievalTrace({
       query,
       viewerAgentId: task.agentId || null,
       limit: 4,
@@ -270,8 +276,8 @@ async function applyTaskKnowledgeGroundingToResult(
     }
   }
   try {
-    const { selectKnowledgeCitations } = await import('@/lib/server/knowledge-sources')
-    const grounding = selectKnowledgeCitations({
+    const knowledgeApi = normalizeDynamicImport(await import('@/lib/server/knowledge-sources'))
+    const grounding = knowledgeApi.selectKnowledgeCitations({
       responseText,
       retrievalTrace: selectedTrace,
     })

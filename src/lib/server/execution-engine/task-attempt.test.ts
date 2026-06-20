@@ -6,7 +6,6 @@ import { runWithTempDataDir } from '@/lib/server/test-utils/run-with-temp-data-d
 import {
   buildTaskAttemptPrompt,
   buildTaskKnowledgeQuery,
-  buildTaskKnowledgeRetrievalTrace,
 } from '@/lib/server/execution-engine/task-attempt'
 
 function makeTask(overrides: Partial<BoardTask> = {}): BoardTask {
@@ -130,15 +129,16 @@ describe('buildTaskAttemptPrompt', () => {
       const knowledgeMod = await import('@/lib/server/knowledge-sources')
       const taskAttemptMod = await import('@/lib/server/execution-engine/task-attempt')
       const knowledge = knowledgeMod.default || knowledgeMod
+      const taskAttempt = taskAttemptMod.default || taskAttemptMod
 
       await knowledge.createKnowledgeSource({
         kind: 'manual',
         title: 'SwarmClaw Operator Quickstart',
-        content: 'Direct assignment tasks should cite source-backed Knowledge when operating SwarmClaw.',
+        content: 'Direct assignment tasks should cite source-backed Knowledge. Confirm source-backed Knowledge appears for SwarmClaw operator tasks.',
         tags: ['swarmclaw'],
       })
 
-      const trace = await taskAttemptMod.buildTaskKnowledgeRetrievalTrace({
+      const trace = await taskAttempt.buildTaskKnowledgeRetrievalTrace({
         id: 'task-knowledge',
         title: 'Direct assignment Knowledge smoke',
         description: 'Confirm source-backed Knowledge appears for SwarmClaw operator tasks.',
@@ -171,8 +171,10 @@ describe('buildTaskAttemptPrompt', () => {
     }>(`
       const memoryMod = await import('@/lib/server/memory/memory-db')
       const taskAttemptMod = await import('@/lib/server/execution-engine/task-attempt')
+      const memoryDb = memoryMod.default || memoryMod
+      const taskAttempt = taskAttemptMod.default || taskAttemptMod
 
-      memoryMod.getMemoryDb().add({
+      memoryDb.getMemoryDb().add({
         agentId: null,
         sessionId: null,
         category: 'knowledge',
@@ -191,7 +193,7 @@ describe('buildTaskAttemptPrompt', () => {
         },
       })
 
-      const trace = await taskAttemptMod.buildTaskKnowledgeRetrievalTrace({
+      const trace = await taskAttempt.buildTaskKnowledgeRetrievalTrace({
         id: 'task-knowledge-fallback',
         title: 'F043 strict source grounding smoke',
         description: 'Retrieval topic: task-source grounding failure catalog entry.',

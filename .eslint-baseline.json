@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "generatedAt": "2026-05-05T14:53:22.998Z",
-  "totalIssues": 352,
-  "uniqueIssues": 119,
+  "generatedAt": "2026-06-20T04:53:31.006Z",
+  "totalIssues": 344,
+  "uniqueIssues": 116,
   "issues": [
     {
       "filePath": "bin/worker-cmd.js",
@@ -100,20 +100,6 @@
       "ruleId": "@typescript-eslint/no-unused-vars",
       "severity": 1,
       "message": "'_req' is defined but never used.",
-      "count": 1
-    },
-    {
-      "filePath": "src/app/protocols/page.tsx",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'AgentList' is defined but never used.",
-      "count": 1
-    },
-    {
-      "filePath": "src/app/protocols/page.tsx",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'ProtocolRunDetail' is defined but never used.",
       "count": 1
     },
     {
@@ -534,7 +520,7 @@
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
-      "count": 12
+      "count": 7
     },
     {
       "filePath": "src/lib/server/protocols/protocol-foreach.ts",
@@ -563,13 +549,6 @@
       "severity": 2,
       "message": "A `require()` style import is forbidden.",
       "count": 3
-    },
-    {
-      "filePath": "src/lib/server/protocols/protocol-step-processors.ts",
-      "ruleId": "@typescript-eslint/no-require-imports",
-      "severity": 2,
-      "message": "A `require()` style import is forbidden.",
-      "count": 1
     },
     {
       "filePath": "src/lib/server/protocols/protocol-subflow.ts",

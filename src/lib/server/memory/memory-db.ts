@@ -38,6 +38,14 @@ const MAX_FTS_RESULT_ROWS = 50
 const DEFAULT_VECTOR_SIMILARITY_THRESHOLD = 0.3
 const MAX_MERGED_RESULTS = 80
 
+type MemoryDbRow = Record<string, unknown>
+type MemoryEmbeddingRow = MemoryDbRow & { embedding: Buffer }
+
+interface MemoryLinkRow {
+  id: string
+  linkedMemoryIds: string | null
+}
+
 export const MEMORY_FTS_STOP_WORDS = new Set([
   'a', 'an', 'and', 'are', 'as', 'at', 'be', 'by', 'for', 'from', 'how',
   'i', 'if', 'in', 'is', 'it', 'of', 'on', 'or', 'that', 'the', 'this',
@@ -992,7 +1000,7 @@ function initDb() {
       }
       stmts.delete.run(id)
       // Remove this ID from any other memory's linkedMemoryIds
-      const linking = stmts.findMemoriesLinkingTo.all(`%"${id}"%`) as any[]
+      const linking = stmts.findMemoriesLinkingTo.all(`%"${id}"%`) as MemoryLinkRow[]
       for (const row of linking) {
         const ids = normalizeLinkedMemoryIds(safeJsonParse<string[]>(row.linkedMemoryIds, []), row.id)
         const filtered = ids.filter((lid: string) => lid !== id)
@@ -1113,11 +1121,11 @@ function initDb() {
       const ftsResults: MemoryEntry[] = ftsQuery
         ? (categoryFilter
             ? (fastAgentOnlyScope
-                ? stmts.searchByCategoryAgentOrShared.all(ftsQuery, categoryFilter, normalizedAgentId, `%"${normalizedAgentId}"%`) as any[]
-                : stmts.searchByCategory.all(ftsQuery, categoryFilter) as any[])
+                ? stmts.searchByCategoryAgentOrShared.all(ftsQuery, categoryFilter, normalizedAgentId, `%"${normalizedAgentId}"%`) as MemoryDbRow[]
+                : stmts.searchByCategory.all(ftsQuery, categoryFilter) as MemoryDbRow[])
             : (fastAgentOnlyScope
-                ? stmts.searchByAgentOrShared.all(ftsQuery, normalizedAgentId, `%"${normalizedAgentId}"%`) as any[]
-                : stmts.search.all(ftsQuery) as any[])
+                ? stmts.searchByAgentOrShared.all(ftsQuery, normalizedAgentId, `%"${normalizedAgentId}"%`) as MemoryDbRow[]
+                : stmts.search.all(ftsQuery) as MemoryDbRow[])
           ).map(rowToEntry)
         : []
       const ftsHitIds = new Set<string>(ftsResults.map((entry) => entry.id))
@@ -1132,8 +1140,8 @@ function initDb() {
         queryEmbeddingResult = queryEmbedding || undefined
         if (queryEmbedding) {
           const rows = fastAgentOnlyScope
-            ? getAllWithEmbeddingsByAgentOrShared.all(normalizedAgentId, `%"${normalizedAgentId}"%`) as any[]
-            : getAllWithEmbeddings.all() as any[]
+            ? getAllWithEmbeddingsByAgentOrShared.all(normalizedAgentId, `%"${normalizedAgentId}"%`) as MemoryEmbeddingRow[]
+            : getAllWithEmbeddings.all() as MemoryEmbeddingRow[]
 
           const scored = rows
             .filter((row) => !categoryFilter || row.category === categoryFilter)

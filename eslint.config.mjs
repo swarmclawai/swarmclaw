@@ -16,6 +16,7 @@ const eslintConfig = defineConfig([
     "data/**",
     "artifacts/**",
     ".workbench/**",
+    ".tmp-*/**",
     // Git worktrees (created by parallel agent workflows)
     ".worktrees/**",
     // Electron build output (compiled from electron/*.ts)
