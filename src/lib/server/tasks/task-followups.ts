@@ -4,6 +4,7 @@ import type { BoardTask, Connector, MessageToolEvent } from '@/types'
 import { normalizeWhatsappTarget } from '@/lib/server/connectors/response-media'
 import { isDirectConnectorSession } from '@/lib/server/connectors/session-kind'
 import { loadConnectors } from '@/lib/server/connectors/connector-repository'
+import { enqueueConnectorOutbox, hasSentConnectorOutboxForDedupe } from '@/lib/server/connectors/outbox'
 import { WORKSPACE_DIR } from '@/lib/server/data-dir'
 import { loadSessions } from '@/lib/server/sessions/session-repository'
 import { UPLOAD_DIR } from '@/lib/server/upload-path'
@@ -434,6 +435,23 @@ export function taskAlreadyDeliveredToConnectorTarget(params: {
   return false
 }
 
+/**
+ * Run-scoped dedupe key for a task follow-up delivery. Scheduled reruns reuse
+ * the same linked task id, so the run number keeps each run's follow-up
+ * distinct while suppressing duplicate sends within one run.
+ */
+export function buildTaskFollowupDedupeKey(
+  task: Pick<BoardTask, 'id' | 'runNumber' | 'attempts'>,
+  target: { connectorId: string; channelId: string; threadId?: string | null },
+): string {
+  const run = typeof task.runNumber === 'number'
+    ? task.runNumber
+    : typeof task.attempts === 'number'
+      ? task.attempts
+      : 0
+  return `task-followup:${task.id}:run${run}:${target.connectorId}|${target.channelId}|${target.threadId || ''}`
+}
+
 export async function notifyConnectorTaskFollowups(params: {
   task: BoardTask
   statusLabel: string
@@ -446,7 +464,6 @@ export async function notifyConnectorTaskFollowups(params: {
 
   const connectors = loadConnectors()
   const running = (await import('@/lib/server/connectors/manager')).listRunningConnectors()
-  const manager = await import('@/lib/server/connectors/manager')
   const sessions = loadSessions()
   const targets = collectTaskConnectorFollowupTargets({
     task,
@@ -499,12 +516,20 @@ export async function notifyConnectorTaskFollowups(params: {
     const outboundMessage = `${message}${preferredChannelNote}`
 
     const resolvedMediaPath = mediaPath || maybeResolveUploadMediaPathFromUrl(imageUrl)
+    // Deliver through the connector outbox so every schedule/task follow-up
+    // leaves a durable delivery record (pending/sent/failed with lastError)
+    // and gets retried with backoff instead of one fire-and-forget attempt.
+    const dedupeKey = buildTaskFollowupDedupeKey(task, target)
+    if (hasSentConnectorOutboxForDedupe(dedupeKey)) continue
     try {
-      await manager.sendConnectorMessage({
+      enqueueConnectorOutbox({
         connectorId: target.connectorId,
         channelId: target.channelId,
         threadId: target.threadId || undefined,
         text: outboundMessage,
+        taskId: task.id,
+        scheduleId: typeof task.sourceScheduleId === 'string' ? task.sourceScheduleId : null,
+        dedupeKey,
         ...(resolvedMediaPath
           ? {
               mediaPath: resolvedMediaPath,
@@ -515,7 +540,7 @@ export async function notifyConnectorTaskFollowups(params: {
       })
     } catch (err: unknown) {
       const errMsg = errorMessage(err)
-      log.warn(TAG, `Failed task follow-up send on connector ${target.connectorId}: ${errMsg}`)
+      log.warn(TAG, `Failed to queue task follow-up for connector ${target.connectorId}: ${errMsg}`)
     }
   }
 }

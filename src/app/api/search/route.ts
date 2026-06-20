@@ -7,6 +7,7 @@ import {
   loadWebhooks,
   loadSkills,
 } from '@/lib/server/storage'
+import { getMessages } from '@/lib/server/messages/message-repository'
 
 interface SearchResult {
   type: 'task' | 'agent' | 'session' | 'schedule' | 'webhook' | 'skill' | 'message'
@@ -59,8 +60,8 @@ function searchMessages(
   const MAX_MSG_RESULTS = 10
   for (const [sessionId, session] of Object.entries(sessions)) {
     if (results.length >= MAX_MSG_RESULTS) break
-    if (!Array.isArray(session.messages) || !session.messages.length) continue
-    const messages = session.messages as Array<Record<string, unknown>>
+    const messages = getMessages(sessionId)
+    if (!messages.length) continue
     const agentId = session.agentId as string | undefined
     const agentName = agentId && agents[agentId] ? (agents[agentId].name as string) : undefined
     const sessionName = (session.name as string) || 'Untitled'

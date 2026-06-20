@@ -43,6 +43,10 @@ export interface ConnectorOutboxEntry extends Record<string, unknown> {
   threadId?: string
   ptt?: boolean
   dedupeKey?: string | null
+  /** Originating task, when this entry delivers a task follow-up */
+  taskId?: string | null
+  /** Originating schedule, when the task was schedule-driven */
+  scheduleId?: string | null
   lastError?: string | null
   deliveredAt?: number | null
   lastMessageId?: string | null
@@ -78,8 +82,8 @@ function normalizeEntry(value: unknown): ConnectorOutboxEntry | null {
   if (!id || !channelId) return null
   return {
     id,
-    
-    
+    connectorId: typeof row.connectorId === 'string' ? row.connectorId : undefined,
+    platform: typeof row.platform === 'string' ? row.platform : undefined,
     channelId,
     text: typeof row.text === 'string' ? row.text : '',
     sessionId: typeof row.sessionId === 'string' ? row.sessionId : null,
@@ -99,6 +103,8 @@ function normalizeEntry(value: unknown): ConnectorOutboxEntry | null {
     attemptCount: typeof row.attemptCount === 'number' ? row.attemptCount : 0,
     maxAttempts: typeof row.maxAttempts === 'number' ? row.maxAttempts : DEFAULT_MAX_ATTEMPTS,
     dedupeKey: typeof row.dedupeKey === 'string' ? row.dedupeKey : null,
+    taskId: typeof row.taskId === 'string' ? row.taskId : null,
+    scheduleId: typeof row.scheduleId === 'string' ? row.scheduleId : null,
     lastError: typeof row.lastError === 'string' ? row.lastError : null,
     deliveredAt: typeof row.deliveredAt === 'number' ? row.deliveredAt : null,
     lastMessageId: typeof row.lastMessageId === 'string' ? row.lastMessageId : null,
@@ -299,6 +305,20 @@ export function enqueueConnectorOutbox(
   notify('connector_outbox')
   rescheduleFromStorage(now)
   return { outboxId: entry.id, sendAt: entry.sendAt }
+}
+
+/**
+ * True when a delivery for this dedupe key already reached a successful
+ * terminal state. `findPendingConnectorOutboxByDedupe` only sees non-terminal
+ * entries, so it cannot prevent re-sends after a success.
+ */
+export function hasSentConnectorOutboxForDedupe(dedupeKey: string): boolean {
+  const normalizedKey = dedupeKey.trim()
+  if (!normalizedKey) return false
+  return listEntries().some((entry) =>
+    entry.dedupeKey === normalizedKey
+    && (entry.status === 'sent' || entry.status === 'suppressed'),
+  )
 }
 
 export function findPendingConnectorOutboxByDedupe(dedupeKey: string, now = Date.now()): ConnectorOutboxEntry | null {

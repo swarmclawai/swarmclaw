@@ -87,6 +87,19 @@ export const SETUP_PROVIDERS: SetupProviderOption[] = [
     modelLibraryUrl: 'https://openrouter.ai/models',
   },
   {
+    id: 'tokenmix',
+    name: 'TokenMix',
+    description: 'One OpenAI-compatible API relay for Claude, OpenAI, Gemini, DeepSeek, Qwen, and other hosted models.',
+    requiresKey: true,
+    supportsEndpoint: false,
+    defaultEndpoint: 'https://api.tokenmix.ai/v1',
+    keyUrl: 'https://tokenmix.ai',
+    keyLabel: 'tokenmix.ai',
+    badge: 'Catalog',
+    icon: 'T',
+    modelLibraryUrl: 'https://tokenmix.ai/models',
+  },
+  {
     id: 'openclaw',
     name: 'OpenClaw',
     description: 'Deploy or connect official-only local and remote OpenClaw gateways, then map starter agents across your swarm by role, tag, or use case.',
@@ -779,6 +792,13 @@ export const DEFAULT_AGENTS = {
     description: 'A helpful assistant powered through OpenRouter.',
     systemPrompt: SWARMCLAW_ASSISTANT_PROMPT,
     model: 'anthropic/claude-sonnet-4.6',
+    tools: STARTER_AGENT_TOOLS,
+  },
+  tokenmix: {
+    name: 'TokenMix Agent',
+    description: 'A helpful assistant powered through TokenMix.',
+    systemPrompt: SWARMCLAW_ASSISTANT_PROMPT,
+    model: 'claude-sonnet-4-6',
     tools: STARTER_AGENT_TOOLS,
   },
   google: {

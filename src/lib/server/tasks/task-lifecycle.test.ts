@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict'
+import path from 'node:path'
 import { describe, it } from 'node:test'
 
 import type { BoardTask, Schedule } from '@/types'
+
+import { WORKSPACE_DIR } from '@/lib/server/data-dir'
 
 import {
   buildBoardTask,
@@ -108,6 +111,28 @@ describe('task lifecycle helpers', () => {
     assert.equal(task.totalRuns, 5)
     assert.equal(task.totalCompleted, 3)
     assert.equal(task.runNumber, 2)
+  })
+
+  it('resetTaskForRerun remaps a legacy workspace cwd onto the current root', () => {
+    const task = makeTask({
+      status: 'failed',
+      cwd: '/root/.swarmclaw/workspace/tasks/task-1',
+    })
+
+    resetTaskForRerun(task, { title: 'Rerun', now: 99 })
+
+    assert.equal(task.cwd, path.join(WORKSPACE_DIR, 'tasks', 'task-1'))
+  })
+
+  it('resetTaskForRerun preserves an intentional custom cwd', () => {
+    const task = makeTask({
+      status: 'failed',
+      cwd: '/home/me/code/myrepo',
+    })
+
+    resetTaskForRerun(task, { title: 'Rerun', now: 99 })
+
+    assert.equal(task.cwd, '/home/me/code/myrepo')
   })
 
   it('prepareScheduledTaskRun creates a schedule-backed task when no reusable task exists', () => {

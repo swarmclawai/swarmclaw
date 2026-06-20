@@ -596,7 +596,8 @@ describe('task-followups', () => {
   })
 
   describe('taskAlreadyDeliveredToConnectorTarget', () => {
-    it('returns true when the task session already delivered to the same connector target', () => {
+    it('returns true when the task session already delivered to the same connector target', async () => {
+      const { appendMessage } = await import('@/lib/server/messages/message-repository')
       const task = {
         id: 'task-delivered',
         title: 'Delivered task',
@@ -607,27 +608,29 @@ describe('task-followups', () => {
         createdAt: Date.now(),
         updatedAt: Date.now(),
       }
+      // Delivery evidence is read through the repo-backed message reader, so
+      // the message must be seeded via the repository, not inline on the session.
+      appendMessage('task-session', {
+        role: 'assistant',
+        text: 'Sent it.',
+        time: Date.now(),
+        toolEvents: [
+          {
+            name: 'connector_message_tool',
+            input: '{}',
+            output: JSON.stringify({
+              status: 'voice_sent',
+              connectorId: 'conn-wa',
+              to: '447700900111@s.whatsapp.net',
+              messageId: 'msg-1',
+            }),
+          },
+        ],
+      } as import('@/types').Message)
       const sessions = {
         'task-session': {
           id: 'task-session',
-          messages: [
-            {
-              role: 'assistant',
-              text: 'Sent it.',
-              toolEvents: [
-                {
-                  name: 'connector_message_tool',
-                  input: '{}',
-                  output: JSON.stringify({
-                    status: 'voice_sent',
-                    connectorId: 'conn-wa',
-                    to: '447700900111@s.whatsapp.net',
-                    messageId: 'msg-1',
-                  }),
-                },
-              ],
-            },
-          ],
+          messages: [],
         },
       }
       const connectors = {
@@ -657,38 +660,39 @@ describe('task-followups', () => {
       assert.equal(delivered, true)
     })
 
-    it('returns false when connector delivery was to a different target', () => {
+    it('returns false when connector delivery was to a different target', async () => {
+      const { appendMessage } = await import('@/lib/server/messages/message-repository')
       const task = {
         id: 'task-other-target',
         title: 'Other target',
         description: '',
         agentId: 'agent-1',
-        sessionId: 'task-session',
+        sessionId: 'task-session-other',
         status: 'completed' as const,
         createdAt: Date.now(),
         updatedAt: Date.now(),
       }
+      appendMessage('task-session-other', {
+        role: 'assistant',
+        text: 'Sent it.',
+        time: Date.now(),
+        toolEvents: [
+          {
+            name: 'connector_message_tool',
+            input: '{}',
+            output: JSON.stringify({
+              status: 'sent',
+              connectorId: 'conn-wa',
+              to: '447700900222@s.whatsapp.net',
+              messageId: 'msg-2',
+            }),
+          },
+        ],
+      } as import('@/types').Message)
       const sessions = {
-        'task-session': {
-          id: 'task-session',
-          messages: [
-            {
-              role: 'assistant',
-              text: 'Sent it.',
-              toolEvents: [
-                {
-                  name: 'connector_message_tool',
-                  input: '{}',
-                  output: JSON.stringify({
-                    status: 'sent',
-                    connectorId: 'conn-wa',
-                    to: '447700900222@s.whatsapp.net',
-                    messageId: 'msg-2',
-                  }),
-                },
-              ],
-            },
-          ],
+        'task-session-other': {
+          id: 'task-session-other',
+          messages: [],
         },
       }
       const connectors = {
@@ -716,6 +720,85 @@ describe('task-followups', () => {
       })
 
       assert.equal(delivered, false)
+    })
+  })
+
+  // ---- buildTaskFollowupDedupeKey ----
+
+  describe('buildTaskFollowupDedupeKey', () => {
+    it('is scoped to the task, run number, and target', () => {
+      const key = mod.buildTaskFollowupDedupeKey(
+        { id: 'task-1', runNumber: 7, attempts: 2 },
+        { connectorId: 'conn-1', channelId: 'ch-1', threadId: 'th-1' },
+      )
+      assert.equal(key, 'task-followup:task-1:run7:conn-1|ch-1|th-1')
+    })
+
+    it('changes across runs so scheduled reruns can deliver again', () => {
+      const target = { connectorId: 'conn-1', channelId: 'ch-1' }
+      const run1 = mod.buildTaskFollowupDedupeKey({ id: 'task-1', runNumber: 1 }, target)
+      const run2 = mod.buildTaskFollowupDedupeKey({ id: 'task-1', runNumber: 2 }, target)
+      assert.notEqual(run1, run2)
+    })
+
+    it('falls back to attempts, then zero, when runNumber is missing', () => {
+      const target = { connectorId: 'conn-1', channelId: 'ch-1' }
+      assert.equal(
+        mod.buildTaskFollowupDedupeKey({ id: 'task-1', attempts: 3 }, target),
+        'task-followup:task-1:run3:conn-1|ch-1|',
+      )
+      assert.equal(
+        mod.buildTaskFollowupDedupeKey({ id: 'task-1' }, target),
+        'task-followup:task-1:run0:conn-1|ch-1|',
+      )
+    })
+  })
+
+  // ---- outbox-backed follow-up delivery ----
+
+  describe('outbox-backed follow-up delivery', () => {
+    it('stores taskId/scheduleId on the outbox entry and keeps them through normalization', async () => {
+      const outbox = await import('@/lib/server/connectors/outbox')
+      const dedupeKey = 'task-followup:task-evidence:run1:conn-1|ch-1|'
+      outbox.enqueueConnectorOutbox({
+        connectorId: 'conn-1',
+        channelId: 'ch-1',
+        text: 'Task completed: evidence',
+        taskId: 'task-evidence',
+        scheduleId: 'sched-evidence',
+        dedupeKey,
+        sendAt: Date.now() + 60_000,
+      })
+
+      const entry = outbox.findPendingConnectorOutboxByDedupe(dedupeKey)
+      assert.ok(entry)
+      assert.equal(entry!.taskId, 'task-evidence')
+      assert.equal(entry!.scheduleId, 'sched-evidence')
+      assert.equal(entry!.connectorId, 'conn-1')
+      assert.equal(entry!.status, 'pending')
+    })
+
+    it('hasSentConnectorOutboxForDedupe reports successful terminal deliveries', async () => {
+      const outbox = await import('@/lib/server/connectors/outbox')
+      const storage = await import('@/lib/server/storage')
+      const dedupeKey = 'task-followup:task-sent:run1:conn-1|ch-1|'
+      const now = Date.now()
+      storage.upsertConnectorOutboxItem('sent-entry-1', {
+        id: 'sent-entry-1',
+        channelId: 'ch-1',
+        text: 'done',
+        status: 'sent',
+        sendAt: now,
+        createdAt: now,
+        updatedAt: now,
+        attemptCount: 1,
+        maxAttempts: 6,
+        dedupeKey,
+        deliveredAt: now,
+      })
+
+      assert.equal(outbox.hasSentConnectorOutboxForDedupe(dedupeKey), true)
+      assert.equal(outbox.hasSentConnectorOutboxForDedupe('task-followup:other:run1:c|c|'), false)
     })
   })
 

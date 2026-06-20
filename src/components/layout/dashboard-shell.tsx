@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
+import { useTheme } from 'next-themes'
 import { initAudioContext } from '@/lib/tts'
 import { clearStoredAccessKey } from '@/lib/app/api-client'
 import { safeStorageGet, safeStorageRemove, safeStorageSet } from '@/lib/app/safe-storage'
@@ -14,6 +15,7 @@ import { useWs } from '@/hooks/use-ws'
 import { api } from '@/lib/app/api-client'
 import { pathToView, useNavigate } from '@/lib/app/navigation'
 import { shouldAutoOpenPanelSidebar } from '@/lib/app/view-constants'
+import { normalizeThemeMode } from '@/lib/theme-mode'
 
 import { FullScreenLoader } from '@/components/ui/full-screen-loader'
 import { SidebarRail } from '@/components/layout/sidebar-rail'
@@ -32,6 +34,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
   const navigateTo = useNavigate()
+  const { setTheme } = useTheme()
 
   const {
     hydrated,
@@ -151,6 +154,12 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
       document.documentElement.style.setProperty('--neutral-tint', hue)
     }
   }, [appSettings.themeHue])
+
+  // Theme mode
+  useEffect(() => {
+    if (!appSettings.themeMode) return
+    setTheme(normalizeThemeMode(appSettings.themeMode))
+  }, [appSettings.themeMode, setTheme])
 
   // View validity check
   const isViewEnabled = useCallback((view: AppView) => {

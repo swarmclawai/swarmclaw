@@ -128,6 +128,29 @@ export const PROVIDERS: Record<string, BuiltinProviderConfig> = {
       },
     },
   },
+  tokenmix: {
+    id: 'tokenmix',
+    name: 'TokenMix',
+    models: [
+      'claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5',
+      'gpt-5.4', 'gpt-5.4-mini',
+      'gemini-2.5-pro', 'gemini-2.5-flash',
+      'deepseek-chat', 'deepseek-reasoner',
+      'qwen-max',
+    ],
+    requiresApiKey: true,
+    requiresEndpoint: false,
+    defaultEndpoint: 'https://api.tokenmix.ai/v1',
+    handler: {
+      streamChat: (opts) => {
+        const patchedSession = {
+          ...opts.session,
+          apiEndpoint: opts.session.apiEndpoint || 'https://api.tokenmix.ai/v1',
+        }
+        return streamOpenAiChat({ ...opts, session: patchedSession })
+      },
+    },
+  },
   anthropic: {
     id: 'anthropic',
     name: 'Anthropic',

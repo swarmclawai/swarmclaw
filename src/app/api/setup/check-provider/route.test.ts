@@ -161,3 +161,15 @@ test('POST returns provider diagnostics with normalized LM Studio targets and re
     globalThis.fetch = originalFetch
   }
 })
+
+test('POST rejects TokenMix setup checks without an API key', async () => {
+  const res = await POST(new Request('http://localhost/api/setup/check-provider', {
+    method: 'POST',
+    body: JSON.stringify({ provider: 'tokenmix' }),
+  }))
+  const payload = await res.json()
+
+  assert.equal(res.status, 200)
+  assert.equal(payload.ok, false)
+  assert.equal(payload.message, 'TokenMix API key is required.')
+})

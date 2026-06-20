@@ -49,11 +49,13 @@ const servers: Map<string, PreviewServer> =
 // ---------------------------------------------------------------------------
 
 function resolveServeDir(filePath: string): string {
-  const resolved = path.resolve(filePath)
+  const resolved = path.resolve(/*turbopackIgnore: true*/ filePath)
   try {
-    return fs.statSync(resolved).isDirectory() ? resolved : path.dirname(resolved)
+    return fs.statSync(/*turbopackIgnore: true*/ resolved).isDirectory()
+      ? resolved
+      : path.dirname(/*turbopackIgnore: true*/ resolved)
   } catch {
-    return path.dirname(resolved)
+    return path.dirname(/*turbopackIgnore: true*/ resolved)
   }
 }
 
@@ -91,13 +93,13 @@ function buildFrameworkArgs(framework: string | undefined, port: number): string
 }
 
 function detectProject(dir: string): ProjectInfo {
-  const pkgPath = path.join(dir, 'package.json')
-  if (!fs.existsSync(pkgPath)) {
+  const pkgPath = path.join(/*turbopackIgnore: true*/ dir, 'package.json')
+  if (!fs.existsSync(/*turbopackIgnore: true*/ pkgPath)) {
     return { type: 'static' }
   }
 
   try {
-    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'))
+    const pkg = JSON.parse(fs.readFileSync(/*turbopackIgnore: true*/ pkgPath, 'utf-8'))
     const scripts = pkg.scripts || {}
     const deps = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) }
 
@@ -156,16 +158,22 @@ function createStaticServer(dir: string): http.Server {
     ]
 
     for (const candidate of candidates) {
-      if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
+      if (
+        fs.existsSync(/*turbopackIgnore: true*/ candidate)
+        && fs.statSync(/*turbopackIgnore: true*/ candidate).isFile()
+      ) {
         const ext = path.extname(candidate).toLowerCase()
         res.writeHead(200, { 'Content-Type': MIME_MAP[ext] || 'application/octet-stream' })
-        fs.createReadStream(candidate).pipe(res)
+        fs.createReadStream(/*turbopackIgnore: true*/ candidate).pipe(res)
         return
       }
     }
 
-    if (fs.existsSync(normalizedFile) && fs.statSync(normalizedFile).isDirectory()) {
-      const files = fs.readdirSync(normalizedFile)
+    if (
+      fs.existsSync(/*turbopackIgnore: true*/ normalizedFile)
+      && fs.statSync(/*turbopackIgnore: true*/ normalizedFile).isDirectory()
+    ) {
+      const files = fs.readdirSync(/*turbopackIgnore: true*/ normalizedFile)
       const links = files.map((f) => `<li><a href="${reqPath.replace(/\/$/, '')}/${f}">${f}</a></li>`).join('\n')
       res.writeHead(200, { 'Content-Type': 'text/html' })
       res.end(`<!DOCTYPE html><html><head><title>Index of ${reqPath}</title><style>body{font-family:monospace;padding:20px;background:#1a1a2e;color:#e0e0e0}a{color:#60a5fa}</style></head><body><h2>Index of ${reqPath}</h2><ul>${links}</ul></body></html>`)
@@ -183,7 +191,7 @@ function createStaticServer(dir: string): http.Server {
 
 async function startNpmServer(dir: string, command: string[], port: number, framework?: string): Promise<PreviewServer> {
   // Install deps if node_modules missing
-  if (!fs.existsSync(path.join(dir, 'node_modules'))) {
+  if (!fs.existsSync(/*turbopackIgnore: true*/ path.join(/*turbopackIgnore: true*/ dir, 'node_modules'))) {
     log.info(TAG, `Installing dependencies in ${dir}`)
     await new Promise<void>((resolve, reject) => {
       const install = spawn('npm', ['install'], { cwd: dir, stdio: 'pipe' })
@@ -290,7 +298,7 @@ export async function POST(req: Request) {
       return NextResponse.json(buildResponse(servers.get(key)!))
     }
 
-    if (!fs.existsSync(dir)) {
+    if (!fs.existsSync(/*turbopackIgnore: true*/ dir)) {
       return NextResponse.json({ error: 'Directory not found' }, { status: 404 })
     }
 

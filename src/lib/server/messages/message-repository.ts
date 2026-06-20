@@ -86,6 +86,38 @@ function summarizeForMeta(message: Message): Message {
   }
 }
 
+function getLastAssistantAt(messages: Message[]): number | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === 'assistant' && typeof messages[i].time === 'number') {
+      return messages[i].time
+    }
+  }
+  return null
+}
+
+function compactDeprecatedBlobMessages(
+  sessionId: string,
+  persistedCount: number,
+  lastMsg: Message | null,
+  lastAssistantAt: number | null,
+): boolean {
+  let compacted = false
+  patchSession(sessionId, (current) => {
+    if (!current) return null
+    const blobCount = Array.isArray(current.messages) ? current.messages.length : 0
+    if (blobCount === 0) return current
+    if (persistedCount < blobCount) return current
+
+    current.messages = []
+    current.messageCount = persistedCount
+    current.lastMessageSummary = lastMsg ? summarizeForMeta(lastMsg) : null
+    if (lastAssistantAt !== null) current.lastAssistantAt = lastAssistantAt
+    compacted = true
+    return current
+  })
+  return compacted
+}
+
 // ---------------------------------------------------------------------------
 // Session metadata sync — keeps messageCount / lastMessageSummary on the blob
 // ---------------------------------------------------------------------------
@@ -139,18 +171,14 @@ function lazyMigrateSession(sessionId: string): Message[] | null {
       ins.run(sessionId, i, JSON.stringify(messages[i]))
     }
 
-    // Compute metadata on the blob (keep messages intact for backward compat)
+    // Compute metadata before compacting deprecated blob storage.
     const lastMsg = messages[messages.length - 1]
-    let lastAssistantAt: number | null = null
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].role === 'assistant' && typeof messages[i].time === 'number') {
-        lastAssistantAt = messages[i].time
-        break
-      }
-    }
+    const lastAssistantAt = getLastAssistantAt(messages)
+    const persistedCount = rowCount(sessionId)
 
     patchSession(sessionId, (current) => {
       if (!current) return null
+      current.messages = persistedCount >= messages.length ? [] : current.messages
       current.messageCount = messages.length
       current.lastMessageSummary = lastMsg ? summarizeForMeta(lastMsg) : null
       if (lastAssistantAt !== null && typeof current.lastAssistantAt !== 'number') {
@@ -183,6 +211,7 @@ export function getMessages(sessionId: string): Message[] {
       const m = parseMsg(row.data)
       if (m) out.push(m)
     }
+    compactDeprecatedBlobMessages(sessionId, out.length, out[out.length - 1] || null, getLastAssistantAt(out))
     return out
   }, { sessionId })
 }
@@ -338,10 +367,16 @@ export function deleteSessionMessages(sessionId: string): void {
 // Bulk migration (for CLI / admin endpoint)
 // ---------------------------------------------------------------------------
 
-export function migrateAllSessions(): { migrated: number; skipped: number; total: number } {
+export function migrateAllSessions(): {
+  migrated: number
+  compacted: number
+  skipped: number
+  total: number
+} {
   const db = getDb()
   const rows = db.prepare('SELECT id, data FROM sessions').all() as Array<{ id: string; data: string }>
   let migrated = 0
+  let compacted = 0
   let skipped = 0
 
   for (const row of rows) {
@@ -351,16 +386,37 @@ export function migrateAllSessions(): { migrated: number; skipped: number; total
         skipped++
         continue
       }
-      if (rowCount(row.id) > 0) {
+
+      const persistedCount = rowCount(row.id)
+      if (persistedCount > 0) {
+        const persistedRows = stmts().selectAll.all(row.id) as Array<{ data: string }>
+        const persistedMessages: Message[] = []
+        for (const persistedRow of persistedRows) {
+          const message = parseMsg(persistedRow.data)
+          if (message) persistedMessages.push(message)
+        }
+        if (compactDeprecatedBlobMessages(
+          row.id,
+          persistedCount,
+          persistedMessages[persistedMessages.length - 1] || null,
+          getLastAssistantAt(persistedMessages),
+        )) {
+          compacted++
+        }
         skipped++
         continue
       }
+
       lazyMigrateSession(row.id)
       migrated++
+      const stored = loadSession(row.id)
+      if (!Array.isArray(stored?.messages) || stored.messages.length === 0) {
+        compacted++
+      }
     } catch {
       skipped++
     }
   }
 
-  return { migrated, skipped, total: rows.length }
+  return { migrated, compacted, skipped, total: rows.length }
 }

@@ -3,6 +3,7 @@ import { TooltipProvider } from "@/components/ui/tooltip"
 import { Toaster } from "@/components/ui/sonner"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { AppQueryProvider } from "@/components/providers/app-query-provider"
+import { ThemeProvider } from "@/components/providers/theme-provider"
 import "./globals.css"
 
 export const metadata: Metadata = {
@@ -27,16 +28,18 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en" suppressHydrationWarning>
       <body className="antialiased" cz-shortcut-listen="true">
-        <AppQueryProvider>
-          <TooltipProvider>
-            <DashboardShell>
-              {children}
-            </DashboardShell>
-            <Toaster />
-          </TooltipProvider>
-        </AppQueryProvider>
+        <ThemeProvider>
+          <AppQueryProvider>
+            <TooltipProvider>
+              <DashboardShell>
+                {children}
+              </DashboardShell>
+              <Toaster />
+            </TooltipProvider>
+          </AppQueryProvider>
+        </ThemeProvider>
       </body>
     </html>
   )

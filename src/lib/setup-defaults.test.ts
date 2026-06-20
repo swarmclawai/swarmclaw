@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { CLI_PROVIDER_METADATA } from './providers/cli-provider-metadata'
-import { DEFAULT_AGENTS, getDefaultModelForProvider } from './setup-defaults'
+import { DEFAULT_AGENTS, SETUP_PROVIDERS, getDefaultModelForProvider } from './setup-defaults'
 
 // ---------------------------------------------------------------------------
 // OpenClaw default model is empty (not 'default')
@@ -31,6 +31,15 @@ test('getDefaultModelForProvider returns non-empty for openai', () => {
 test('getDefaultModelForProvider returns non-empty for openrouter', () => {
   const model = getDefaultModelForProvider('openrouter')
   assert.ok(model, 'openrouter model should be truthy')
+})
+
+test('TokenMix has setup metadata and a default agent model', () => {
+  const provider = SETUP_PROVIDERS.find((candidate) => candidate.id === 'tokenmix')
+  assert.ok(provider, 'tokenmix should appear in setup providers')
+  assert.equal(provider.defaultEndpoint, 'https://api.tokenmix.ai/v1')
+  assert.equal(provider.supportsEndpoint, false)
+  assert.equal(provider.requiresKey, true)
+  assert.equal(getDefaultModelForProvider('tokenmix'), 'claude-sonnet-4-6')
 })
 
 test('getDefaultModelForProvider returns non-empty for anthropic', () => {

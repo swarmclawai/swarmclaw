@@ -9,7 +9,7 @@ type SessionSnapshot = {
   agentId?: string
   createdAt?: number
   lastActiveAt?: number
-  messages?: unknown[]
+  messageCount?: number
 }
 
 interface LiveUsage {
@@ -45,7 +45,7 @@ function summarize(sessionId: string, records: UsageRecord[], session: SessionSn
     }
   }
 
-  const turns = Array.isArray(session?.messages) ? session!.messages!.length : records.length
+  const turns = typeof session?.messageCount === 'number' ? session.messageCount : records.length
   const wallStart = session?.createdAt ?? firstAt ?? 0
   const wallEnd = session?.lastActiveAt ?? lastAt ?? Date.now()
   const wallclockMs = wallStart > 0 ? Math.max(0, wallEnd - wallStart) : 0

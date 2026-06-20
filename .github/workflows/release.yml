@@ -147,7 +147,7 @@ jobs:
           echo "- \`docker pull ${{ steps.image.outputs.name }}:${{ github.ref_name }}\`" >> "$BODY_PATH"
           echo "- \`docker pull ${{ steps.image.outputs.name }}:latest\`" >> "$BODY_PATH"
           echo "## macOS desktop" >> "$BODY_PATH"
-          echo "- macOS builds are notarized when Developer ID and Apple notarization secrets are configured for the desktop release workflow. If a build is still ad-hoc signed and Finder says SwarmClaw is damaged, run \`xattr -dr com.apple.quarantine /Applications/SwarmClaw.app\` after installing, then open it again." >> "$BODY_PATH"
+          echo "- macOS builds publish both .dmg and .zip when Developer ID signing + notarization are configured. Until then, the desktop workflow publishes zip-only macOS artifacts to avoid the damaged unsigned DMG path. If Finder still reports a quarantined app, run \`xattr -dr com.apple.quarantine /Applications/SwarmClaw.app\` after installing, then open it again." >> "$BODY_PATH"
           echo "path=$BODY_PATH" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release

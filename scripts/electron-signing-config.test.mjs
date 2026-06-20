@@ -42,5 +42,18 @@ describe('macOS desktop signing configuration', () => {
 
     assert.equal(desktopWorkflow.includes("CSC_IDENTITY_AUTO_DISCOVERY: 'false'"), false)
     assert.equal(desktopWorkflow.includes('CSC_IDENTITY_AUTO_DISCOVERY: "false"'), false)
+
+    assert.ok(
+      desktopWorkflow.includes('echo "SWARMCLAW_ELECTRON_MAC_TARGETS=dmg,zip" >> "$GITHUB_ENV"'),
+      'signed macOS desktop releases should keep publishing dmg + zip artifacts',
+    )
+    assert.ok(
+      desktopWorkflow.includes('echo "SWARMCLAW_ELECTRON_MAC_TARGETS=zip" >> "$GITHUB_ENV"'),
+      'unsigned macOS desktop releases should fall back to zip-only artifacts',
+    )
+    assert.ok(
+      fs.readFileSync(path.join(repoRoot, 'scripts', 'build-electron.mjs'), 'utf8').includes('SWARMCLAW_ELECTRON_MAC_TARGETS'),
+      'electron build script should honor mac target overrides from the workflow',
+    )
   })
 })

@@ -53,6 +53,28 @@ interface ExtractTaskResultOptions {
   sinceTime?: number | null
 }
 
+export interface RunOutputSnapshot {
+  text?: string | null
+  error?: string | null
+  toolEvents?: readonly unknown[] | null
+}
+
+export const EMPTY_RUN_OUTCOME_MESSAGE =
+  'Run produced no output: the model returned no text, made no tool calls, and reported no error. '
+  + "This usually means the provider returned an empty response. Verify the agent's provider credential, model name, and endpoint."
+
+/**
+ * Detects the "silent empty run" case (no text, no tool calls, no error) and
+ * returns an actionable failure reason for it. Returns null when the run
+ * produced any signal at all.
+ */
+export function classifyEmptyRunOutcome(run: RunOutputSnapshot): string | null {
+  if (typeof run.error === 'string' && run.error.trim()) return null
+  if (typeof run.text === 'string' && run.text.trim()) return null
+  if (Array.isArray(run.toolEvents) && run.toolEvents.length > 0) return null
+  return EMPTY_RUN_OUTCOME_MESSAGE
+}
+
 // ---------------------------------------------------------------------------
 // Core extraction
 // ---------------------------------------------------------------------------

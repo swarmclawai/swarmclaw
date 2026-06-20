@@ -23,10 +23,10 @@ const NEXT_CONFIG_FILES = [
 ]
 
 function readPackageJson(dir: string): PackageJsonLike | null {
-  const pkgPath = path.join(dir, 'package.json')
-  if (!fs.existsSync(pkgPath)) return null
+  const pkgPath = path.join(/*turbopackIgnore: true*/ dir, 'package.json')
+  if (!fs.existsSync(/*turbopackIgnore: true*/ pkgPath)) return null
   try {
-    const parsed: unknown = JSON.parse(fs.readFileSync(pkgPath, 'utf8'))
+    const parsed: unknown = JSON.parse(fs.readFileSync(/*turbopackIgnore: true*/ pkgPath, 'utf8'))
     return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
       ? parsed as PackageJsonLike
       : null
@@ -46,7 +46,10 @@ function hasNextScript(pkg: PackageJsonLike): boolean {
 }
 
 function hasNextConfig(dir: string): boolean {
-  return NEXT_CONFIG_FILES.some((file) => fs.existsSync(path.join(dir, file)))
+  return NEXT_CONFIG_FILES.some((file) => {
+    const configPath = path.join(/*turbopackIgnore: true*/ dir, file)
+    return fs.existsSync(/*turbopackIgnore: true*/ configPath)
+  })
 }
 
 function classifyPackageRoot(dir: string, pkg: PackageJsonLike): FrameworkKind {

@@ -261,6 +261,7 @@ async function parseErrorMessage(res: Response, fallback: string): Promise<strin
 export const OPENAI_COMPATIBLE_DEFAULTS: Record<string, { name: string; defaultEndpoint: string }> = {
   openai: { name: 'OpenAI', defaultEndpoint: 'https://api.openai.com/v1' },
   openrouter: { name: 'OpenRouter', defaultEndpoint: 'https://openrouter.ai/api/v1' },
+  tokenmix: { name: 'TokenMix', defaultEndpoint: 'https://api.tokenmix.ai/v1' },
   google: { name: 'Google Gemini', defaultEndpoint: 'https://generativelanguage.googleapis.com/v1beta/openai' },
   deepseek: { name: 'DeepSeek', defaultEndpoint: 'https://api.deepseek.com/v1' },
   groq: { name: 'Groq', defaultEndpoint: 'https://api.groq.com/openai/v1' },

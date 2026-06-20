@@ -7,6 +7,7 @@ import { normalizeRuntimeSettingFields } from '@/lib/runtime/runtime-loop'
 import { normalizeSupervisorSettings } from '@/lib/autonomy/supervisor-settings'
 import { ensureDaemonProcessRunning } from '@/lib/server/daemon/controller'
 import { logActivity } from '@/lib/server/activity/activity-log'
+import { normalizeThemeMode } from '@/lib/theme-mode'
 export const dynamic = 'force-dynamic'
 
 
@@ -55,7 +56,9 @@ function parseGuardMode(value: unknown): 'off' | 'warn' | 'block' {
 }
 
 export async function GET() {
-  return NextResponse.json(loadPublicSettings())
+  const settings = loadPublicSettings()
+  settings.themeMode = normalizeThemeMode(settings.themeMode)
+  return NextResponse.json(settings)
 }
 
 export async function PUT(req: Request) {
@@ -146,6 +149,7 @@ export async function PUT(req: Request) {
   settings.daemonAutostartEnabled = parseBoolSetting(settings.daemonAutostartEnabled, true)
   settings.autonomyResumeApprovalsEnabled = parseBoolSetting(settings.autonomyResumeApprovalsEnabled, false)
   settings.untrustedContentGuardMode = parseGuardMode(settings.untrustedContentGuardMode)
+  settings.themeMode = normalizeThemeMode(settings.themeMode)
   settings.sessionResetMode = settings.sessionResetMode === 'daily' ? 'daily' : settings.sessionResetMode === 'idle' ? 'idle' : null
   settings.whatsappApprovedContacts = normalizeWhatsAppApprovedContacts(settings.whatsappApprovedContacts)
   settings.sessionIdleTimeoutSec = parseIntSetting(

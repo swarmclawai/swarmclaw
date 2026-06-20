@@ -171,6 +171,19 @@ function normalizeStoredScheduleRecord(value: unknown, loadItem: CollectionItemL
   if (archivedAt != null) schedule.archivedAt = archivedAt
   else delete schedule.archivedAt
 
+  const lastDeliveryStatus = typeof schedule.lastDeliveryStatus === 'string'
+    ? schedule.lastDeliveryStatus.trim().toLowerCase()
+    : ''
+  if (lastDeliveryStatus === 'ok' || lastDeliveryStatus === 'error') {
+    schedule.lastDeliveryStatus = lastDeliveryStatus
+  } else {
+    delete schedule.lastDeliveryStatus
+  }
+
+  const lastDeliveredAt = normalizeStoredScheduleTimestamp(schedule.lastDeliveredAt)
+  if (lastDeliveredAt != null) schedule.lastDeliveredAt = lastDeliveredAt
+  else delete schedule.lastDeliveredAt
+
   const archivedFromStatus = typeof schedule.archivedFromStatus === 'string'
     ? schedule.archivedFromStatus.trim().toLowerCase()
     : ''

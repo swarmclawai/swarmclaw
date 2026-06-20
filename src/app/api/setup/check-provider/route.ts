@@ -501,6 +501,12 @@ export async function POST(req: Request) {
         const result = await checkOpenAiCompatible(info.name, apiKey, endpoint, info.defaultEndpoint, model)
         return NextResponse.json(result)
       }
+      case 'tokenmix': {
+        if (!apiKey) return NextResponse.json({ ok: false, message: 'TokenMix API key is required.' })
+        const info = OPENAI_COMPATIBLE_DEFAULTS.tokenmix
+        const result = await checkOpenAiCompatible(info.name, apiKey, endpoint, info.defaultEndpoint, model)
+        return NextResponse.json(result)
+      }
       case 'anthropic': {
         if (!apiKey) return NextResponse.json({ ok: false, message: 'Anthropic API key is required.' })
         const result = await checkAnthropic(apiKey, endpoint, model)

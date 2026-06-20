@@ -1,5 +1,6 @@
 import type { SessionResetMode } from './session'
 import type { ExtensionManagedLocalFolderDeclaration } from './extension'
+import type { ThemeMode } from '@/lib/theme-mode'
 
 // --- App Settings ---
 export type LoopMode = 'bounded' | 'ongoing'
@@ -134,6 +135,7 @@ export interface AppSettings {
   defaultAgentId?: string | null
   // Theme
   themeHue?: string
+  themeMode?: ThemeMode
   // Web search provider
   webSearchProvider?: 'duckduckgo' | 'google' | 'bing' | 'searxng' | 'tavily' | 'brave' | 'exa'
   searxngUrl?: string

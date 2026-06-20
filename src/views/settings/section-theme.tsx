@@ -1,7 +1,10 @@
 'use client'
 
 import { useState } from 'react'
+import { Monitor, Moon, Sun } from 'lucide-react'
+import { useTheme } from 'next-themes'
 import { toast } from 'sonner'
+import { normalizeThemeMode, type ThemeMode } from '@/lib/theme-mode'
 import type { SettingsSectionProps } from './types'
 
 const PRESETS = [
@@ -13,11 +16,25 @@ const PRESETS = [
   { label: 'Rose', color: '#2e1a24' },
 ]
 
+const THEME_MODES: Array<{ id: ThemeMode; label: string; Icon: typeof Sun }> = [
+  { id: 'light', label: 'Light', Icon: Sun },
+  { id: 'dark', label: 'Dark', Icon: Moon },
+  { id: 'system', label: 'System', Icon: Monitor },
+]
+
 export function ThemeSection({ appSettings, patchSettings, inputClass }: SettingsSectionProps) {
+  const { setTheme } = useTheme()
   const currentHue = appSettings.themeHue || PRESETS[0].color
+  const currentMode = normalizeThemeMode(appSettings.themeMode)
   const [customHex, setCustomHex] = useState(
     PRESETS.some((p) => p.color === currentHue) ? '' : currentHue,
   )
+
+  const applyMode = (mode: ThemeMode) => {
+    setTheme(mode)
+    patchSettings({ themeMode: mode })
+    toast.success('Theme updated')
+  }
 
   const applyHue = (color: string) => {
     patchSettings({ themeHue: color })
@@ -38,8 +55,31 @@ export function ThemeSection({ appSettings, patchSettings, inputClass }: Setting
         Theme
       </h3>
       <p className="text-[12px] text-text-3 mb-5">
-        Shift the UI color palette. Pick a preset or enter a custom hex color.
+        Choose a color scheme and shift the UI palette with a preset or custom hex color.
       </p>
+
+      <div className="inline-grid grid-cols-3 rounded-[8px] border border-white/[0.08] bg-white/[0.03] p-1 mb-5">
+        {THEME_MODES.map(({ id, label, Icon }) => {
+          const isActive = currentMode === id
+          return (
+            <button
+              key={id}
+              type="button"
+              onClick={() => applyMode(id)}
+              aria-pressed={isActive}
+              className={`h-9 px-3 rounded-[6px] flex items-center justify-center gap-2 text-[12px] font-600 transition-colors ${
+                isActive
+                  ? 'bg-accent text-white'
+                  : 'text-text-3 hover:text-text hover:bg-white/[0.05]'
+              }`}
+              title={label}
+            >
+              <Icon className="w-4 h-4" aria-hidden="true" />
+              <span>{label}</span>
+            </button>
+          )
+        })}
+      </div>
 
       {/* Preset swatches */}
       <div className="flex flex-wrap gap-3 mb-4">

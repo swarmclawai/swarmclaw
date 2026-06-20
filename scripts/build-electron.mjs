@@ -19,6 +19,15 @@ const platformFlag = args.has('--mac') ? '--mac'
   : args.has('--win') ? '--win'
   : args.has('--linux') ? '--linux'
   : null
+const targetArg = process.argv.slice(2).find((arg) => arg.startsWith('--targets='))
+const explicitTargets = targetArg
+  ? targetArg.slice('--targets='.length).split(',').map((value) => value.trim()).filter(Boolean)
+  : []
+const envTargets = (process.env.SWARMCLAW_ELECTRON_MAC_TARGETS || '')
+  .split(',')
+  .map((value) => value.trim())
+  .filter(Boolean)
+const macTargets = explicitTargets.length > 0 ? explicitTargets : envTargets
 
 function run(cmd, cmdArgs, env = {}) {
   const status = runWithStatus(cmd, cmdArgs, env)
@@ -86,6 +95,7 @@ if (fs.existsSync(publicDir)) {
 console.log('[build-electron] running electron-builder…')
 const builderArgs = []
 if (platformFlag) builderArgs.push(platformFlag)
+if (platformFlag === '--mac' && macTargets.length > 0) builderArgs.push(...macTargets)
 if (publishAlways) {
   builderArgs.push('--publish', 'always')
 } else {

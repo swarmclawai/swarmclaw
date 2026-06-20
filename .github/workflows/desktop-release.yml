@@ -135,8 +135,10 @@ jobs:
 
           if [ "$has_certificate" = true ] && { [ "$has_apple_id_notary" = true ] || [ "$has_api_key_notary" = true ]; }; then
             echo "Developer ID signing and notarization inputs are configured."
+            echo "SWARMCLAW_ELECTRON_MAC_TARGETS=dmg,zip" >> "$GITHUB_ENV"
           else
-            echo "Developer ID signing and notarization inputs are incomplete; macOS artifacts will remain ad-hoc signed."
+            echo "Developer ID signing and notarization inputs are incomplete; publishing zip-only macOS artifacts to avoid damaged unsigned DMGs."
+            echo "SWARMCLAW_ELECTRON_MAC_TARGETS=zip" >> "$GITHUB_ENV"
           fi
 
       - name: Export macOS signing environment
