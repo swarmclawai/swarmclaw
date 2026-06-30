@@ -12,7 +12,11 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Multi-arch image builds compile native deps (better-sqlite3) and run the
+    # Next.js production build for linux/arm64 under QEMU emulation, which is far
+    # slower than the amd64-only build. Give the job headroom so the emulated
+    # arm64 stage is not cancelled mid-build.
+    timeout-minutes: 120
 
     steps:
       - name: Checkout
