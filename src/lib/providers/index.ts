@@ -173,6 +173,24 @@ export const PROVIDERS: Record<string, BuiltinProviderConfig> = {
       },
     },
   },
+  litellm: {
+    id: 'litellm',
+    name: 'LiteLLM',
+    models: ['gpt-4o', 'claude-sonnet-4-6', 'gemini-2.5-flash'],
+    requiresApiKey: false,
+    optionalApiKey: true,
+    requiresEndpoint: true,
+    defaultEndpoint: 'http://localhost:4000/v1',
+    handler: {
+      streamChat: (opts) => {
+        const patchedSession = {
+          ...opts.session,
+          apiEndpoint: opts.session.apiEndpoint || 'http://localhost:4000/v1',
+        }
+        return streamOpenAiChat({ ...opts, session: patchedSession })
+      },
+    },
+  },
   anthropic: {
     id: 'anthropic',
     name: 'Anthropic',

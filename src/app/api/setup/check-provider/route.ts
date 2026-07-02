@@ -527,8 +527,9 @@ export async function POST(req: Request) {
         const result = await checkOpenAiCompatible(info.name, apiKey, endpoint, info.defaultEndpoint, model)
         return NextResponse.json(result)
       }
+      case 'litellm':
       case 'hermes': {
-        const info = OPENAI_COMPATIBLE_DEFAULTS.hermes
+        const info = OPENAI_COMPATIBLE_DEFAULTS[provider]
         const result = await checkOpenAiCompatible(info.name, apiKey, endpoint, info.defaultEndpoint, model)
         return NextResponse.json(result)
       }
