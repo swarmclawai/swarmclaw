@@ -136,7 +136,7 @@ describe('provider-health', () => {
     for (const [key, val] of Object.entries(defaults)) {
       assert.ok(typeof val.name === 'string' && val.name.length > 0)
       assert.ok(typeof val.defaultEndpoint === 'string' && val.defaultEndpoint.length > 0)
-      if (key === 'hermes' || key === 'lmstudio') {
+      if (key === 'hermes' || key === 'lmstudio' || key === 'litellm') {
         assert.ok(val.defaultEndpoint.startsWith('http://'))
       } else {
         assert.ok(val.defaultEndpoint.startsWith('https://'))

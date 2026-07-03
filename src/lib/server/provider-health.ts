@@ -274,6 +274,7 @@ export const OPENAI_COMPATIBLE_DEFAULTS: Record<string, { name: string; defaultE
   deepinfra: { name: 'DeepInfra', defaultEndpoint: 'https://api.deepinfra.com/v1/openai' },
   hermes: { name: 'Hermes Agent', defaultEndpoint: 'http://127.0.0.1:8642/v1' },
   lmstudio: { name: 'LM Studio', defaultEndpoint: 'http://127.0.0.1:1234/v1' },
+  litellm: { name: 'LiteLLM', defaultEndpoint: 'http://localhost:4000/v1' },
 }
 
 export async function pingOpenAiCompatible(
@@ -357,7 +358,7 @@ export async function pingProvider(
   apiKey: string | undefined,
   endpoint: string | undefined,
 ): Promise<{ ok: boolean; message: string }> {
-  const OPTIONAL_OPENAI_COMPATIBLE_KEY_PROVIDERS = new Set(['hermes', 'lmstudio'])
+  const OPTIONAL_OPENAI_COMPATIBLE_KEY_PROVIDERS = new Set(['hermes', 'lmstudio', 'litellm'])
   if (isCliProviderId(provider)) return { ok: true, message: 'CLI provider - skipped.' }
 
   try {
