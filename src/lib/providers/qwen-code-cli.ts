@@ -3,6 +3,7 @@ import type { StreamChatOptions } from './index'
 import { log } from '../server/logger'
 import { loadRuntimeSettings } from '@/lib/server/runtime/runtime-settings'
 import { resolveCliBinary, buildCliEnv, probeCliAuth, attachAbortHandler, isStderrNoise } from './cli-utils'
+import { createCliToolStreamCtx, emitCliStreamToolEvents } from './cli-tool-stream'
 
 function buildQwenPrompt(message: string, systemPrompt?: string, imagePath?: string): string {
   const parts: string[] = []
@@ -78,6 +79,7 @@ export function streamQwenCodeCliChat({ session, message, imagePath, systemPromp
   let buf = ''
   let stderrText = ''
   let eventCount = 0
+  const toolCtx = createCliToolStreamCtx()
 
   proc.stdout?.on('data', (chunk: Buffer) => {
     buf += chunk.toString()
@@ -95,6 +97,8 @@ export function streamQwenCodeCliChat({ session, message, imagePath, systemPromp
             ? event.sessionId
             : null
         if (sessionId) session.qwenSessionId = sessionId
+
+        emitCliStreamToolEvents(event, toolCtx, write)
 
         if (event.type === 'result' && event.subtype === 'error') {
           const errText = typeof event.result === 'string' ? event.result : 'Qwen Code error'

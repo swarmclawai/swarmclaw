@@ -14,7 +14,7 @@ import { loadSkills } from '@/lib/server/skills/skill-repository'
 import { loadSession, patchSession, saveSession } from '@/lib/server/sessions/session-repository'
 import { appendMessage } from '@/lib/server/messages/message-repository'
 import { resolveChatroomSyntheticSessionId } from '@/lib/chatroom-sessions'
-import type { Chatroom, ChatroomMember, Agent, Session, Message, ChatroomMessage } from '@/types'
+import type { Chatroom, ChatroomMember, Agent, Session, Message, ChatroomMessage, MessageToolEvent } from '@/types'
 import { getEnabledCapabilityIds, getEnabledToolIds } from '@/lib/capability-selection'
 
 /** Resolve API key from an agent's credentialId */
@@ -377,6 +377,7 @@ export function appendSyntheticSessionMessage(
   sessionId: string,
   role: 'user' | 'assistant',
   text: string,
+  toolEvents?: MessageToolEvent[],
 ): void {
   const trimmed = String(text || '').trim()
   if (!trimmed) return
@@ -385,6 +386,7 @@ export function appendSyntheticSessionMessage(
     role,
     text: trimmed,
     time: timestamp,
+    ...(toolEvents && toolEvents.length ? { toolEvents } : {}),
   })
   patchSession(sessionId, (current) => {
     if (!current) return null

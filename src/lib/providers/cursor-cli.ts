@@ -3,6 +3,7 @@ import type { StreamChatOptions } from './index'
 import { log } from '../server/logger'
 import { loadRuntimeSettings } from '@/lib/server/runtime/runtime-settings'
 import { resolveCliBinary, buildCliEnv, probeCliAuth, attachAbortHandler, isStderrNoise } from './cli-utils'
+import { createCliToolStreamCtx, emitCliStreamToolEvents } from './cli-tool-stream'
 
 function buildCursorPrompt(message: string, systemPrompt?: string, imagePath?: string): string {
   const parts: string[] = []
@@ -84,6 +85,7 @@ export function streamCursorCliChat({ session, message, imagePath, systemPrompt,
   let buf = ''
   let stderrText = ''
   let eventCount = 0
+  const toolCtx = createCliToolStreamCtx()
 
   proc.stdout?.on('data', (chunk: Buffer) => {
     buf += chunk.toString()
@@ -104,6 +106,8 @@ export function streamCursorCliChat({ session, message, imagePath, systemPrompt,
               ? event.sessionId
               : null
         if (sessionId) session.cursorSessionId = sessionId
+
+        emitCliStreamToolEvents(event, toolCtx, write)
 
         const eventType = String(event.type || '')
         if (eventType.includes('delta')) {

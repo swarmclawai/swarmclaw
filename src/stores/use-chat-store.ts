@@ -39,6 +39,8 @@ export interface ToolEvent {
   input: string
   output?: string
   status: 'running' | 'done' | 'error'
+  /** Agent narration/reasoning emitted just before this tool call. */
+  reasoning?: string
 }
 
 export interface UsageInfo {
@@ -556,6 +558,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
               name: event.toolName || 'unknown',
               input: event.toolInput || '',
               status: 'running',
+              reasoning: event.reasoning || undefined,
             }],
           })
         }

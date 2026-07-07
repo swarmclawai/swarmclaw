@@ -199,7 +199,7 @@ function deepParseJson(value: unknown): unknown {
 }
 
 /** Pretty-print JSON, recursively parsing stringified nested values */
-function formatJson(raw: string): string {
+export function formatJson(raw: string): string {
   try {
     const parsed = deepParseJson(JSON.parse(raw))
     return JSON.stringify(parsed, null, 2)
@@ -240,7 +240,7 @@ function formatSearchHistoryOutput(raw: string): string | null {
 }
 
 /** Try to produce a human-readable output for known tool types */
-function formatToolOutput(toolName: string, raw: string): string {
+export function formatToolOutput(toolName: string, raw: string): string {
   if (toolName === 'search_history_tool') {
     return formatSearchHistoryOutput(raw) || formatJson(raw)
   }
