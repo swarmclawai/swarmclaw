@@ -120,6 +120,7 @@ describe('provider-health', () => {
   it('OPENAI_COMPATIBLE_DEFAULTS has expected providers', () => {
     const defaults = providerHealth.OPENAI_COMPATIBLE_DEFAULTS
     assert.ok(defaults.openai)
+    assert.ok(defaults.atlascloud)
     assert.ok(defaults.openrouter)
     assert.ok(defaults.requesty)
     assert.ok(defaults.google)

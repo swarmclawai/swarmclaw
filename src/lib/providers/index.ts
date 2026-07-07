@@ -103,6 +103,30 @@ export const PROVIDERS: Record<string, BuiltinProviderConfig> = {
     defaultEndpoint: 'https://api.openai.com/v1',
     handler: { streamChat: streamOpenAiChat },
   },
+  atlascloud: {
+    id: 'atlascloud',
+    name: 'Atlas Cloud',
+    models: [
+      'deepseek-ai/deepseek-v4-pro',
+      'deepseek-ai/deepseek-v4-flash',
+      'qwen/qwen3.6-plus',
+      'moonshotai/kimi-k2.7-code',
+      'zai-org/glm-5.2',
+    ],
+    requiresApiKey: true,
+    requiresEndpoint: false,
+    optionalEndpoint: true,
+    defaultEndpoint: 'https://api.atlascloud.ai/v1',
+    handler: {
+      streamChat: (opts) => {
+        const patchedSession = {
+          ...opts.session,
+          apiEndpoint: opts.session.apiEndpoint || 'https://api.atlascloud.ai/v1',
+        }
+        return streamOpenAiChat({ ...opts, session: patchedSession })
+      },
+    },
+  },
   openrouter: {
     id: 'openrouter',
     name: 'OpenRouter',

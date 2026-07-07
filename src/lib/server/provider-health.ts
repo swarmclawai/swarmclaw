@@ -260,6 +260,7 @@ async function parseErrorMessage(res: Response, fallback: string): Promise<strin
 
 export const OPENAI_COMPATIBLE_DEFAULTS: Record<string, { name: string; defaultEndpoint: string }> = {
   openai: { name: 'OpenAI', defaultEndpoint: 'https://api.openai.com/v1' },
+  atlascloud: { name: 'Atlas Cloud', defaultEndpoint: 'https://api.atlascloud.ai/v1' },
   openrouter: { name: 'OpenRouter', defaultEndpoint: 'https://openrouter.ai/api/v1' },
   requesty: { name: 'Requesty', defaultEndpoint: 'https://router.requesty.ai/v1' },
   tokenmix: { name: 'TokenMix', defaultEndpoint: 'https://api.tokenmix.ai/v1' },

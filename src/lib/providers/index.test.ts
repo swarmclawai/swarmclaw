@@ -105,6 +105,34 @@ test('LM Studio is available as a first-class local OpenAI-compatible provider',
   assert.equal(output.supportsModelDiscovery, true)
 })
 
+test('Atlas Cloud is available as a first-class OpenAI-compatible provider', () => {
+  const output = runWithTempDataDir<{
+    providerName: string | null
+    defaultEndpoint: string | null
+    requiresApiKey: boolean | null
+    optionalEndpoint: boolean | null
+    supportsModelDiscovery: boolean | null
+  }>(`
+    const providersModule = await import('@/lib/providers/index')
+    const providers = providersModule.default || providersModule
+    const provider = providers.getProviderList().find((entry) => entry.id === 'atlascloud')
+
+    console.log(JSON.stringify({
+      providerName: provider?.name ?? null,
+      defaultEndpoint: provider?.defaultEndpoint ?? null,
+      requiresApiKey: provider?.requiresApiKey ?? null,
+      optionalEndpoint: provider?.optionalEndpoint ?? null,
+      supportsModelDiscovery: provider?.supportsModelDiscovery ?? null,
+    }))
+  `)
+
+  assert.equal(output.providerName, 'Atlas Cloud')
+  assert.equal(output.defaultEndpoint, 'https://api.atlascloud.ai/v1')
+  assert.equal(output.requiresApiKey, true)
+  assert.equal(output.optionalEndpoint, true)
+  assert.equal(output.supportsModelDiscovery, true)
+})
+
 test('custom provider resolution includes defaultEndpoint and optionalApiKey', () => {
   const output = runWithTempDataDir<{
     defaultEndpoint: string | null
