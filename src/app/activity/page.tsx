@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslation } from 'react-i18next';
 import { useEffect, useState } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { useNow } from '@/hooks/use-now'
@@ -31,6 +32,7 @@ const ACTION_COLORS: Record<string, string> = {
 const ENTITY_TYPES = ['', 'agent', 'task', 'connector', 'session', 'webhook', 'schedule'] as const
 
 export default function ActivityPage() {
+  const { t } = useTranslation()
   const now = useNow()
   const entries = useAppStore((s) => s.activityEntries)
   const loadActivity = useAppStore((s) => s.loadActivity)
@@ -42,8 +44,40 @@ export default function ActivityPage() {
   }, [filterType, loadActivity])
   useWs('activity', () => loadActivity({ entityType: filterType || undefined, limit: 100 }), 10_000)
 
+  // Map entity type to display label
+  const getEntityLabel = (type: string) => {
+    const map: Record<string, string> = {
+      agent: t('agents'),
+      task: t('tasks'),
+      connector: t('connectors'),
+      session: t('sessions'),
+      webhook: t('webhooks'),
+      schedule: t('schedules'),
+    }
+    return map[type] || type
+  }
+
+  // Map action to display label
+  const getActionLabel = (action: string) => {
+    const map: Record<string, string> = {
+      created: t('created'),
+      updated: t('updated'),
+      deleted: t('deleted'),
+      started: t('started'),
+      stopped: t('stopped'),
+      queued: t('queued'),
+      completed: t('completed'),
+      failed: t('failed'),
+      archived: t('archived'),
+      restored: t('restored'),
+      approved: t('approved'),
+      rejected: t('rejected'),
+    }
+    return map[action] || action
+  }
+
   if (!loaded) {
-    return <MainContent><PageLoader label="Loading activity..." /></MainContent>
+    return <MainContent><PageLoader label={t('loadingActivity')} /></MainContent>
   }
 
   return (
@@ -51,8 +85,8 @@ export default function ActivityPage() {
       <div className="flex-1 flex flex-col h-full overflow-hidden">
         <div className="flex items-center justify-between px-8 pt-6 pb-4 shrink-0">
           <div>
-            <h1 className="font-display text-[28px] font-800 tracking-[-0.03em]">Activity</h1>
-            <p className="text-[13px] text-text-3 mt-1">Audit trail of all entity mutations</p>
+            <h1 className="font-display text-[28px] font-800 tracking-[-0.03em]">{t('activity')}</h1>
+            <p className="text-[13px] text-text-3 mt-1">{t('activityDescription')}</p>
           </div>
           <select
             value={filterType}
@@ -60,16 +94,16 @@ export default function ActivityPage() {
             className="px-3 py-2 rounded-[10px] text-[13px] font-600 cursor-pointer transition-all border bg-transparent border-white/[0.06] text-text-3 hover:bg-white/[0.03] appearance-none"
             style={{ fontFamily: 'inherit', minWidth: 130 }}
           >
-            <option value="">All Types</option>
+            <option value="">{t('allTypes')}</option>
             {ENTITY_TYPES.filter(Boolean).map((t) => (
-              <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}s</option>
+              <option key={t} value={t}>{getEntityLabel(t)}</option>
             ))}
           </select>
         </div>
 
         <div className="flex-1 overflow-y-auto px-8 pb-6">
           {entries.length === 0 ? (
-            <div className="text-center text-text-3 text-[14px] mt-16">No activity yet</div>
+            <div className="text-center text-text-3 text-[14px] mt-16">{t('noActivity')}</div>
           ) : (
             <div className="space-y-1">
               {entries.map((entry: ActivityEntry, idx: number) => (
@@ -87,9 +121,9 @@ export default function ActivityPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
                       <span className={`px-1.5 py-0.5 rounded-[5px] text-[10px] font-600 ${ACTION_COLORS[entry.action] || 'bg-white/[0.06] text-text-3'}`}>
-                        {entry.action}
+                        {getActionLabel(entry.action)}
                       </span>
-                      <span className="text-[10px] text-text-3/50 font-mono">{entry.entityType}</span>
+                      <span className="text-[10px] text-text-3/50 font-mono">{getEntityLabel(entry.entityType)}</span>
                       <span className="text-[10px] text-text-3/40">{entry.actor}</span>
                     </div>
                     <p className="text-[13px] text-text-2 leading-[1.4] truncate">{entry.summary}</p>

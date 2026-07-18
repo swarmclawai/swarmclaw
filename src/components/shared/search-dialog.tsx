@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslation } from 'react-i18next';
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { useAppStore } from '@/stores/use-app-store'
@@ -44,17 +45,22 @@ const TYPE_VIEW_MAP: Record<SearchResult['type'], AppView> = {
   message: 'agents',
 }
 
-const TYPE_LABELS: Record<SearchResult['type'], string> = {
-  agent: 'Agent',
-  task: 'Task',
-  session: 'Chat',
-  schedule: 'Schedule',
-  webhook: 'Webhook',
-  skill: 'Skill',
-  message: 'Message',
+// 使用函数获取翻译标签，需要在使用时传入 t
+function getTypeLabel(t: (key: string) => string, type: SearchResult['type']): string {
+  const map: Record<SearchResult['type'], string> = {
+    agent: t('searchTypeAgent'),
+    task: t('searchTypeTask'),
+    session: t('searchTypeChat'),
+    schedule: t('searchTypeSchedule'),
+    webhook: t('searchTypeWebhook'),
+    skill: t('searchTypeSkill'),
+    message: t('searchTypeMessage'),
+  }
+  return map[type]
 }
 
 export function SearchDialog() {
+  const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<SearchResult[]>([])
@@ -217,7 +223,7 @@ export function SearchDialog() {
         className="sm:max-w-[520px] p-0 bg-surface/95 backdrop-blur-xl border-white/[0.08] shadow-[0_24px_80px_rgba(0,0,0,0.6)] rounded-[16px] overflow-hidden gap-0"
         onKeyDown={handleKeyDown}
       >
-        <DialogTitle className="sr-only">Search</DialogTitle>
+        <DialogTitle className="sr-only">{t('search')}</DialogTitle>
         {/* Search input */}
         <div className="flex items-center gap-3 px-4 py-3 border-b border-white/[0.06]">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-text-3 shrink-0">
@@ -227,8 +233,8 @@ export function SearchDialog() {
             ref={inputRef}
             value={query}
             onChange={(e) => handleQueryChange(e.target.value)}
-            placeholder="Search agents, tasks, schedules..."
-            aria-label="Search"
+            placeholder={t('searchPlaceholder')}
+            aria-label={t('search')}
             className="flex-1 bg-transparent border-none outline-none text-[14px] text-text placeholder:text-text-3/60 font-[inherit]"
             autoFocus
           />
@@ -241,17 +247,17 @@ export function SearchDialog() {
         <div ref={listRef} className="max-h-[360px] overflow-y-auto py-1">
           {loading && query.length >= 2 && (
             <div className="px-4 py-8 text-center text-[13px] text-text-3">
-              Searching...
+              {t('searching')}
             </div>
           )}
           {!loading && query.length >= 2 && results.length === 0 && (
             <div className="px-4 py-8 text-center text-[13px] text-text-3">
-              No results found
+              {t('noResultsFound')}
             </div>
           )}
           {!loading && query.length < 2 && (
             <div className="px-4 py-8 text-center text-[13px] text-text-3/60">
-              Type at least 2 characters to search
+              {t('searchMinChars')}
             </div>
           )}
           {results.map((result, idx) => (
@@ -288,7 +294,7 @@ export function SearchDialog() {
               </div>
               {/* Type label */}
               <span className="text-[10px] text-text-3/60 uppercase tracking-wider shrink-0">
-                {TYPE_LABELS[result.type]}
+                {getTypeLabel(t, result.type)}
               </span>
             </button>
           ))}
@@ -299,15 +305,15 @@ export function SearchDialog() {
           <div className="flex items-center gap-3 px-4 py-2 border-t border-white/[0.06] text-[11px] text-text-3/50">
             <span className="flex items-center gap-1">
               <kbd className="px-1 py-0.5 rounded bg-white/[0.06] text-[10px] font-mono">↑↓</kbd>
-              navigate
+              {t('searchNavigate')}
             </span>
             <span className="flex items-center gap-1">
               <kbd className="px-1 py-0.5 rounded bg-white/[0.06] text-[10px] font-mono">↵</kbd>
-              open
+              {t('searchOpen')}
             </span>
             <span className="flex items-center gap-1">
               <kbd className="px-1 py-0.5 rounded bg-white/[0.06] text-[10px] font-mono">esc</kbd>
-              close
+              {t('searchClose')}
             </span>
           </div>
         )}

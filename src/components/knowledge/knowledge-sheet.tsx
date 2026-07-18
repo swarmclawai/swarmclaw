@@ -437,7 +437,7 @@ export function KnowledgeSheet() {
 
       {scope === 'agent' && (
         <div className="mb-8">
-          <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-3">Agents</label>
+          <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-3">智能体</label>
           <div className="max-h-[240px] overflow-y-auto rounded-[12px] border border-white/[0.06] bg-white/[0.03]">
             {agentList.length === 0 ? (
               <p className="p-3 text-[12px] text-text-3">No agents available</p>

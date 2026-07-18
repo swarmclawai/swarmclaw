@@ -64,7 +64,7 @@ export function StepNext({
           onClick={onOpenUsage}
         />
         <LaunchActionCard
-          title="Go to Dashboard"
+          title="前往仪表盘"
           description="Land on the main home view. Fresh workspaces open in guided launch mode before switching to the normal ops dashboard."
           actionLabel="Open Home"
           onClick={onContinueToDashboard}
@@ -76,7 +76,7 @@ export function StepNext({
         onClick={onContinueToDashboard}
         className="px-10 py-3.5 rounded-[14px] border-none bg-accent-bright text-white text-[15px] font-display font-600 cursor-pointer hover:brightness-110 active:scale-[0.97] transition-all duration-200 shadow-[0_6px_28px_rgba(99,102,241,0.3)]"
       >
-        Continue to Dashboard
+        继续到仪表盘
       </button>
     </StepShell>
   )

@@ -393,7 +393,7 @@ export function RunList() {
             {/* Error */}
             {selected.error && (
               <div className="mb-6">
-                <label className="block font-display text-[12px] font-600 text-red-400 uppercase tracking-[0.08em] mb-2">Error</label>
+                <label className="block font-display text-[12px] font-600 text-red-400 uppercase tracking-[0.08em] mb-2">错误</label>
                 <pre className="text-[11px] text-red-300/80 font-mono whitespace-pre-wrap break-all bg-red-500/[0.05] rounded-[12px] p-4 max-h-[200px] overflow-auto border border-red-500/[0.1]">
                   {selected.error}
                 </pre>

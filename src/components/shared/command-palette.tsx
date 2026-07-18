@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslation } from 'react-i18next';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { isLocalhostBrowser, isVisibleSessionForViewer } from '@/lib/observability/local-observability'
@@ -44,6 +45,7 @@ export function CommandPalette() {
 
 /** Inner component — only mounted when palette is open, so store subscriptions are gated. */
 function CommandPaletteInner({ setOpen }: { setOpen: (v: boolean) => void }) {
+  const { t } = useTranslation()
   const [query, setQuery] = useState('')
   const [selectedIndex, setSelectedIndex] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -86,25 +88,25 @@ function CommandPaletteInner({ setOpen }: { setOpen: (v: boolean) => void }) {
     const result: CommandItem[] = []
 
     const views = [
-      { id: 'home', label: 'Home', description: 'Overview and triage', keywords: ['dashboard', 'overview', 'activity'] },
-      { id: 'agents', label: 'Agents', description: 'Agent chats and configuration', keywords: ['chat', 'assistant', 'default'] },
-      { id: 'tasks', label: 'Tasks', description: 'Task board and execution queues', keywords: ['board', 'queue', 'backlog', 'execution'] },
-      { id: 'projects', label: 'Projects', description: 'Scoped workspaces for agents and tasks', keywords: ['workspace', 'scope'] },
-      { id: 'chatrooms', label: 'Chatrooms', description: 'Shared multi-agent conversations', keywords: ['group', 'room', 'mentions'] },
-      { id: 'schedules', label: 'Schedules', description: 'Recurring and timed automations', keywords: ['cron', 'automation', 'interval'] },
-      { id: 'connectors', label: 'Connectors', description: 'Bridges to Slack, Discord, Telegram, file queues, and more', keywords: ['discord', 'slack', 'telegram', 'whatsapp', 'file queue'] },
-      { id: 'memory', label: 'Memory', description: 'Stored agent memory and retrieval', keywords: ['knowledge', 'vector', 'retrieval'] },
-      { id: 'knowledge', label: 'Knowledge', description: 'Shared knowledge base', keywords: ['docs', 'entries', 'facts'] },
-      { id: 'providers', label: 'Providers', description: 'Model providers and endpoints', keywords: ['openai', 'anthropic', 'ollama', 'endpoint'] },
-      { id: 'secrets', label: 'Secrets', description: 'Credentials and encrypted secrets', keywords: ['api key', 'token', 'credential'] },
-      { id: 'autonomy', label: 'Autonomy', description: 'Estops, incidents, and runtime controls', keywords: ['estop', 'incident', 'runtime', 'safety'] },
-      { id: 'quality', label: 'Quality', description: 'Evals, approvals, run review, and release readiness', keywords: ['eval', 'approval', 'runs', 'release', 'qa'] },
-      { id: 'settings', label: 'Settings', description: 'General app configuration', keywords: ['preferences', 'theme', 'heartbeat'] },
+      { id: 'home', label: t('home'), description: t('homeDesc'), keywords: ['dashboard', 'overview', 'activity'] },
+      { id: 'agents', label: t('agents'), description: t('agentsDesc'), keywords: ['chat', 'assistant', 'default'] },
+      { id: 'tasks', label: t('tasks'), description: t('tasksDesc'), keywords: ['board', 'queue', 'backlog', 'execution'] },
+      { id: 'projects', label: t('projects'), description: t('projectsDesc'), keywords: ['workspace', 'scope'] },
+      { id: 'chatrooms', label: t('chatrooms'), description: t('chatroomsDesc'), keywords: ['group', 'room', 'mentions'] },
+      { id: 'schedules', label: t('schedules'), description: t('schedulesDesc'), keywords: ['cron', 'automation', 'interval'] },
+      { id: 'connectors', label: t('connectors'), description: t('connectorsDesc'), keywords: ['discord', 'slack', 'telegram', 'whatsapp', 'file queue'] },
+      { id: 'memory', label: t('memory'), description: t('memoryDesc'), keywords: ['knowledge', 'vector', 'retrieval'] },
+      { id: 'knowledge', label: t('knowledge'), description: t('knowledgeDesc'), keywords: ['docs', 'entries', 'facts'] },
+      { id: 'providers', label: t('providers'), description: t('providersDesc'), keywords: ['openai', 'anthropic', 'ollama', 'endpoint'] },
+      { id: 'secrets', label: t('secrets'), description: t('secretsDesc'), keywords: ['api key', 'token', 'credential'] },
+      { id: 'autonomy', label: t('autonomy'), description: t('autonomyDesc'), keywords: ['estop', 'incident', 'runtime', 'safety'] },
+      { id: 'quality', label: t('quality'), description: t('qualityDesc'), keywords: ['eval', 'approval', 'runs', 'release', 'qa'] },
+      { id: 'settings', label: t('settings'), description: t('settingsDesc'), keywords: ['preferences', 'theme', 'heartbeat'] },
     ] as const
     for (const view of views) {
       result.push({
         id: `nav:${view.id}`,
-        label: `Go to ${view.label}`,
+        label: t('goTo', { label: view.label }),
         description: view.description,
         keywords: [...view.keywords],
         category: 'nav',
@@ -115,32 +117,32 @@ function CommandPaletteInner({ setOpen }: { setOpen: (v: boolean) => void }) {
     result.push(
       {
         id: 'setting:default-agent',
-        label: 'Default Agent Shortcut',
-        description: 'Choose which agent the sidebar shortcut opens',
+        label: t('defaultAgentShortcut'),
+        description: t('defaultAgentShortcutDesc'),
         keywords: ['main chat', 'default agent', 'shortcut'],
         category: 'setting',
         onSelect: () => openSettingsSection('general', 'user-preferences'),
       },
       {
         id: 'setting:automation',
-        label: 'Automation Limits',
-        description: 'Heartbeat, autonomy, and delegation controls',
+        label: t('automationLimits'),
+        description: t('automationLimitsDesc'),
         keywords: ['loops', 'coordination', 'delegation', 'heartbeat', 'automation'],
         category: 'setting',
         onSelect: () => openSettingsSection('agents', 'runtime-loop'),
       },
       {
         id: 'setting:providers',
-        label: 'Provider Credentials',
-        description: 'Manage providers, endpoints, and secrets',
+        label: t('providerCredentials'),
+        description: t('providerCredentialsDesc'),
         keywords: ['openai', 'anthropic', 'api keys', 'credentials', 'providers'],
         category: 'setting',
         onSelect: () => openSettingsSection('integrations', 'providers'),
       },
       {
         id: 'setting:voice',
-        label: 'Voice & Search',
-        description: 'Voice output and web search defaults',
+        label: t('voiceAndSearch'),
+        description: t('voiceAndSearchDesc'),
         keywords: ['voice', 'tts', 'web search', 'search'],
         category: 'setting',
         onSelect: () => openSettingsSection('memory', 'voice'),
@@ -152,13 +154,13 @@ function CommandPaletteInner({ setOpen }: { setOpen: (v: boolean) => void }) {
         id: `agent:${agent.id}`,
         label: agent.name,
         description: agent.disabled === true
-          ? `${agent.name} is disabled`
-          : `Open ${agent.name}'s chat`,
+          ? t('agentDisabled', { name: agent.name })
+          : t('openAgentChat', { name: agent.name }),
         keywords: [agent.provider, agent.model, agent.description || ''].filter(Boolean),
         category: 'agent',
         onSelect: () => {
           if (agent.disabled === true && !agent.threadSessionId) {
-            toast.error(`${agent.name} is disabled. Re-enable it to start a new chat.`)
+            toast.error(t('agentDisabledError', { name: agent.name }))
             return
           }
           navigateTo('agents', agent.id)
@@ -173,8 +175,8 @@ function CommandPaletteInner({ setOpen }: { setOpen: (v: boolean) => void }) {
       const sessionAgent = session.agentId ? agents[session.agentId] : null
       result.push({
         id: `chat:${session.id}`,
-        label: session.name || 'Untitled chat',
-        description: sessionAgent ? `Recent chat with ${sessionAgent.name}` : 'Direct model chat',
+        label: session.name || t('untitledChat'),
+        description: sessionAgent ? t('recentChatWith', { name: sessionAgent.name }) : t('directModelChat'),
         keywords: [session.provider, session.model, sessionAgent?.name || ''].filter(Boolean),
         category: 'chat',
         onSelect: () => { if (session.agentId) void setCurrentAgent(session.agentId); navigateTo('agents'); setOpen(false) },
@@ -187,7 +189,7 @@ function CommandPaletteInner({ setOpen }: { setOpen: (v: boolean) => void }) {
       result.push({
         id: `task:${task.id}`,
         label: task.title,
-        description: `${task.status.charAt(0).toUpperCase() + task.status.slice(1)} task`,
+        description: t('taskStatus', { status: task.status.charAt(0).toUpperCase() + task.status.slice(1) }),
         keywords: [task.status, task.agentId || ''].filter(Boolean),
         category: 'task',
         onSelect: () => { setEditingTaskId(task.id); setTaskSheetOpen(true); setOpen(false) },
@@ -195,7 +197,7 @@ function CommandPaletteInner({ setOpen }: { setOpen: (v: boolean) => void }) {
     }
 
     return result
-  }, [agents, currentUser, navigateTo, openSettingsSection, sessions, setCurrentAgent, setEditingTaskId, setOpen, setTaskSheetOpen, tasks])
+  }, [agents, currentUser, navigateTo, openSettingsSection, sessions, setCurrentAgent, setEditingTaskId, setOpen, setTaskSheetOpen, tasks, t])
 
   const filtered = useMemo(() => {
     if (!query.trim()) return items.slice(0, 20)
@@ -232,7 +234,13 @@ function CommandPaletteInner({ setOpen }: { setOpen: (v: boolean) => void }) {
     el?.scrollIntoView({ block: 'nearest' })
   }, [selectedIndex])
 
-  const categoryLabel = { agent: 'Agents', chat: 'Chats', task: 'Tasks', nav: 'Navigation', setting: 'Settings' } as const
+  const categoryLabel = {
+    agent: t('agents'),
+    chat: t('chats'),
+    task: t('tasks'),
+    nav: t('navigation'),
+    setting: t('settings'),
+  } as const
   const categoryIcon = {
     agent: (
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -294,7 +302,7 @@ function CommandPaletteInner({ setOpen }: { setOpen: (v: boolean) => void }) {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Search chats, agents, tasks, settings..."
+              placeholder={t('commandPalettePlaceholder')}
               className="flex-1 bg-transparent border-none outline-none text-[14px] text-text-1 placeholder:text-text-3/50"
             />
           <kbd className="hidden md:inline-flex items-center px-1.5 py-0.5 rounded-[6px] bg-white/[0.06] text-[11px] text-text-3 font-500">
@@ -305,7 +313,7 @@ function CommandPaletteInner({ setOpen }: { setOpen: (v: boolean) => void }) {
         {/* Results */}
         <div ref={listRef} className="max-h-[360px] overflow-y-auto py-2">
           {filtered.length === 0 ? (
-            <div className="px-4 py-8 text-center text-[13px] text-text-3/50">No results found</div>
+            <div className="px-4 py-8 text-center text-[13px] text-text-3/50">{t('noResultsFound')}</div>
           ) : (
             Array.from(grouped.entries()).map(([category, groupItems]) => (
               <div key={category}>
@@ -345,10 +353,10 @@ function CommandPaletteInner({ setOpen }: { setOpen: (v: boolean) => void }) {
         {/* Footer hint */}
         <div className="px-4 py-2 border-t border-white/[0.06] flex items-center gap-4 text-[11px] text-text-3/40">
           <span className="flex items-center gap-1">
-            <kbd className="px-1 py-0.5 rounded bg-white/[0.06] text-[10px]">&uarr;&darr;</kbd> navigate
+            <kbd className="px-1 py-0.5 rounded bg-white/[0.06] text-[10px]">&uarr;&darr;</kbd> {t('navigateHint')}
           </span>
           <span className="flex items-center gap-1">
-            <kbd className="px-1 py-0.5 rounded bg-white/[0.06] text-[10px]">&crarr;</kbd> select
+            <kbd className="px-1 py-0.5 rounded bg-white/[0.06] text-[10px]">&crarr;</kbd> {t('selectHint')}
           </span>
         </div>
       </div>

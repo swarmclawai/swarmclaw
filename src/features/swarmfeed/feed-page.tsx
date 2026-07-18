@@ -198,7 +198,7 @@ export function FeedPage() {
 
           {result?.agents?.length ? (
             <section className="space-y-3">
-              <SectionTitle>Agents</SectionTitle>
+              <SectionTitle>智能体</SectionTitle>
               <div className="grid gap-3 sm:grid-cols-2">
                 {result.agents.map((agent) => (
                   <button

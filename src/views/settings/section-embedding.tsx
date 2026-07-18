@@ -106,7 +106,7 @@ export function EmbeddingSection({ appSettings, patchSettings, inputClass, credL
                       {savingKey ? 'Saving...' : 'Save Key'}
                     </button>
                     {credList.filter(c => c.provider === 'openai').length > 0 && (
-                      <button type="button" onClick={() => { setAddingKey(false); setNewKeyName(''); setNewKeyValue('') }} className="px-4 py-1.5 rounded-[8px] bg-surface-2 text-text-2 text-[12px] font-600 cursor-pointer border-none hover:bg-surface-3 transition-all" style={{ fontFamily: 'inherit' }}>Cancel</button>
+                      <button type="button" onClick={() => { setAddingKey(false); setNewKeyName(''); setNewKeyValue('') }} className="px-4 py-1.5 rounded-[8px] bg-surface-2 text-text-2 text-[12px] font-600 cursor-pointer border-none hover:bg-surface-3 transition-all" style={{ fontFamily: 'inherit' }}>取消</button>
                     )}
                   </div>
                 </div>

@@ -118,7 +118,7 @@ export function ProjectList() {
       <div className="px-5 pt-5 pb-3 shrink-0" style={{ animation: 'fade-up 0.4s var(--ease-spring)' }}>
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h2 className="font-display text-[20px] font-700 text-text tracking-[-0.02em]">Projects</h2>
+            <h2 className="font-display text-[20px] font-700 text-text tracking-[-0.02em]">项目</h2>
             <p className="text-[12px] text-text-3/60 mt-0.5">
               {totalProjects} project{totalProjects !== 1 ? 's' : ''}
               {totalTasks > 0 && <> &middot; {totalCompleted}/{totalTasks} tasks done</>}

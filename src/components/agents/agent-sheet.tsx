@@ -1443,7 +1443,7 @@ export function AgentSheet() {
                   />
                   <div className="flex gap-2 justify-end">
                     {openclawCredentials.length > 0 && (
-                      <button type="button" onClick={() => setAddingKey(false)} className="px-3 py-1.5 text-[12px] text-text-3 hover:text-text-2 transition-colors cursor-pointer bg-transparent border-none" style={{ fontFamily: 'inherit' }}>Cancel</button>
+                      <button type="button" onClick={() => setAddingKey(false)} className="px-3 py-1.5 text-[12px] text-text-3 hover:text-text-2 transition-colors cursor-pointer bg-transparent border-none" style={{ fontFamily: 'inherit' }}>取消</button>
                     )}
                     <button
                       type="button"
@@ -1518,7 +1518,7 @@ export function AgentSheet() {
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1.5 mt-2 px-4 py-2 rounded-[10px] bg-white/[0.06] border border-white/[0.1] text-[13px] text-text-2 font-500 hover:bg-white/[0.1] transition-colors"
                 >
-                  Approve in Dashboard →
+                  在仪表盘中批准 →
                 </a>
               </>) : testErrorCode === 'DEVICE_AUTH_INVALID' ? (<>
                 <p className="text-[14px] text-accent-bright font-600">Device Not Paired</p>
@@ -1531,7 +1531,7 @@ export function AgentSheet() {
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1.5 mt-2 px-4 py-2 rounded-[10px] bg-white/[0.06] border border-white/[0.1] text-[13px] text-text-2 font-500 hover:bg-white/[0.1] transition-colors"
                 >
-                  Approve in Dashboard →
+                  在仪表盘中批准 →
                 </a>
               </>) : testErrorCode === 'AUTH_TOKEN_MISSING' ? (<>
                 <p className="text-[14px] text-accent-bright font-600">Token Required</p>
@@ -1703,7 +1703,7 @@ export function AgentSheet() {
               />
               <div className="flex gap-2 justify-end">
                 {providerCredentials.length > 0 && (
-                  <button type="button" onClick={() => setAddingKey(false)} className="px-3 py-1.5 text-[12px] text-text-3 hover:text-text-2 transition-colors cursor-pointer bg-transparent border-none" style={{ fontFamily: 'inherit' }}>Cancel</button>
+                  <button type="button" onClick={() => setAddingKey(false)} className="px-3 py-1.5 text-[12px] text-text-3 hover:text-text-2 transition-colors cursor-pointer bg-transparent border-none" style={{ fontFamily: 'inherit' }}>取消</button>
                 )}
                 <button
                   type="button"

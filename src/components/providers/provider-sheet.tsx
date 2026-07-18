@@ -483,7 +483,7 @@ export function ProviderSheet() {
               />
               <div className="flex gap-2 justify-end">
                 {credList.length > 0 && (
-                  <button type="button" onClick={() => setAddingKey(false)} className="px-3 py-1.5 text-[12px] text-text-3 hover:text-text-2 transition-colors cursor-pointer bg-transparent border-none" style={{ fontFamily: 'inherit' }}>Cancel</button>
+                  <button type="button" onClick={() => setAddingKey(false)} className="px-3 py-1.5 text-[12px] text-text-3 hover:text-text-2 transition-colors cursor-pointer bg-transparent border-none" style={{ fontFamily: 'inherit' }}>取消</button>
                 )}
                 <button
                   type="button"

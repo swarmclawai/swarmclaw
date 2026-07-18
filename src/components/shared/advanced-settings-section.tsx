@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslation } from 'react-i18next';
 import type { ReactNode } from 'react'
 import { ChevronDown } from 'lucide-react'
 
@@ -9,9 +10,25 @@ interface Props {
   summary?: string | null
   badges?: string[]
   children: ReactNode
+  /** 可选自定义标题，默认使用翻译 */
+  title?: string
+  /** 可选自定义描述，默认使用翻译 */
+  description?: string
 }
 
-export function AdvancedSettingsSection({ open, onToggle, summary, badges = [], children }: Props) {
+export function AdvancedSettingsSection({ 
+  open, 
+  onToggle, 
+  summary, 
+  badges = [], 
+  children,
+  title,
+  description,
+}: Props) {
+  const { t } = useTranslation()
+  const displayTitle = title || t('advancedSettings')
+  const displayDescription = description || t('advancedSettingsDesc')
+
   return (
     <section className="mb-8 rounded-[20px] border border-white/[0.06] bg-surface/70">
       <button
@@ -22,7 +39,7 @@ export function AdvancedSettingsSection({ open, onToggle, summary, badges = [], 
       >
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <h3 className="font-display text-[17px] font-700 tracking-[-0.02em] text-text">Advanced Settings</h3>
+            <h3 className="font-display text-[17px] font-700 tracking-[-0.02em] text-text">{displayTitle}</h3>
             {summary && (
               <span className="rounded-full border border-white/[0.08] bg-white/[0.03] px-2.5 py-1 text-[10px] font-700 uppercase tracking-[0.08em] text-text-3">
                 {summary}
@@ -30,7 +47,7 @@ export function AdvancedSettingsSection({ open, onToggle, summary, badges = [], 
             )}
           </div>
           <p className="mt-1 text-[13px] leading-[1.6] text-text-3/75">
-            Power-user controls for routing, runtime behavior, and expert overrides.
+            {displayDescription}
           </p>
           {badges.length > 0 && (
             <div className="mt-3 flex flex-wrap gap-2">

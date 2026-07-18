@@ -1620,7 +1620,7 @@ export function TaskSheet() {
 
       {editing?.error && (
         <div className="mb-8">
-          <label className="block font-display text-[12px] font-600 text-red-400 uppercase tracking-[0.08em] mb-3">Error</label>
+          <label className="block font-display text-[12px] font-600 text-red-400 uppercase tracking-[0.08em] mb-3">错误</label>
           <div className="p-4 rounded-[14px] border border-red-500/10 bg-red-500/[0.03] text-[13px] text-red-400/80 whitespace-pre-wrap">
             {editing.error}
           </div>

@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslation } from 'react-i18next';
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
@@ -42,13 +43,6 @@ interface EvalScenarioSummary {
   criteriaCount: number
   maxScore: number
 }
-
-const TABS: Array<{ id: QualityTab; label: string }> = [
-  { id: 'overview', label: 'Overview' },
-  { id: 'evals', label: 'Eval Lab' },
-  { id: 'approvals', label: 'Approval Desk' },
-  { id: 'runs', label: 'Run Review' },
-]
 
 function formatPercent(value: number | null): string {
   return value == null ? 'n/a' : `${value}%`
@@ -166,14 +160,15 @@ function ReleaseReadinessPanel({
   onRefresh: () => void
   onOpenHref: (href: string) => void
 }) {
+  const { t } = useTranslation()
   return (
     <section className="rounded-[16px] border border-white/[0.06] bg-white/[0.025] p-4">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <div className="text-[11px] font-700 uppercase tracking-[0.12em] text-accent-bright/70">Release Readiness</div>
-          <h2 className="mt-1 font-display text-[17px] font-700 text-text">Ship gate report</h2>
+          <div className="text-[11px] font-700 uppercase tracking-[0.12em] text-accent-bright/70">{t('releaseReadiness')}</div>
+          <h2 className="mt-1 font-display text-[17px] font-700 text-text">{t('shipGateReport')}</h2>
           <p className="mt-1 max-w-[680px] text-[12px] leading-relaxed text-text-3/65">
-            Combines eval regression gates, operations pulse blockers, pending approvals, active runs, budgets, connectors, and gateway readiness.
+            {t('releaseReadinessDesc')}
           </p>
         </div>
         <button
@@ -182,13 +177,13 @@ function ReleaseReadinessPanel({
           disabled={loading}
           className="shrink-0 rounded-[10px] border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-[12px] font-800 text-text-2 transition-colors hover:bg-white/[0.08] disabled:opacity-40"
         >
-          {loading ? 'Checking' : 'Refresh gate'}
+          {loading ? t('checking') : t('refreshGate')}
         </button>
       </div>
 
       {!report ? (
         <div className="mt-4 rounded-[12px] border border-dashed border-white/[0.08] bg-white/[0.02] px-4 py-5 text-[12px] text-text-3/65">
-          {loading ? 'Building release readiness report...' : 'No release readiness report is available yet.'}
+          {loading ? t('buildingReleaseReport') : t('noReleaseReport')}
         </div>
       ) : (
         <div className="mt-4 grid gap-4 xl:grid-cols-[260px_1fr]">
@@ -197,14 +192,14 @@ function ReleaseReadinessPanel({
               {report.status}
             </span>
             <div className={cn('mt-4 font-display text-[42px] font-700 tracking-[-0.04em]', readinessScoreTone(report.status))}>{report.score}</div>
-            <div className="mt-1 text-[12px] text-text-3/65">readiness score</div>
+            <div className="mt-1 text-[12px] text-text-3/65">{t('readinessScore')}</div>
             <div className="mt-4 grid grid-cols-2 gap-2">
               <div className="rounded-[10px] bg-white/[0.035] px-3 py-2">
-                <div className="text-[10px] font-700 uppercase tracking-[0.1em] text-text-3/50">Blockers</div>
+                <div className="text-[10px] font-700 uppercase tracking-[0.1em] text-text-3/50">{t('blockers')}</div>
                 <div className="mt-1 text-[18px] font-800 text-text">{report.blockerCount}</div>
               </div>
               <div className="rounded-[10px] bg-white/[0.035] px-3 py-2">
-                <div className="text-[10px] font-700 uppercase tracking-[0.1em] text-text-3/50">Warnings</div>
+                <div className="text-[10px] font-700 uppercase tracking-[0.1em] text-text-3/50">{t('warnings')}</div>
                 <div className="mt-1 text-[18px] font-800 text-text">{report.warningCount}</div>
               </div>
             </div>
@@ -212,7 +207,7 @@ function ReleaseReadinessPanel({
 
           <div className="grid gap-3 lg:grid-cols-2">
             <div className="rounded-[14px] border border-white/[0.06] bg-white/[0.02] p-3">
-              <div className="text-[12px] font-800 text-text">Checks</div>
+              <div className="text-[12px] font-800 text-text">{t('checks')}</div>
               <div className="mt-3 flex flex-col gap-2">
                 {report.checks.slice(0, 6).map((check) => (
                   <button
@@ -234,11 +229,11 @@ function ReleaseReadinessPanel({
             </div>
 
             <div className="rounded-[14px] border border-white/[0.06] bg-white/[0.02] p-3">
-              <div className="text-[12px] font-800 text-text">Next actions</div>
+              <div className="text-[12px] font-800 text-text">{t('nextActions')}</div>
               <div className="mt-3 flex flex-col gap-2">
                 {report.nextActions.length === 0 ? (
                   <div className="rounded-[10px] border border-white/[0.06] bg-white/[0.025] px-3 py-4 text-[12px] text-text-3/65">
-                    No triage actions are open in the selected window.
+                    {t('noTriageActions')}
                   </div>
                 ) : (
                   report.nextActions.slice(0, 5).map((action) => (
@@ -278,14 +273,15 @@ function ArchitectureHealthPanel({
   onRefresh: () => void
   onOpenHref: (href: string) => void
 }) {
+  const { t } = useTranslation()
   return (
     <section className="rounded-[16px] border border-white/[0.06] bg-white/[0.025] p-4">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <div className="text-[11px] font-700 uppercase tracking-[0.12em] text-accent-bright/70">Architecture Health</div>
-          <h2 className="mt-1 font-display text-[17px] font-700 text-text">Runtime ownership map</h2>
+          <div className="text-[11px] font-700 uppercase tracking-[0.12em] text-accent-bright/70">{t('architectureHealth')}</div>
+          <h2 className="mt-1 font-display text-[17px] font-700 text-text">{t('runtimeOwnershipMap')}</h2>
           <p className="mt-1 max-w-[680px] text-[12px] leading-relaxed text-text-3/65">
-            Inventories dispatch, memory, startup, and quality surfaces with owners, guardrails, and test evidence.
+            {t('architectureHealthDesc')}
           </p>
         </div>
         <button
@@ -294,13 +290,13 @@ function ArchitectureHealthPanel({
           disabled={loading}
           className="shrink-0 rounded-[10px] border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-[12px] font-800 text-text-2 transition-colors hover:bg-white/[0.08] disabled:opacity-40"
         >
-          {loading ? 'Checking' : 'Refresh map'}
+          {loading ? t('checking') : t('refreshMap')}
         </button>
       </div>
 
       {!report ? (
         <div className="mt-4 rounded-[12px] border border-dashed border-white/[0.08] bg-white/[0.02] px-4 py-5 text-[12px] text-text-3/65">
-          {loading ? 'Building architecture health report...' : 'No architecture health report is available yet.'}
+          {loading ? t('buildingArchReport') : t('noArchReport')}
         </div>
       ) : (
         <div className="mt-4 grid gap-4 xl:grid-cols-[260px_1fr]">
@@ -309,14 +305,14 @@ function ArchitectureHealthPanel({
               {report.status}
             </span>
             <div className={cn('mt-4 font-display text-[42px] font-700 tracking-[-0.04em]', architectureScoreTone(report.status))}>{report.score}</div>
-            <div className="mt-1 text-[12px] text-text-3/65">health score</div>
+            <div className="mt-1 text-[12px] text-text-3/65">{t('healthScore')}</div>
             <div className="mt-4 grid grid-cols-2 gap-2">
               <div className="rounded-[10px] bg-white/[0.035] px-3 py-2">
-                <div className="text-[10px] font-700 uppercase tracking-[0.1em] text-text-3/50">Surfaces</div>
+                <div className="text-[10px] font-700 uppercase tracking-[0.1em] text-text-3/50">{t('surfaces')}</div>
                 <div className="mt-1 text-[18px] font-800 text-text">{report.surfaceCount}</div>
               </div>
               <div className="rounded-[10px] bg-white/[0.035] px-3 py-2">
-                <div className="text-[10px] font-700 uppercase tracking-[0.1em] text-text-3/50">Guardrails</div>
+                <div className="text-[10px] font-700 uppercase tracking-[0.1em] text-text-3/50">{t('guardrails')}</div>
                 <div className="mt-1 text-[18px] font-800 text-text">{report.guardrailCount}</div>
               </div>
             </div>
@@ -324,7 +320,7 @@ function ArchitectureHealthPanel({
 
           <div className="grid gap-3 lg:grid-cols-2">
             <div className="rounded-[14px] border border-white/[0.06] bg-white/[0.02] p-3">
-              <div className="text-[12px] font-800 text-text">Domains</div>
+              <div className="text-[12px] font-800 text-text">{t('domains')}</div>
               <div className="mt-3 grid gap-2">
                 {report.domains.map((domain) => (
                   <div key={domain.id} className="rounded-[10px] border border-white/[0.06] bg-white/[0.025] px-3 py-2">
@@ -334,14 +330,14 @@ function ArchitectureHealthPanel({
                         {domain.status}
                       </span>
                     </div>
-                    <div className="mt-1 text-[11px] leading-relaxed text-text-3/65">{domain.surfaces.length} surfaces, {domain.testPaths.length} evidence paths</div>
+                    <div className="mt-1 text-[11px] leading-relaxed text-text-3/65">{domain.surfaces.length} {t('surfaces')}, {domain.testPaths.length} {t('evidencePaths')}</div>
                   </div>
                 ))}
               </div>
             </div>
 
             <div className="rounded-[14px] border border-white/[0.06] bg-white/[0.02] p-3">
-              <div className="text-[12px] font-800 text-text">Checks</div>
+              <div className="text-[12px] font-800 text-text">{t('checks')}</div>
               <div className="mt-3 flex flex-col gap-2">
                 {report.nextActions.length === 0 ? (
                   report.checks.filter((check) => check.status === 'healthy').slice(0, 4).map((check) => (
@@ -384,13 +380,14 @@ function EvalEnvironmentPanel({ plan, loading, onRefresh }: {
   loading: boolean
   onRefresh: () => void
 }) {
+  const { t } = useTranslation()
   return (
     <div className="rounded-[12px] border border-white/[0.06] bg-white/[0.025] px-3 py-3">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="text-[13px] font-800 text-text">Validation environment</div>
+          <div className="text-[13px] font-800 text-text">{t('validationEnvironment')}</div>
           <p className="mt-1 text-[11px] leading-relaxed text-text-3/65">
-            Preflight checks, workspace context, and generated files for the selected eval.
+            {t('validationEnvironmentDesc')}
           </p>
         </div>
         <button
@@ -399,11 +396,11 @@ function EvalEnvironmentPanel({ plan, loading, onRefresh }: {
           disabled={loading}
           className="shrink-0 rounded-[8px] border border-white/[0.08] px-2 py-1 text-[10px] font-800 text-text-2 transition-colors hover:bg-white/[0.06] disabled:opacity-40"
         >
-          {loading ? 'Checking' : 'Refresh'}
+          {loading ? t('checking') : t('refresh')}
         </button>
       </div>
       {!plan ? (
-        <div className="mt-3 text-[11px] text-text-3/60">{loading ? 'Checking readiness...' : 'Choose an agent and scenario.'}</div>
+        <div className="mt-3 text-[11px] text-text-3/60">{loading ? t('checkingReadiness') : t('chooseAgentScenario')}</div>
       ) : (
         <div className="mt-3 flex flex-col gap-3">
           <div className="flex flex-wrap items-center gap-2">
@@ -416,15 +413,15 @@ function EvalEnvironmentPanel({ plan, loading, onRefresh }: {
               </span>
             )}
             <span className="rounded-full bg-white/[0.05] px-2 py-1 text-[10px] font-700 text-text-3">
-              {plan.requiredTools.length} tool{plan.requiredTools.length === 1 ? '' : 's'}
+              {plan.requiredTools.length} {t('tools')}
             </span>
             <span className="rounded-full bg-white/[0.05] px-2 py-1 text-[10px] font-700 text-text-3">
-              {plan.generatedFiles.length} file{plan.generatedFiles.length === 1 ? '' : 's'}
+              {plan.generatedFiles.length} {t('files')}
             </span>
           </div>
           {plan.target?.environmentLabel && (
             <div className="rounded-[10px] border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[11px] text-text-3/70">
-              Environment: <span className="font-700 text-text-2">{plan.target.environmentLabel}</span>
+              {t('environment')} <span className="font-700 text-text-2">{plan.target.environmentLabel}</span>
               {plan.target.environmentStatus ? ` (${plan.target.environmentStatus})` : ''}
             </div>
           )}
@@ -436,7 +433,7 @@ function EvalEnvironmentPanel({ plan, loading, onRefresh }: {
               </div>
             ))}
             {plan.checks.length > 4 && (
-              <div className="text-[10px] text-text-3/55">+{plan.checks.length - 4} more check{plan.checks.length - 4 === 1 ? '' : 's'}</div>
+              <div className="text-[10px] text-text-3/55">{t('moreChecks', { count: plan.checks.length - 4 })}</div>
             )}
           </div>
           <div className="flex flex-wrap gap-1.5">
@@ -474,13 +471,14 @@ function EvalGatePanel({
   onRefresh: () => void
   onSetBaseline: () => void
 }) {
+  const { t } = useTranslation()
   return (
     <div className="rounded-[12px] border border-white/[0.06] bg-white/[0.025] px-3 py-3">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="text-[13px] font-800 text-text">Regression gate</div>
+          <div className="text-[13px] font-800 text-text">{t('regressionGate')}</div>
           <p className="mt-1 text-[11px] leading-relaxed text-text-3/65">
-            Compare latest eval evidence against thresholds and an approved baseline.
+            {t('regressionGateDesc')}
           </p>
         </div>
         <button
@@ -489,7 +487,7 @@ function EvalGatePanel({
           disabled={loading}
           className="shrink-0 rounded-[8px] border border-white/[0.08] px-2 py-1 text-[10px] font-800 text-text-2 transition-colors hover:bg-white/[0.06] disabled:opacity-40"
         >
-          {loading ? 'Checking' : 'Refresh'}
+          {loading ? t('checking') : t('refresh')}
         </button>
       </div>
 
@@ -510,7 +508,7 @@ function EvalGatePanel({
       </div>
 
       {!gate ? (
-        <div className="mt-3 text-[11px] text-text-3/60">{loading ? 'Checking gate...' : 'Run evals to build gate evidence.'}</div>
+        <div className="mt-3 text-[11px] text-text-3/60">{loading ? t('checkingReadiness') : t('runEvalsForGate')}</div>
       ) : (
         <div className="mt-3 flex flex-col gap-3">
           <div className="flex flex-wrap items-center gap-2">
@@ -521,22 +519,22 @@ function EvalGatePanel({
               {gate.scope.label}
             </span>
             <span className="rounded-full bg-white/[0.05] px-2 py-1 text-[10px] font-700 text-text-3">
-              {gate.latestRuns.length}/{gate.scope.scenarioIds.length} latest runs
+              {gate.latestRuns.length}/{gate.scope.scenarioIds.length} {t('latestRuns')}
             </span>
           </div>
 
           <div className="grid grid-cols-3 gap-2">
             <div className="rounded-[10px] border border-white/[0.06] bg-white/[0.02] px-2 py-2">
-              <div className="text-[9px] font-800 uppercase tracking-[0.08em] text-text-3/50">Current</div>
+              <div className="text-[9px] font-800 uppercase tracking-[0.08em] text-text-3/50">{t('current')}</div>
               <div className="mt-1 text-[14px] font-800 text-text">{formatPercent(gate.currentPercent)}</div>
             </div>
             <div className="rounded-[10px] border border-white/[0.06] bg-white/[0.02] px-2 py-2">
-              <div className="text-[9px] font-800 uppercase tracking-[0.08em] text-text-3/50">Baseline</div>
-              <div className="mt-1 text-[14px] font-800 text-text">{gate.baseline ? `${gate.baseline.baselinePercent}%` : 'none'}</div>
+              <div className="text-[9px] font-800 uppercase tracking-[0.08em] text-text-3/50">{t('baseline')}</div>
+              <div className="mt-1 text-[14px] font-800 text-text">{gate.baseline ? `${gate.baseline.baselinePercent}%` : t('none')}</div>
             </div>
             <div className="rounded-[10px] border border-white/[0.06] bg-white/[0.02] px-2 py-2">
-              <div className="text-[9px] font-800 uppercase tracking-[0.08em] text-text-3/50">Regression</div>
-              <div className="mt-1 text-[14px] font-800 text-text">{gate.regressionPoints == null ? 'n/a' : `${gate.regressionPoints}pt`}</div>
+              <div className="text-[9px] font-800 uppercase tracking-[0.08em] text-text-3/50">{t('regression')}</div>
+              <div className="mt-1 text-[14px] font-800 text-text">{gate.regressionPoints == null ? t('n/a') : `${gate.regressionPoints}pt`}</div>
             </div>
           </div>
 
@@ -548,7 +546,7 @@ function EvalGatePanel({
               </div>
             ))}
             {gate.checks.length > 4 && (
-              <div className="text-[10px] text-text-3/55">+{gate.checks.length - 4} more check{gate.checks.length - 4 === 1 ? '' : 's'}</div>
+              <div className="text-[10px] text-text-3/55">{t('moreChecks', { count: gate.checks.length - 4 })}</div>
             )}
           </div>
 
@@ -558,7 +556,7 @@ function EvalGatePanel({
             disabled={busy || gate.latestRuns.length === 0 || gate.checks.some((check) => check.code === 'missing_scope_runs')}
             className="rounded-[9px] border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-[11px] font-800 text-text-2 transition-colors hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-40"
           >
-            {busy ? 'Saving baseline' : gate.baseline ? 'Update baseline' : 'Set baseline'}
+            {busy ? t('savingBaseline') : gate.baseline ? t('updateBaseline') : t('setBaseline')}
           </button>
         </div>
       )}
@@ -567,6 +565,7 @@ function EvalGatePanel({
 }
 
 export function QualityWorkspace() {
+  const { t } = useTranslation()
   const router = useRouter()
   const searchParams = useSearchParams()
   const agents = useAppStore((s) => s.agents)
@@ -574,6 +573,13 @@ export function QualityWorkspace() {
     () => Object.values(agents).filter((agent) => !agent.trashedAt),
     [agents],
   )
+
+  const TABS: Array<{ id: QualityTab; label: string }> = [
+    { id: 'overview', label: t('overview') },
+    { id: 'evals', label: t('evalLab') },
+    { id: 'approvals', label: t('approvalDesk') },
+    { id: 'runs', label: t('runReview') },
+  ]
 
   const [activeTab, setActiveTab] = useState<QualityTab>('overview')
   const [runs, setRuns] = useState<SessionRunRecord[]>([])
@@ -603,7 +609,7 @@ export function QualityWorkspace() {
   useEffect(() => {
     const tab = searchParams.get('tab') as QualityTab | null
     if (tab && TABS.some((item) => item.id === tab)) setActiveTab(tab)
-  }, [searchParams])
+  }, [searchParams, TABS])
 
   const selectTab = useCallback((tab: QualityTab) => {
     setActiveTab(tab)
@@ -769,11 +775,11 @@ export function QualityWorkspace() {
 
   const runScenario = useCallback(async () => {
     if (!selectedAgentId || !selectedScenarioId) {
-      toast.error('Choose an agent and scenario first')
+      toast.error(t('chooseAgentScenarioFirst'))
       return
     }
     if (evalEnvironmentPlan?.status === 'blocked') {
-      toast.error('Fix the validation environment before running this eval')
+      toast.error(t('fixValidationEnv'))
       return
     }
     setEvalBusy(`scenario:${selectedScenarioId}`)
@@ -785,25 +791,25 @@ export function QualityWorkspace() {
         environmentId: evalEnvironmentPlan?.target?.environmentId || null,
         refreshGateway: evalEnvironmentPlan?.target?.kind === 'gateway',
       }, { timeoutMs: 180_000 })
-      toast.success('Eval scenario completed')
+      toast.success(t('evalScenarioCompleted'))
       await loadQualityData({ silent: true })
       await loadEvalEnvironmentPlan()
       await loadEvalGate()
       await loadReleaseReadiness()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Eval scenario failed')
+      toast.error(err instanceof Error ? err.message : t('evalScenarioFailed'))
     } finally {
       setEvalBusy(null)
     }
-  }, [evalEnvironmentPlan, loadEvalEnvironmentPlan, loadEvalGate, loadQualityData, loadReleaseReadiness, selectedAgentId, selectedScenarioId])
+  }, [evalEnvironmentPlan, loadEvalEnvironmentPlan, loadEvalGate, loadQualityData, loadReleaseReadiness, selectedAgentId, selectedScenarioId, t])
 
   const runSuite = useCallback(async (suiteName: string) => {
     if (!selectedAgentId) {
-      toast.error('Choose an agent first')
+      toast.error(t('chooseAgentFirst'))
       return
     }
     if (evalEnvironmentPlan?.status === 'blocked') {
-      toast.error('Fix the validation environment before running this suite')
+      toast.error(t('fixValidationEnvSuite'))
       return
     }
     setEvalBusy(`suite:${suiteName}`)
@@ -815,25 +821,25 @@ export function QualityWorkspace() {
         environmentId: evalEnvironmentPlan?.target?.environmentId || null,
         refreshGateway: evalEnvironmentPlan?.target?.kind === 'gateway',
       }, { timeoutMs: 300_000 })
-      toast.success(`Suite completed at ${Math.round(result.percentage)}%`)
+      toast.success(`${t('suiteCompletedAt')} ${Math.round(result.percentage)}%`)
       await loadQualityData({ silent: true })
       await loadEvalEnvironmentPlan()
       await loadEvalGate()
       await loadReleaseReadiness()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Eval suite failed')
+      toast.error(err instanceof Error ? err.message : t('evalSuiteFailed'))
     } finally {
       setEvalBusy(null)
     }
-  }, [evalEnvironmentPlan, loadEvalEnvironmentPlan, loadEvalGate, loadQualityData, loadReleaseReadiness, selectedAgentId])
+  }, [evalEnvironmentPlan, loadEvalEnvironmentPlan, loadEvalGate, loadQualityData, loadReleaseReadiness, selectedAgentId, t])
 
   const setEvalBaseline = useCallback(async () => {
     if (!selectedAgentId) {
-      toast.error('Choose an agent first')
+      toast.error(t('chooseAgentFirst'))
       return
     }
     if (evalGateScope === 'scenario' && !selectedScenarioId) {
-      toast.error('Choose a scenario first')
+      toast.error(t('chooseScenarioFirst'))
       return
     }
     setEvalBaselineBusy(true)
@@ -844,32 +850,32 @@ export function QualityWorkspace() {
       const result = await api<{ gate: EvalGateResult }>('POST', '/eval/baselines', body)
       setEvalGate(result.gate)
       await loadReleaseReadiness()
-      toast.success('Eval baseline saved')
+      toast.success(t('evalBaselineSaved'))
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Unable to save eval baseline')
+      toast.error(err instanceof Error ? err.message : t('evalBaselineSaveFailed'))
     } finally {
       setEvalBaselineBusy(false)
     }
-  }, [evalGate, evalGateScope, loadReleaseReadiness, selectedAgentId, selectedScenarioId, selectedSuite])
+  }, [evalGate, evalGateScope, loadReleaseReadiness, selectedAgentId, selectedScenarioId, selectedSuite, t])
 
   const actOnApproval = useCallback(async (approval: ApprovalRequest, approved: boolean) => {
     setApprovalBusy(approval.id)
     try {
       await api('POST', '/approvals', { id: approval.id, approved })
-      toast.success(approved ? 'Approval granted' : 'Approval denied')
+      toast.success(approved ? t('approvalGranted') : t('approvalDenied'))
       await loadQualityData({ silent: true })
       await loadReleaseReadiness()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Unable to update approval')
+      toast.error(err instanceof Error ? err.message : t('approvalUpdateFailed'))
     } finally {
       setApprovalBusy(null)
     }
-  }, [loadQualityData, loadReleaseReadiness])
+  }, [loadQualityData, loadReleaseReadiness, t])
 
   if (loading) {
     return (
       <MainContent>
-        <PageLoader label="Loading quality center..." />
+        <PageLoader label={t('loadingQuality')} />
       </MainContent>
     )
   }
@@ -880,14 +886,14 @@ export function QualityWorkspace() {
         <div className="mx-auto flex w-full max-w-[1280px] flex-col gap-6 px-4 py-5 sm:px-6 lg:px-8">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
-              <div className="text-[10px] font-700 uppercase tracking-[0.16em] text-accent-bright/75">Operator Quality Center</div>
-              <h1 className="mt-2 font-display text-[28px] font-700 tracking-[-0.03em] text-text">Quality</h1>
+              <div className="text-[10px] font-700 uppercase tracking-[0.16em] text-accent-bright/75">{t('operatorQualityCenter')}</div>
+              <h1 className="mt-2 font-display text-[28px] font-700 tracking-[-0.03em] text-text">{t('quality')}</h1>
               <p className="mt-2 max-w-[720px] text-[13px] leading-relaxed text-text-3/70">
-                Evals, approvals, run evidence, and release readiness in one operator workspace.
+                {t('qualityDesc')}
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              {refreshing && <span className="text-[11px] text-text-3/60">Refreshing...</span>}
+              {refreshing && <span className="text-[11px] text-text-3/60">{t('refreshing')}</span>}
               <button
                 type="button"
                 onClick={() => {
@@ -900,7 +906,7 @@ export function QualityWorkspace() {
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                   <path d="M21 12a9 9 0 0 1-15.5 6.2" /><path d="M3 12A9 9 0 0 1 18.5 5.8" /><path d="M3 19v-5h5" /><path d="M21 5v5h-5" />
                 </svg>
-                Refresh
+                {t('refresh')}
               </button>
             </div>
           </div>
@@ -947,27 +953,27 @@ export function QualityWorkspace() {
 
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                 <StatTile
-                  label="Needs Attention"
+                  label={t('needsAttention')}
                   value={String(overview.needsAttention)}
-                  hint="Failed runs, failed evals, and pending approvals."
+                  hint={t('needsAttentionHint')}
                   tone={overview.needsAttention > 0 ? 'danger' : 'good'}
                 />
                 <StatTile
-                  label="Active Runs"
+                  label={t('activeRuns')}
                   value={String(overview.activeRuns)}
-                  hint={`${runHealth.byStatus.running} running, ${runHealth.byStatus.queued} queued.`}
+                  hint={t('runStatusHint', { running: runHealth.byStatus.running, queued: runHealth.byStatus.queued })}
                   tone={overview.activeRuns > 0 ? 'warn' : 'default'}
                 />
                 <StatTile
-                  label="Pending Approvals"
+                  label={t('pendingApprovals')}
                   value={String(overview.pendingApprovals)}
-                  hint={`${approvalGroups.categories.length} approval group${approvalGroups.categories.length === 1 ? '' : 's'}.`}
+                  hint={t('approvalGroups', { count: approvalGroups.categories.length })}
                   tone={overview.pendingApprovals > 0 ? 'warn' : 'good'}
                 />
                 <StatTile
-                  label="Eval Average"
+                  label={t('evalAverage')}
                   value={formatPercent(overview.evalAveragePercent)}
-                  hint={`${evalSummary.completedRuns} completed eval run${evalSummary.completedRuns === 1 ? '' : 's'}.`}
+                  hint={t('evalRunsCompleted', { count: evalSummary.completedRuns })}
                   tone={overview.evalAveragePercent == null || overview.evalAveragePercent >= 80 ? 'good' : 'warn'}
                 />
               </div>
@@ -976,18 +982,18 @@ export function QualityWorkspace() {
                 <section className="rounded-[16px] border border-white/[0.06] bg-white/[0.025] p-4">
                   <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
                     <div>
-                      <h2 className="font-display text-[15px] font-700 text-text">Needs Attention</h2>
-                      <p className="mt-1 text-[12px] text-text-3/65">Shortest path to unblock operator review.</p>
+                      <h2 className="font-display text-[15px] font-700 text-text">{t('needsAttention')}</h2>
+                      <p className="mt-1 text-[12px] text-text-3/65">{t('needsAttentionDesc')}</p>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      <button onClick={() => openMissionTemplate('release-candidate-qa')} className="rounded-[9px] border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-1.5 text-[11px] font-700 text-emerald-200 hover:bg-emerald-500/15">Start QA Mission</button>
-                      <button onClick={() => selectTab('evals')} className="rounded-[9px] border border-white/[0.08] px-2.5 py-1.5 text-[11px] font-700 text-text-2 hover:bg-white/[0.05]">Eval Lab</button>
-                      <button onClick={() => selectTab('approvals')} className="rounded-[9px] border border-white/[0.08] px-2.5 py-1.5 text-[11px] font-700 text-text-2 hover:bg-white/[0.05]">Approvals</button>
-                      <button onClick={() => selectTab('runs')} className="rounded-[9px] border border-white/[0.08] px-2.5 py-1.5 text-[11px] font-700 text-text-2 hover:bg-white/[0.05]">Runs</button>
+                      <button onClick={() => openMissionTemplate('release-candidate-qa')} className="rounded-[9px] border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-1.5 text-[11px] font-700 text-emerald-200 hover:bg-emerald-500/15">{t('startQaMission')}</button>
+                      <button onClick={() => selectTab('evals')} className="rounded-[9px] border border-white/[0.08] px-2.5 py-1.5 text-[11px] font-700 text-text-2 hover:bg-white/[0.05]">{t('evalLab')}</button>
+                      <button onClick={() => selectTab('approvals')} className="rounded-[9px] border border-white/[0.08] px-2.5 py-1.5 text-[11px] font-700 text-text-2 hover:bg-white/[0.05]">{t('approvals')}</button>
+                      <button onClick={() => selectTab('runs')} className="rounded-[9px] border border-white/[0.08] px-2.5 py-1.5 text-[11px] font-700 text-text-2 hover:bg-white/[0.05]">{t('runs')}</button>
                     </div>
                   </div>
                   {runHealth.recentFailures.length === 0 && approvalGroups.totalPending === 0 && evalSummary.failedRuns === 0 ? (
-                    <EmptyState title="No quality blockers" description="Recent runs, evals, and approvals do not need immediate operator action." />
+                    <EmptyState title={t('noQualityBlockers')} description={t('noQualityBlockersDesc')} />
                   ) : (
                     <div className="grid gap-2 md:grid-cols-2">
                       {runHealth.recentFailures.slice(0, 4).map((run) => (
@@ -996,7 +1002,7 @@ export function QualityWorkspace() {
                           onClick={() => selectTab('runs')}
                           className="rounded-[12px] border border-rose-500/20 bg-rose-500/[0.04] px-3 py-3 text-left transition-colors hover:bg-rose-500/[0.07]"
                         >
-                          <div className="text-[11px] font-700 uppercase tracking-[0.1em] text-rose-300">Failed Run</div>
+                          <div className="text-[11px] font-700 uppercase tracking-[0.1em] text-rose-300">{t('failedRun')}</div>
                           <div className="mt-1 truncate text-[13px] font-600 text-text">{run.messagePreview || run.id}</div>
                           <div className="mt-1 text-[11px] text-text-3/60">{run.source} - {formatTimestamp(run.endedAt ?? run.queuedAt)}</div>
                         </button>
@@ -1007,9 +1013,9 @@ export function QualityWorkspace() {
                           onClick={() => selectTab('approvals')}
                           className="rounded-[12px] border border-amber-500/20 bg-amber-500/[0.04] px-3 py-3 text-left transition-colors hover:bg-amber-500/[0.07]"
                         >
-                          <div className="text-[11px] font-700 uppercase tracking-[0.1em] text-amber-300">Approval</div>
-                          <div className="mt-1 text-[13px] font-600 text-text">{group.count} pending {group.category.replaceAll('_', ' ')}</div>
-                          <div className="mt-1 text-[11px] text-text-3/60">{group.approvals[0]?.title || 'Review request'}</div>
+                          <div className="text-[11px] font-700 uppercase tracking-[0.1em] text-amber-300">{t('approval')}</div>
+                          <div className="mt-1 text-[13px] font-600 text-text">{group.count} {t('pending')} {group.category.replaceAll('_', ' ')}</div>
+                          <div className="mt-1 text-[11px] text-text-3/60">{group.approvals[0]?.title || t('reviewRequest')}</div>
                         </button>
                       ))}
                     </div>
@@ -1017,11 +1023,11 @@ export function QualityWorkspace() {
                 </section>
 
                 <section className="rounded-[16px] border border-white/[0.06] bg-white/[0.025] p-4">
-                  <h2 className="font-display text-[15px] font-700 text-text">Latest Eval Scores</h2>
-                  <p className="mt-1 text-[12px] text-text-3/65">Most recent scored evidence across agents.</p>
+                  <h2 className="font-display text-[15px] font-700 text-text">{t('latestEvalScores')}</h2>
+                  <p className="mt-1 text-[12px] text-text-3/65">{t('latestEvalScoresDesc')}</p>
                   <div className="mt-4 flex flex-col gap-2">
                     {evalRuns.slice(0, 5).length === 0 ? (
-                      <EmptyState title="No eval history" description="Run a scenario or suite to start building score history." />
+                      <EmptyState title={t('noEvalHistory')} description={t('noEvalHistoryDesc')} />
                     ) : (
                       evalRuns.slice(0, 5).map((run) => {
                         const percent = scorePercent(run.score, run.maxScore)
@@ -1049,24 +1055,24 @@ export function QualityWorkspace() {
           {activeTab === 'evals' && (
             <div className="grid gap-5 xl:grid-cols-[360px_1fr]">
               <section className="rounded-[16px] border border-white/[0.06] bg-white/[0.025] p-4">
-                <h2 className="font-display text-[15px] font-700 text-text">Eval Lab</h2>
-                <p className="mt-1 text-[12px] leading-relaxed text-text-3/65">Run focused scenarios or complete suites against one agent.</p>
+                <h2 className="font-display text-[15px] font-700 text-text">{t('evalLab')}</h2>
+                <p className="mt-1 text-[12px] leading-relaxed text-text-3/65">{t('evalLabDesc')}</p>
                 <div className="mt-4 flex flex-col gap-3">
                   <label className="flex flex-col gap-1.5">
-                    <span className="text-[10px] font-700 uppercase tracking-[0.12em] text-text-3/55">Agent</span>
+                    <span className="text-[10px] font-700 uppercase tracking-[0.12em] text-text-3/55">{t('agent')}</span>
                     <select
                       value={selectedAgentId}
                       onChange={(event) => setSelectedAgentId(event.target.value)}
                       className="rounded-[10px] border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-[12px] text-text outline-none"
                     >
-                      {agentOptions.length === 0 && <option value="">No agents available</option>}
+                      {agentOptions.length === 0 && <option value="">{t('noAgentsAvailable')}</option>}
                       {agentOptions.map((agent) => (
                         <option key={agent.id} value={agent.id}>{agent.name}</option>
                       ))}
                     </select>
                   </label>
                   <label className="flex flex-col gap-1.5">
-                    <span className="text-[10px] font-700 uppercase tracking-[0.12em] text-text-3/55">Scenario</span>
+                    <span className="text-[10px] font-700 uppercase tracking-[0.12em] text-text-3/55">{t('scenario')}</span>
                     <select
                       value={selectedScenarioId}
                       onChange={(event) => setSelectedScenarioId(event.target.value)}
@@ -1083,7 +1089,7 @@ export function QualityWorkspace() {
                       <p className="mt-1 text-[12px] leading-relaxed text-text-3/65">{scenarioById.get(selectedScenarioId)!.description}</p>
                       <div className="mt-2 flex flex-wrap gap-1.5">
                         <span className="rounded-full bg-white/[0.05] px-2 py-1 text-[10px] font-700 text-text-3">{scenarioById.get(selectedScenarioId)!.category}</span>
-                        <span className="rounded-full bg-white/[0.05] px-2 py-1 text-[10px] font-700 text-text-3">{scenarioById.get(selectedScenarioId)!.criteriaCount} criteria</span>
+                        <span className="rounded-full bg-white/[0.05] px-2 py-1 text-[10px] font-700 text-text-3">{scenarioById.get(selectedScenarioId)!.criteriaCount} {t('criteria')}</span>
                         <span className="rounded-full bg-white/[0.05] px-2 py-1 text-[10px] font-700 text-text-3">{formatDuration(scenarioById.get(selectedScenarioId)!.timeoutMs)}</span>
                       </div>
                     </div>
@@ -1107,7 +1113,7 @@ export function QualityWorkspace() {
                     onClick={() => openMissionTemplate('release-candidate-qa')}
                     className="mt-3 w-full rounded-[10px] border border-emerald-500/25 bg-emerald-500/10 px-3 py-2 text-[12px] font-800 text-emerald-200 transition-colors hover:bg-emerald-500/15"
                   >
-                    Start Release QA Mission
+                    {t('startReleaseQa')}
                   </button>
                   <button
                     type="button"
@@ -1118,7 +1124,7 @@ export function QualityWorkspace() {
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
                       <path d="M8 5v14l11-7z" />
                     </svg>
-                    {evalBusy?.startsWith('scenario:') ? 'Running Scenario' : 'Run Scenario'}
+                    {evalBusy?.startsWith('scenario:') ? t('runningScenario') : t('runScenario')}
                   </button>
                 </div>
               </section>
@@ -1127,8 +1133,8 @@ export function QualityWorkspace() {
                 <section className="rounded-[16px] border border-white/[0.06] bg-white/[0.025] p-4">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
-                      <h2 className="font-display text-[15px] font-700 text-text">Suites</h2>
-                      <p className="mt-1 text-[12px] text-text-3/65">Release-oriented eval suites available through the existing eval API.</p>
+                      <h2 className="font-display text-[15px] font-700 text-text">{t('suites')}</h2>
+                      <p className="mt-1 text-[12px] text-text-3/65">{t('suitesDesc')}</p>
                     </div>
                     <select
                       value={selectedSuite}
@@ -1146,7 +1152,7 @@ export function QualityWorkspace() {
                         <div className="flex items-start justify-between gap-3">
                           <div>
                             <div className="text-[13px] font-800 text-text">{suite.name}</div>
-                            <div className="mt-1 text-[11px] text-text-3/65">{suite.count} scenarios - {suite.maxScore} max score</div>
+                            <div className="mt-1 text-[11px] text-text-3/65">{t('scenariosCount', { count: suite.count, maxScore: suite.maxScore })}</div>
                           </div>
                           <button
                             type="button"
@@ -1154,7 +1160,7 @@ export function QualityWorkspace() {
                             onClick={() => void runSuite(suite.name)}
                             className="rounded-[8px] border border-white/[0.08] px-2 py-1 text-[11px] font-700 text-text-2 transition-colors hover:bg-white/[0.06] disabled:cursor-not-allowed disabled:opacity-40"
                           >
-                            {evalBusy === `suite:${suite.name}` ? 'Running' : 'Run'}
+                            {evalBusy === `suite:${suite.name}` ? t('running') : t('run')}
                           </button>
                         </div>
                         <div className="mt-3 flex flex-wrap gap-1.5">
@@ -1166,15 +1172,15 @@ export function QualityWorkspace() {
                     ))}
                   </div>
                   <div className="mt-4 text-[11px] text-text-3/60">
-                    {selectedSuiteScenarios.length} scenario{selectedSuiteScenarios.length === 1 ? '' : 's'} selected in {selectedSuite}.
+                    {t('scenariosSelected', { count: selectedSuiteScenarios.length, suite: selectedSuite })}
                   </div>
                 </section>
 
                 <section className="rounded-[16px] border border-white/[0.06] bg-white/[0.025] p-4">
-                  <h2 className="font-display text-[15px] font-700 text-text">Score History</h2>
+                  <h2 className="font-display text-[15px] font-700 text-text">{t('scoreHistory')}</h2>
                   <div className="mt-4 grid gap-3 lg:grid-cols-2">
                     {evalRuns.length === 0 ? (
-                      <EmptyState title="No eval results yet" description="Run a scenario or suite to see criteria scores and evidence." />
+                      <EmptyState title={t('noEvalResults')} description={t('noEvalResultsDesc')} />
                     ) : (
                       evalRuns.slice(0, 12).map((run) => {
                         const percent = scorePercent(run.score, run.maxScore)
@@ -1202,7 +1208,7 @@ export function QualityWorkspace() {
                                 </div>
                               ))}
                               {run.details.length > 3 && (
-                                <div className="text-[10px] text-text-3/50">+{run.details.length - 3} more criteria</div>
+                                <div className="text-[10px] text-text-3/50">{t('moreCriteria', { count: run.details.length - 3 })}</div>
                               )}
                               {run.error && <div className="rounded-[10px] bg-rose-500/[0.06] px-3 py-2 text-[11px] text-rose-200">{run.error}</div>}
                             </div>
@@ -1220,22 +1226,22 @@ export function QualityWorkspace() {
             <section className="rounded-[16px] border border-white/[0.06] bg-white/[0.025] p-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <h2 className="font-display text-[15px] font-700 text-text">Approval Desk</h2>
-                  <p className="mt-1 text-[12px] text-text-3/65">Pending human-loop, tool, connector, skill, agent, and budget requests.</p>
+                  <h2 className="font-display text-[15px] font-700 text-text">{t('approvalDesk')}</h2>
+                  <p className="mt-1 text-[12px] text-text-3/65">{t('approvalDeskDesc')}</p>
                 </div>
                 <div className="rounded-full border border-white/[0.08] bg-white/[0.04] px-3 py-1 text-[11px] font-700 text-text-3">
-                  {approvalGroups.totalPending} pending
+                  {approvalGroups.totalPending} {t('pending')}
                 </div>
               </div>
               <div className="mt-4 flex flex-col gap-4">
                 {approvalGroups.totalPending === 0 ? (
-                  <EmptyState title="No pending approvals" description="The approval queue is clear." />
+                  <EmptyState title={t('noPendingApprovals')} description={t('approvalQueueClear')} />
                 ) : (
                   approvalGroups.categories.map((group) => (
                     <div key={group.category} className="rounded-[14px] border border-white/[0.06] bg-white/[0.02] p-3">
                       <div className="mb-3 flex items-center justify-between gap-3">
                         <div className="text-[12px] font-800 uppercase tracking-[0.1em] text-text-2">{group.category.replaceAll('_', ' ')}</div>
-                        <div className="text-[11px] font-700 text-text-3/65">{group.count} request{group.count === 1 ? '' : 's'}</div>
+                        <div className="text-[11px] font-700 text-text-3/65">{t('requests', { count: group.count })}</div>
                       </div>
                       <div className="grid gap-2 lg:grid-cols-2">
                         {group.approvals.map((approval) => (
@@ -1257,7 +1263,7 @@ export function QualityWorkspace() {
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
                                   <path d="M20 6L9 17l-5-5" />
                                 </svg>
-                                Approve
+                                {t('approve')}
                               </button>
                               <button
                                 type="button"
@@ -1268,7 +1274,7 @@ export function QualityWorkspace() {
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
                                   <path d="M18 6L6 18" /><path d="M6 6l12 12" />
                                 </svg>
-                                Deny
+                                {t('deny')}
                               </button>
                             </div>
                           </div>
@@ -1286,13 +1292,13 @@ export function QualityWorkspace() {
               <div className="border-b border-white/[0.06] px-5 py-4">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                   <div>
-                    <h2 className="font-display text-[15px] font-700 text-text">Run Review</h2>
-                    <p className="mt-1 text-[12px] text-text-3/65">Filter recent runs and open replay evidence from the detail sheet.</p>
+                    <h2 className="font-display text-[15px] font-700 text-text">{t('runReview')}</h2>
+                    <p className="mt-1 text-[12px] text-text-3/65">{t('runReviewDesc')}</p>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <span className="rounded-full bg-rose-500/[0.08] px-2.5 py-1 text-[11px] font-700 text-rose-300">{runHealth.byStatus.failed} failed</span>
-                    <span className="rounded-full bg-blue-500/[0.08] px-2.5 py-1 text-[11px] font-700 text-blue-300">{runHealth.byStatus.running} running</span>
-                    <span className="rounded-full bg-emerald-500/[0.08] px-2.5 py-1 text-[11px] font-700 text-emerald-300">{runHealth.byStatus.completed} completed</span>
+                    <span className="rounded-full bg-rose-500/[0.08] px-2.5 py-1 text-[11px] font-700 text-rose-300">{runHealth.byStatus.failed} {t('failed')}</span>
+                    <span className="rounded-full bg-blue-500/[0.08] px-2.5 py-1 text-[11px] font-700 text-blue-300">{runHealth.byStatus.running} {t('running')}</span>
+                    <span className="rounded-full bg-emerald-500/[0.08] px-2.5 py-1 text-[11px] font-700 text-emerald-300">{runHealth.byStatus.completed} {t('completed')}</span>
                   </div>
                 </div>
               </div>

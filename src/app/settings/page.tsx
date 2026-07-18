@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslation } from 'react-i18next';
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react'
 import type { ReactNode } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
@@ -42,42 +43,8 @@ interface SettingsFocusDetail {
   sectionId?: string
 }
 
-const TABS: Tab[] = [
-  {
-    id: 'general',
-    label: 'General',
-    keywords: ['preferences', 'user', 'language', 'default', 'default agent', 'shortcut', 'capability', 'policy', 'permissions', 'tools', 'storage', 'uploads', 'disk', 'files', 'cleanup'],
-    icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>,
-  },
-  {
-    id: 'appearance',
-    label: 'Appearance',
-    keywords: ['theme', 'color', 'hue', 'palette', 'dark', 'light', 'style', 'swatch'],
-    icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="5" /><line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" /><line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" /><line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" /><line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" /></svg>,
-  },
-  {
-    id: 'agents',
-    label: 'Agents & Automation',
-    keywords: ['runtime', 'loop', 'automation', 'heartbeat', 'delegation', 'agent', 'swarm', 'turns'],
-    icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>,
-  },
-  {
-    id: 'memory',
-    label: 'Memory & AI',
-    keywords: ['embedding', 'vector', 'voice', 'web search', 'memory', 'consolidation', 'tts', 'ai'],
-    icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 2a10 10 0 0 1 10 10 10 10 0 0 1-10 10A10 10 0 0 1 2 12 10 10 0 0 1 12 2z" /><path d="M12 16v-4" /><path d="M12 8h.01" /></svg>,
-  },
-  {
-    id: 'integrations',
-    label: 'Integrations',
-    keywords: ['provider', 'secret', 'api', 'key', 'openai', 'anthropic', 'ollama', 'credential'],
-    icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 2v4m0 12v4M2 12h4m12 0h4" /><circle cx="12" cy="12" r="4" /><path d="M8 8L5.5 5.5M16 8l2.5-2.5M8 16l-2.5 2.5M16 16l2.5 2.5" /></svg>,
-  },
-]
-
-const VALID_TAB_IDS = TABS.map((t) => t.id)
-
 export default function SettingsRoute() {
+  const { t } = useTranslation()
   const loadProviders = useAppStore((s) => s.loadProviders)
   const loadCredentials = useAppStore((s) => s.loadCredentials)
   const appSettings = useAppStore((s) => s.appSettings)
@@ -91,6 +58,41 @@ export default function SettingsRoute() {
   const contentRef = useRef<HTMLDivElement>(null)
   const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const [pendingSectionId, setPendingSectionId] = useState<string | null>(null)
+
+  const TABS: Tab[] = useMemo(() => [
+    {
+      id: 'general',
+      label: t('settingsTabGeneral'),
+      keywords: ['preferences', 'user', 'language', 'default', 'default agent', 'shortcut', 'capability', 'policy', 'permissions', 'tools', 'storage', 'uploads', 'disk', 'files', 'cleanup'],
+      icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>,
+    },
+    {
+      id: 'appearance',
+      label: t('settingsTabAppearance'),
+      keywords: ['theme', 'color', 'hue', 'palette', 'dark', 'light', 'style', 'swatch'],
+      icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="5" /><line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" /><line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" /><line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" /><line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" /></svg>,
+    },
+    {
+      id: 'agents',
+      label: t('settingsTabAgentsAutomation'),
+      keywords: ['runtime', 'loop', 'automation', 'heartbeat', 'delegation', 'agent', 'swarm', 'turns'],
+      icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>,
+    },
+    {
+      id: 'memory',
+      label: t('settingsTabMemoryAI'),
+      keywords: ['embedding', 'vector', 'voice', 'web search', 'memory', 'consolidation', 'tts', 'ai'],
+      icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 2a10 10 0 0 1 10 10 10 10 0 0 1-10 10A10 10 0 0 1 2 12 10 10 0 0 1 12 2z" /><path d="M12 16v-4" /><path d="M12 8h.01" /></svg>,
+    },
+    {
+      id: 'integrations',
+      label: t('settingsTabIntegrations'),
+      keywords: ['provider', 'secret', 'api', 'key', 'openai', 'anthropic', 'ollama', 'credential'],
+      icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 2v4m0 12v4M2 12h4m12 0h4" /><circle cx="12" cy="12" r="4" /><path d="M8 8L5.5 5.5M16 8l2.5-2.5M8 16l-2.5 2.5M16 16l2.5 2.5" /></svg>,
+    },
+  ], [t])
+
+  const VALID_TAB_IDS = TABS.map((t) => t.id)
 
   const setActiveTab = useCallback((tab: string) => {
     setActiveTabRaw(tab)
@@ -112,7 +114,7 @@ export default function SettingsRoute() {
     if (tab && VALID_TAB_IDS.includes(tab)) {
       setActiveTabRaw(tab)
     }
-  }, [])
+  }, [VALID_TAB_IDS])
 
   useEffect(() => {
     contentRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
@@ -127,117 +129,117 @@ export default function SettingsRoute() {
     {
       id: 'user-preferences',
       tabId: 'general',
-      title: 'Profile & Default Chat',
-      description: 'User identity, language, default-chat behavior, and global WhatsApp approvals.',
+      title: t('settingsSectionUserPreferencesTitle'),
+      description: t('settingsSectionUserPreferencesDesc'),
       keywords: ['profile', 'default chat', 'default agent', 'shortcut', 'user', 'language', 'main chat', 'whatsapp', 'contacts', 'approved users'],
       render: () => <UserPreferencesSection {...sectionProps} />,
     },
     {
       id: 'capability-policy',
       tabId: 'general',
-      title: 'Capabilities & Permissions',
-      description: 'Global controls for tool use, permissions, and execution policy.',
+      title: t('settingsSectionCapabilityPolicyTitle'),
+      description: t('settingsSectionCapabilityPolicyDesc'),
       keywords: ['tools', 'permissions', 'capability', 'policy', 'security', 'approvals'],
       render: () => <CapabilityPolicySection {...sectionProps} />,
     },
     {
       id: 'storage',
       tabId: 'general',
-      title: 'Storage & Uploads',
-      description: 'Manage upload retention, cleanup, and file storage behavior.',
+      title: t('settingsSectionStorageTitle'),
+      description: t('settingsSectionStorageDesc'),
       keywords: ['storage', 'uploads', 'disk', 'cleanup', 'files'],
       render: () => <StorageSection {...sectionProps} />,
     },
     {
       id: 'theme',
       tabId: 'appearance',
-      title: 'Theme',
-      description: 'Adjust theme hue and interface styling.',
+      title: t('settingsSectionThemeTitle'),
+      description: t('settingsSectionThemeDesc'),
       keywords: ['theme', 'appearance', 'color', 'hue'],
       render: () => <ThemeSection {...sectionProps} />,
     },
     {
       id: 'runtime-loop',
       tabId: 'agents',
-      title: 'Automation Limits',
-      description: 'Control how far agents can run, recurse, delegate, and whether the background daemon autostarts.',
+      title: t('settingsSectionRuntimeLoopTitle'),
+      description: t('settingsSectionRuntimeLoopDesc'),
       keywords: ['automation', 'loop', 'runtime', 'turns', 'autonomy', 'heartbeat', 'daemon', 'autostart', 'background'],
       render: () => <RuntimeLoopSection {...sectionProps} />,
     },
     {
       id: 'heartbeat',
       tabId: 'agents',
-      title: 'Heartbeat',
-      description: 'Configure automatic follow-up checks for active agent chats.',
+      title: t('settingsSectionHeartbeatTitle'),
+      description: t('settingsSectionHeartbeatDesc'),
       keywords: ['heartbeat', 'follow up', 'interval', 'ongoing'],
       render: () => <HeartbeatSection {...sectionProps} />,
     },
     {
       id: 'supervisor-reflection',
       tabId: 'agents',
-      title: 'Supervisor & Reflection',
-      description: 'Automatic recovery from bad loops plus post-run reflection memory.',
+      title: t('settingsSectionSupervisorTitle'),
+      description: t('settingsSectionSupervisorDesc'),
       keywords: ['supervisor', 'reflection', 'autonomy', 'memory', 'self-learning', 'replan'],
       render: () => <SupervisorReflectionSection {...sectionProps} />,
     },
     {
       id: 'embedding',
       tabId: 'memory',
-      title: 'Embeddings',
-      description: 'Configure providers for embeddings and vector-backed features.',
+      title: t('settingsSectionEmbeddingTitle'),
+      description: t('settingsSectionEmbeddingDesc'),
       keywords: ['embedding', 'vector', 'provider', 'semantic'],
       render: () => <EmbeddingSection {...sectionProps} credList={credList} />,
     },
     {
       id: 'skills',
       tabId: 'memory',
-      title: 'Skills',
-      description: 'Tune runtime skill recommendation ranking and suggestion behavior.',
+      title: t('settingsSectionSkillsTitle'),
+      description: t('settingsSectionSkillsDesc'),
       keywords: ['skills', 'retrieval', 'semantic', 'recommendation', 'embedding'],
       render: () => <SkillsSection {...sectionProps} />,
     },
     {
       id: 'memory',
       tabId: 'memory',
-      title: 'Memory Governance',
-      description: 'Tune how memory is stored, consolidated, and retrieved.',
+      title: t('settingsSectionMemoryGovernanceTitle'),
+      description: t('settingsSectionMemoryGovernanceDesc'),
       keywords: ['memory', 'consolidation', 'retention', 'governance'],
       render: () => <MemorySection {...sectionProps} />,
     },
     {
       id: 'voice',
       tabId: 'memory',
-      title: 'Voice',
-      description: 'Control speech output and voice provider settings.',
+      title: t('settingsSectionVoiceTitle'),
+      description: t('settingsSectionVoiceDesc'),
       keywords: ['voice', 'speech', 'tts', 'audio'],
       render: () => <VoiceSection {...sectionProps} />,
     },
     {
       id: 'web-search',
       tabId: 'memory',
-      title: 'Web Search',
-      description: 'Set defaults for search providers and browsing behavior.',
+      title: t('settingsSectionWebSearchTitle'),
+      description: t('settingsSectionWebSearchDesc'),
       keywords: ['web search', 'browse', 'internet', 'search'],
       render: () => <WebSearchSection {...sectionProps} />,
     },
     {
       id: 'providers',
       tabId: 'integrations',
-      title: 'Providers',
-      description: 'Manage model providers, endpoints, and credentials.',
+      title: t('settingsSectionProvidersTitle'),
+      description: t('settingsSectionProvidersDesc'),
       keywords: ['providers', 'endpoints', 'openai', 'anthropic', 'ollama', 'models'],
       render: () => <ProvidersSection {...sectionProps} />,
     },
     {
       id: 'secrets',
       tabId: 'integrations',
-      title: 'Secrets',
-      description: 'Store encrypted credentials for agents and integrations.',
+      title: t('settingsSectionSecretsTitle'),
+      description: t('settingsSectionSecretsDesc'),
       keywords: ['secrets', 'credentials', 'api keys', 'tokens'],
       render: () => <SecretsSection {...sectionProps} />,
     },
     ]
-  }, [appSettings, credList, patchSettings])
+  }, [appSettings, credList, patchSettings, t])
   const sectionsByTab = useMemo(() => {
     const map = new Map<string, SettingsSectionDef[]>()
     for (const section of sections) {
@@ -309,7 +311,7 @@ export default function SettingsRoute() {
   if (!pageReady) {
     return (
       <MainContent>
-        <PageLoader label="Loading settings..." />
+        <PageLoader label={t('loadingSettings')} />
       </MainContent>
     )
   }
@@ -318,7 +320,7 @@ export default function SettingsRoute() {
     <MainContent>
       <div className="flex-1 flex h-full min-w-0">
         <div className="w-[200px] shrink-0 border-r border-white/[0.04] py-6 px-3 flex flex-col gap-1">
-          <h2 className="font-display text-[14px] font-700 text-text px-3 mb-3 tracking-[-0.01em]">Settings</h2>
+          <h2 className="font-display text-[14px] font-700 text-text px-3 mb-3 tracking-[-0.01em]">{t('settings')}</h2>
           <div className="px-2 mb-3">
             <div className="relative">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-3/50">
@@ -329,7 +331,7 @@ export default function SettingsRoute() {
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search settings or jump to a section..."
+                placeholder={t('settingsSearchPlaceholder')}
                 className="w-full pl-8 pr-2 py-1.5 text-[12px] bg-white/[0.04] rounded-[8px] border border-white/[0.06] text-text placeholder:text-text-3/40 outline-none focus:border-white/[0.12] transition-colors"
                 style={{ fontFamily: 'inherit' }}
               />
@@ -362,11 +364,11 @@ export default function SettingsRoute() {
                 {TABS.find((t) => t.id === activeTab)?.label}
               </h3>
               <p className="text-[13px] text-text-3 mt-1">
-                {activeTab === 'general' && 'User preferences, default-chat behavior, and global controls.'}
-                {activeTab === 'appearance' && 'Customize the look and feel of the interface.'}
-                {activeTab === 'agents' && 'Agent coordination, autonomy, delegation, and heartbeat.'}
-                {activeTab === 'memory' && 'Embedding, memory governance, voice and web search.'}
-                {activeTab === 'integrations' && 'Providers, endpoints, and encrypted credentials.'}
+                {activeTab === 'general' && t('settingsGeneralDescription')}
+                {activeTab === 'appearance' && t('settingsAppearanceDescription')}
+                {activeTab === 'agents' && t('settingsAgentsDescription')}
+                {activeTab === 'memory' && t('settingsMemoryDescription')}
+                {activeTab === 'integrations' && t('settingsIntegrationsDescription')}
               </p>
             </div>
 
@@ -375,10 +377,12 @@ export default function SettingsRoute() {
                 <div className="flex items-center justify-between gap-3 mb-3">
                   <div>
                     <p className="text-[12px] font-600 text-text-2">
-                      {matchingSections.length > 0 ? `${matchingSections.length} matching section${matchingSections.length === 1 ? '' : 's'}` : 'No direct section matches'}
+                      {matchingSections.length > 0
+                        ? t('settingsMatchingSections', { count: matchingSections.length })
+                        : t('settingsNoMatches')}
                     </p>
                     <p className="text-[11px] text-text-3/60">
-                      Search now lands on individual settings sections instead of only tab names.
+                      {t('settingsSearchDescription')}
                     </p>
                   </div>
                   {searchQuery && (
@@ -387,7 +391,7 @@ export default function SettingsRoute() {
                       className="px-2.5 py-1.5 rounded-[8px] bg-white/[0.04] text-[11px] text-text-3 hover:text-text hover:bg-white/[0.08] transition-colors border-none cursor-pointer"
                       style={{ fontFamily: 'inherit' }}
                     >
-                      Clear
+                      {t('clear')}
                     </button>
                   )}
                 </div>

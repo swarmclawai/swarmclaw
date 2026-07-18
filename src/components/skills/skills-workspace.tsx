@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslation } from 'react-i18next';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import ReactMarkdown from 'react-markdown'
@@ -39,6 +40,7 @@ type HubSort = 'popular' | 'name' | 'updated'
 const HUB_PAGE_SIZE = 18
 
 export function SkillsWorkspace() {
+  const { t } = useTranslation()
   const router = useRouter()
   const searchParams = useSearchParams()
   const mountedRef = useMountedRef()
@@ -130,43 +132,43 @@ export function SkillsWorkspace() {
 
   const handleGenerateSuggestion = useCallback(async () => {
     if (!currentSessionId) {
-      toast.error('Open a chat first so SwarmClaw has a session to learn from.')
+      toast.error(t('openChatFirst'))
       return
     }
     setGeneratingSuggestion(true)
     try {
       await generateSuggestionMutation.mutateAsync(currentSessionId)
-      toast.success('Drafted a skill suggestion from the current conversation.')
+      toast.success(t('draftSuggestionSuccess'))
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to generate a skill suggestion')
+      toast.error(err instanceof Error ? err.message : t('draftSuggestionFailed'))
     } finally {
       if (mountedRef.current) setGeneratingSuggestion(false)
     }
-  }, [currentSessionId, generateSuggestionMutation, mountedRef])
+  }, [currentSessionId, generateSuggestionMutation, mountedRef, t])
 
   const handleApproveSuggestion = useCallback(async (id: string) => {
     setSuggestionActionId(id)
     try {
       await approveSuggestionMutation.mutateAsync(id)
-      toast.success('Skill suggestion approved and saved.')
+      toast.success(t('approveSuggestionSuccess'))
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to approve the skill suggestion')
+      toast.error(err instanceof Error ? err.message : t('approveSuggestionFailed'))
     } finally {
       if (mountedRef.current) setSuggestionActionId(null)
     }
-  }, [approveSuggestionMutation, mountedRef])
+  }, [approveSuggestionMutation, mountedRef, t])
 
   const handleRejectSuggestion = useCallback(async (id: string) => {
     setSuggestionActionId(id)
     try {
       await rejectSuggestionMutation.mutateAsync(id)
-      toast.success('Skill suggestion dismissed.')
+      toast.success(t('rejectSuggestionSuccess'))
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to dismiss the skill suggestion')
+      toast.error(err instanceof Error ? err.message : t('rejectSuggestionFailed'))
     } finally {
       if (mountedRef.current) setSuggestionActionId(null)
     }
-  }, [mountedRef, rejectSuggestionMutation])
+  }, [mountedRef, rejectSuggestionMutation, t])
 
   const searchHub = useCallback(async (query: string, page: number, append = false, cursor?: string | null) => {
     const requestId = hubSearchRequestIdRef.current + 1
@@ -192,11 +194,11 @@ export function SkillsWorkspace() {
       setHubSearched(true)
     } catch (err) {
       if (!mountedRef.current || requestId !== hubSearchRequestIdRef.current) return
-      setHubError(err instanceof Error ? err.message : 'Failed to search ClawHub')
+      setHubError(err instanceof Error ? err.message : t('clawHubSearchFailed'))
     } finally {
       if (mountedRef.current && requestId === hubSearchRequestIdRef.current) setHubLoading(false)
     }
-  }, [clawHubSearchMutation, mountedRef])
+  }, [clawHubSearchMutation, mountedRef, t])
 
   useEffect(() => {
     if (activeTab !== 'clawhub' || selectedHubSkill) return
@@ -226,7 +228,7 @@ export function SkillsWorkspace() {
       setHubPreviewCache((prev) => ({ ...prev, [selectedHubSkill.id]: preview }))
     }).catch((err) => {
       if (!active || !mountedRef.current) return
-      setHubPreviewError(err instanceof Error ? err.message : 'Failed to load skill preview')
+      setHubPreviewError(err instanceof Error ? err.message : t('previewLoadFailed'))
     }).finally(() => {
       if (active && mountedRef.current) setHubPreviewLoadingId(null)
     })
@@ -234,7 +236,7 @@ export function SkillsWorkspace() {
     return () => {
       active = false
     }
-  }, [clawHubPreviewMutation, hubPreviewCache, mountedRef, selectedHubSkill])
+  }, [clawHubPreviewMutation, hubPreviewCache, mountedRef, selectedHubSkill, t])
 
   const installedHubIds = useMemo(() => {
     const ids = new Set<string>()
@@ -308,35 +310,35 @@ export function SkillsWorkspace() {
       })
       toast.success(`Installed "${skill.name}"`)
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Install failed')
+      toast.error(err instanceof Error ? err.message : t('installFailed'))
     } finally {
       if (mountedRef.current) setInstallingHubId(null)
     }
-  }, [hubPreviewCache, installClawHubSkillMutation, mountedRef])
+  }, [hubPreviewCache, installClawHubSkillMutation, mountedRef, t])
 
   const confirmDeleteSkill = useCallback(async () => {
     if (!deleteTarget) return
     setDeletingSkillId(deleteTarget.id)
     try {
       await deleteSkillMutation.mutateAsync(deleteTarget.id)
-      toast.success('Skill deleted')
+      toast.success(t('skillDeleted'))
       if (selectedSkillId === deleteTarget.id) {
         setPageState({ skill: null }, 'replace')
       }
       setDeleteTarget(null)
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to delete skill')
+      toast.error(err instanceof Error ? err.message : t('skillDeleteFailed'))
     } finally {
       if (mountedRef.current) setDeletingSkillId(null)
     }
-  }, [deleteSkillMutation, deleteTarget, mountedRef, selectedSkillId, setPageState])
+  }, [deleteSkillMutation, deleteTarget, mountedRef, selectedSkillId, setPageState, t])
 
   if (skillsQuery.isPending || agentsQuery.isPending) {
     return (
       <div className="flex-1 flex items-center justify-center px-6">
         <div className="flex items-center gap-3 text-[13px] text-text-3/65">
           <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/[0.12] border-t-accent-bright" />
-          Loading skills library...
+          {t('loadingSkillsLibrary')}
         </div>
       </div>
     )
@@ -351,20 +353,20 @@ export function SkillsWorkspace() {
             <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
               <div className="max-w-3xl">
                 <div className="text-[11px] font-700 uppercase tracking-[0.16em] text-text-3/70">
-                  Skills + ClawHub
+                  {t('skillsAndClawHub')}
                 </div>
                 <h1 className="mt-2 font-display text-[28px] font-700 tracking-[-0.04em] text-text md:text-[34px]">
-                  Inspect what a skill does before you install or run it.
+                  {t('skillsHeroTitle')}
                 </h1>
                 <p className="mt-3 max-w-2xl text-[14px] leading-[1.7] text-text-2/80">
-                  Search your local skill library, open a clear detail view, then jump into ClawHub when you want to explore community tools.
+                  {t('skillsHeroDesc')}
                 </p>
               </div>
 
               <div className="flex flex-wrap gap-2 lg:justify-end">
-                <ActionButton label="New skill" tone="primary" onClick={() => openSkillEditor(null)} />
+                <ActionButton label={t('newSkill')} tone="primary" onClick={() => openSkillEditor(null)} />
                 <ActionButton
-                  label={activeTab === 'clawhub' ? 'Back to library' : 'Open ClawHub'}
+                  label={activeTab === 'clawhub' ? t('backToLibrary') : t('openClawHub')}
                   tone="secondary"
                   onClick={() => {
                     if (activeTab === 'clawhub') {
@@ -376,7 +378,7 @@ export function SkillsWorkspace() {
                   }}
                 />
                 <ActionButton
-                  label={generatingSuggestion ? 'Drafting...' : 'Draft from current chat'}
+                  label={generatingSuggestion ? t('drafting') : t('draftFromCurrentChat')}
                   tone="ghost"
                   disabled={generatingSuggestion}
                   onClick={() => { void handleGenerateSuggestion() }}
@@ -385,10 +387,10 @@ export function SkillsWorkspace() {
             </div>
 
             <div className="mt-5 flex flex-wrap gap-2">
-              <QuickStatPill label="Installed skills" value={skillCount} />
-              <QuickStatPill label="Draft suggestions" value={draftCount} />
-              <QuickStatPill label="Marketplace results" value={hubSearched ? hubTotal : 0} muted={!hubSearched} />
-              {activeProjectFilter ? <QuickStatPill label="Project filter" value={1} /> : null}
+              <QuickStatPill label={t('installedSkills')} value={skillCount} />
+              <QuickStatPill label={t('draftSuggestions')} value={draftCount} />
+              <QuickStatPill label={t('marketplaceResults')} value={hubSearched ? hubTotal : 0} muted={!hubSearched} />
+              {activeProjectFilter ? <QuickStatPill label={t('projectFilter')} value={1} /> : null}
             </div>
           </div>
         </section>
@@ -402,14 +404,14 @@ export function SkillsWorkspace() {
               setPageState({ tab: 'skills' })
             }}
           >
-            Library
+            {t('library')}
           </TabButton>
           <TabButton
             active={activeTab === 'clawhub'}
             count={hubSearched ? hubTotal : undefined}
             onClick={() => setPageState({ tab: 'clawhub', skill: null })}
           >
-            ClawHub
+            {t('clawHub')}
           </TabButton>
         </div>
 
@@ -425,9 +427,9 @@ export function SkillsWorkspace() {
 
         {activeTab === 'skills' && selectedSkillId && !selectedSkill && (
           <EmptyState
-            title="Skill not available"
-            body="This skill no longer exists or is hidden by the current project filter."
-            actionLabel="Back to library"
+            title={t('skillNotAvailable')}
+            body={t('skillNotAvailableDesc')}
+            actionLabel={t('backToLibrary')}
             onAction={() => setPageState({ skill: null }, 'replace')}
           />
         )}
@@ -437,39 +439,39 @@ export function SkillsWorkspace() {
             <div className="rounded-[22px] border border-white/[0.08] bg-surface/70 p-4 md:p-5">
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div>
-                  <div className="text-[11px] font-700 uppercase tracking-[0.14em] text-text-3/65">Library</div>
+                  <div className="text-[11px] font-700 uppercase tracking-[0.14em] text-text-3/65">{t('library')}</div>
                   <p className="mt-1 text-[13px] text-text-3/75">
-                    Search local skills and use the buttons on each card to open details or edit.
+                    {t('librarySearchDesc')}
                   </p>
                 </div>
                 <div className="grid gap-2 sm:grid-cols-[minmax(220px,1fr)_auto_auto]">
                   <SearchField
                     value={libraryQuery}
                     onChange={setLibraryQuery}
-                    placeholder="Search skills, tags, tools..."
+                    placeholder={t('searchSkillsPlaceholder')}
                   />
                   <select
                     value={libraryScope}
                     onChange={(event) => setLibraryScope(event.target.value as SkillScopeFilter)}
                     className={selectClassName}
                   >
-                    <option value="all">All scopes</option>
-                    <option value="global">Global</option>
-                    <option value="agent">Agent only</option>
+                    <option value="all">{t('allScopes')}</option>
+                    <option value="global">{t('global')}</option>
+                    <option value="agent">{t('agentOnly')}</option>
                   </select>
                   <select
                     value={librarySort}
                     onChange={(event) => setLibrarySort(event.target.value as SkillSort)}
                     className={selectClassName}
                   >
-                    <option value="updated">Recently updated</option>
-                    <option value="name">Name</option>
+                    <option value="updated">{t('recentlyUpdated')}</option>
+                    <option value="name">{t('name')}</option>
                   </select>
                 </div>
               </div>
 
               <FilterRow
-                label="Tags"
+                label={t('tags')}
                 active={activeLibraryTag}
                 items={libraryTags}
                 onToggle={(tag) => setActiveLibraryTag(activeLibraryTag === tag ? null : tag)}
@@ -478,11 +480,11 @@ export function SkillsWorkspace() {
 
               <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
                 <div className="text-[12px] text-text-3/70">
-                  Showing <span className="font-700 text-text">{filteredSkills.length}</span> of {skillCount} skills
+                  {t('showing')} <span className="font-700 text-text">{filteredSkills.length}</span> {t('of')} {skillCount} {t('skills')}
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {draftCount > 0 ? (
-                    <MiniBadge tone="warning">{draftCount} draft suggestion{draftCount === 1 ? '' : 's'}</MiniBadge>
+                    <MiniBadge tone="warning">{t('draftSuggestionCount', { count: draftCount })}</MiniBadge>
                   ) : null}
                   {libraryQuery || activeLibraryTag || libraryScope !== 'all' ? (
                     <button
@@ -494,7 +496,7 @@ export function SkillsWorkspace() {
                       }}
                       className="cursor-pointer rounded-full border border-white/[0.08] px-3 py-1 text-[11px] font-600 text-text-3/80 transition-colors hover:border-white/[0.14] hover:text-text"
                     >
-                      Clear filters
+                      {t('clearFilters')}
                     </button>
                   ) : null}
                 </div>
@@ -503,11 +505,11 @@ export function SkillsWorkspace() {
 
             {filteredSkills.length === 0 ? (
               <EmptyState
-                title={skillCount === 0 ? 'No skills yet' : 'No skills match these filters'}
+                title={skillCount === 0 ? t('noSkillsYet') : t('noSkillsMatch')}
                 body={skillCount === 0
-                  ? 'Create a local skill or browse ClawHub to import a community tool.'
-                  : 'Try a broader search or clear one of the active filters.'}
-                actionLabel={skillCount === 0 ? 'Create skill' : 'Clear filters'}
+                  ? t('noSkillsYetDesc')
+                  : t('noSkillsMatchDesc')}
+                actionLabel={skillCount === 0 ? t('createSkill') : t('clearFilters')}
                 onAction={() => {
                   if (skillCount === 0) {
                     openSkillEditor(null)
@@ -517,7 +519,7 @@ export function SkillsWorkspace() {
                   setLibraryScope('all')
                   setActiveLibraryTag(null)
                 }}
-                secondaryLabel={skillCount === 0 ? 'Browse ClawHub' : undefined}
+                secondaryLabel={skillCount === 0 ? t('browseClawHub') : undefined}
                 onSecondaryAction={skillCount === 0 ? (() => setPageState({ tab: 'clawhub', skill: null })) : undefined}
               />
             ) : (
@@ -550,37 +552,37 @@ export function SkillsWorkspace() {
           <div className="space-y-6 pt-5">
             <section className="rounded-[22px] border border-white/[0.08] bg-surface/70 p-4 md:p-5">
               <div>
-                <div className="text-[11px] font-700 uppercase tracking-[0.14em] text-text-3/65">ClawHub</div>
+                <div className="text-[11px] font-700 uppercase tracking-[0.14em] text-text-3/65">{t('clawHub')}</div>
                 <p className="mt-1 max-w-2xl text-[13px] leading-[1.7] text-text-3/75">
-                  Search the marketplace, use Details to learn what a tool does, or Open listing to visit the source page.
+                  {t('clawHubSearchDesc')}
                 </p>
 
                 <div className="mt-4 grid gap-2 sm:grid-cols-[minmax(240px,1fr)_auto_auto]">
                   <SearchField
                     value={hubQuery}
                     onChange={setHubQuery}
-                    placeholder="Search ClawHub by name, tag, or author..."
+                    placeholder={t('searchClawHubPlaceholder')}
                   />
                   <select
                     value={hubSort}
                     onChange={(event) => setHubSort(event.target.value as HubSort)}
                     className={selectClassName}
                   >
-                    <option value="popular">Most installed</option>
-                    <option value="updated">Recently updated</option>
-                    <option value="name">Name</option>
+                    <option value="popular">{t('mostInstalled')}</option>
+                    <option value="updated">{t('recentlyUpdated')}</option>
+                    <option value="name">{t('name')}</option>
                   </select>
                   <button
                     type="button"
                     onClick={() => { void searchHub(hubQuery, 1) }}
                     className={secondaryButtonClassName}
                   >
-                    Search now
+                    {t('searchNow')}
                   </button>
                 </div>
 
                 <FilterRow
-                  label="Popular tags"
+                  label={t('popularTags')}
                   active={activeHubTag}
                   items={hubTags}
                   onToggle={(tag) => setActiveHubTag(activeHubTag === tag ? null : tag)}
@@ -588,29 +590,29 @@ export function SkillsWorkspace() {
                 />
 
                 <div className="mt-4 flex flex-wrap items-center gap-2">
-                  <MiniBadge>{hubSearched ? `${hubTotal} results` : 'Search to load the catalog'}</MiniBadge>
-                  <MiniBadge>{installedHubIds.size} already installed</MiniBadge>
-                  <MiniBadge>{hubLoading ? 'Refreshing...' : 'Live from ClawHub'}</MiniBadge>
+                  <MiniBadge>{hubSearched ? `${hubTotal} ${t('results')}` : t('searchToLoadCatalog')}</MiniBadge>
+                  <MiniBadge>{installedHubIds.size} {t('alreadyInstalled')}</MiniBadge>
+                  <MiniBadge>{hubLoading ? t('refreshing') : t('liveFromClawHub')}</MiniBadge>
                 </div>
               </div>
             </section>
 
             {hubError ? (
               <EmptyState
-                title="ClawHub search failed"
+                title={t('clawHubSearchFailed')}
                 body={hubError}
-                actionLabel="Retry search"
+                actionLabel={t('retrySearch')}
                 onAction={() => { void searchHub(hubQuery, 1) }}
               />
             ) : null}
 
             {!hubError && hubSearched && filteredHubSkills.length === 0 && !hubLoading ? (
               <EmptyState
-                title="No marketplace skills match"
+                title={t('noMarketplaceSkillsMatch')}
                 body={hubQuery.trim()
-                  ? 'Try a broader term or clear the active tag filter.'
-                  : 'ClawHub did not return any skills for this request.'}
-                actionLabel="Clear filters"
+                  ? t('noMarketplaceMatchDesc')
+                  : t('clawHubEmpty')}
+                actionLabel={t('clearFilters')}
                 onAction={() => {
                   setHubQuery('')
                   setActiveHubTag(null)
@@ -621,7 +623,7 @@ export function SkillsWorkspace() {
             {hubLoading && !hubSearched ? (
               <div className="flex items-center justify-center py-16 text-[13px] text-text-3/65">
                 <span className="mr-3 h-4 w-4 animate-spin rounded-full border-2 border-white/[0.12] border-t-accent-bright" />
-                Loading marketplace...
+                {t('loadingMarketplace')}
               </div>
             ) : null}
 
@@ -648,7 +650,7 @@ export function SkillsWorkspace() {
                   onClick={() => { void searchHub(hubQuery, hubPage + 1, true, hubNextCursor) }}
                   className={secondaryButtonClassName}
                 >
-                  {hubLoading ? 'Loading...' : 'Load more'}
+                  {hubLoading ? t('loading') : t('loadMore')}
                 </button>
               </div>
             ) : null}
@@ -671,9 +673,9 @@ export function SkillsWorkspace() {
 
       <ConfirmDialog
         open={!!deleteTarget}
-        title="Delete Skill"
-        message={deleteTarget ? `Delete "${deleteTarget.name}"? This cannot be undone.` : ''}
-        confirmLabel={deletingSkillId ? 'Deleting...' : 'Delete'}
+        title={t('deleteSkill')}
+        message={deleteTarget ? `${t('deleteConfirmMessage')} "${deleteTarget.name}"?` : ''}
+        confirmLabel={deletingSkillId ? t('deleting') : t('delete')}
         confirmDisabled={!!deletingSkillId}
         cancelDisabled={!!deletingSkillId}
         danger
@@ -697,67 +699,68 @@ function SkillDetailView({
   onEdit: () => void
   onDelete: () => void
 }) {
+  const { t } = useTranslation()
   const scopedAgents = (skill.agentIds || []).map((id) => agents[id]).filter(Boolean)
-  const scopeLabel = (skill.scope || 'global') === 'agent' ? `${scopedAgents.length} agent${scopedAgents.length === 1 ? '' : 's'}` : 'Global'
+  const scopeLabel = (skill.scope || 'global') === 'agent' ? `${scopedAgents.length} ${t('agent')}${scopedAgents.length === 1 ? '' : 's'}` : t('global')
   const requirementTotal = countRequirements(skill)
   const plainPreview = skill.description || plainTextExcerpt(skill.content, 240)
 
   return (
     <div className="space-y-6 pt-5">
-      <BackButton label="Back to library" onClick={onBack} />
+      <BackButton label={t('backToLibrary')} onClick={onBack} />
 
       <section className="rounded-[26px] border border-white/[0.08] bg-surface/70 p-5 md:p-6">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div className="max-w-3xl">
             <div className="text-[11px] font-700 uppercase tracking-[0.14em] text-text-3/65">
-              Local Skill
+              {t('localSkill')}
             </div>
             <h2 className="mt-2 font-display text-[28px] font-700 tracking-[-0.04em] text-text md:text-[34px]">
               {skill.name}
             </h2>
             <p className="mt-3 text-[14px] leading-[1.7] text-text-2/80">
-              {plainPreview || 'No description provided. Review the full markdown below to understand the workflow.'}
+              {plainPreview || t('noDescriptionProvided')}
             </p>
           </div>
 
           <div className="flex flex-wrap gap-2 xl:justify-end">
-            <ActionButton label="Edit skill" tone="primary" onClick={onEdit} />
+            <ActionButton label={t('editSkill')} tone="primary" onClick={onEdit} />
             {skill.homepage ? (
-              <ActionAnchor label="Homepage" href={skill.homepage} tone="secondary" />
+              <ActionAnchor label={t('homepage')} href={skill.homepage} tone="secondary" />
             ) : null}
             {skill.sourceUrl ? (
-              <ActionAnchor label="Source file" href={skill.sourceUrl} tone="ghost" />
+              <ActionAnchor label={t('sourceFile')} href={skill.sourceUrl} tone="ghost" />
             ) : null}
-            <ActionButton label="Delete" tone="danger" onClick={onDelete} />
+            <ActionButton label={t('delete')} tone="danger" onClick={onDelete} />
           </div>
         </div>
 
         <div className="mt-5 flex flex-wrap gap-2">
           <MiniBadge>{scopeLabel}</MiniBadge>
-          <MiniBadge>{skill.sourceFormat === 'openclaw' ? 'OpenClaw format' : 'Plain markdown'}</MiniBadge>
+          <MiniBadge>{skill.sourceFormat === 'openclaw' ? t('openClawFormat') : t('plainMarkdown')}</MiniBadge>
           <MiniBadge>{skill.filename}</MiniBadge>
           {skill.version ? <MiniBadge>v{skill.version}</MiniBadge> : null}
-          {skill.author ? <MiniBadge>by {skill.author}</MiniBadge> : null}
-          {requirementTotal > 0 ? <MiniBadge>{requirementTotal} setup items</MiniBadge> : null}
-          {skill.security ? <MiniBadge tone={securityTone(skill.security.level)}>{skill.security.level} risk</MiniBadge> : null}
+          {skill.author ? <MiniBadge>{t('by')} {skill.author}</MiniBadge> : null}
+          {requirementTotal > 0 ? <MiniBadge>{requirementTotal} {t('setupItems')}</MiniBadge> : null}
+          {skill.security ? <MiniBadge tone={securityTone(skill.security.level)}>{skill.security.level} {t('risk')}</MiniBadge> : null}
         </div>
 
         <div className="mt-6 grid gap-3 lg:grid-cols-3">
           <DetailCard
-            title="Overview"
-            body={`${skill.content.length.toLocaleString()} characters of instructions.\nUpdated ${formatTimestamp(skill.updatedAt || skill.createdAt)}.`}
+            title={t('overview')}
+            body={`${skill.content.length.toLocaleString()} ${t('charactersOfInstructions')}\n${t('updated')} ${formatTimestamp(skill.updatedAt || skill.createdAt)}.`}
           />
           <DetailCard
-            title="Tools + Capabilities"
+            title={t('toolsAndCapabilities')}
             body={buildCapabilitySummary(skill)}
           />
           <DetailCard
-            title="Access"
+            title={t('access')}
             body={(skill.scope || 'global') === 'agent'
               ? (scopedAgents.length
-                ? `Available to ${scopedAgents.map((agent) => agent.name).join(', ')}.`
-                : 'Restricted to selected agents.')
-              : 'Available to every agent in the workspace.'}
+                ? `${t('availableTo')} ${scopedAgents.map((agent) => agent.name).join(', ')}.`
+                : t('restrictedToSelectedAgents'))
+              : t('availableToAllAgents')}
           />
         </div>
       </section>
@@ -765,8 +768,8 @@ function SkillDetailView({
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(300px,0.85fr)]">
         <section className="rounded-[22px] border border-white/[0.08] bg-surface/65 p-4 md:p-5">
           <SectionHeading
-            title="Markdown Preview"
-            subtitle="Read the actual reusable instructions instead of guessing from a one-line description."
+            title={t('markdownPreview')}
+            subtitle={t('markdownPreviewDesc')}
           />
           <MarkdownPreview content={skill.content} />
         </section>
@@ -774,16 +777,16 @@ function SkillDetailView({
         <div className="space-y-4">
           <section className="rounded-[22px] border border-white/[0.08] bg-surface/65 p-4 md:p-5">
             <SectionHeading
-              title="Declared Metadata"
-              subtitle="Metadata parsed from the skill file or preserved during import."
+              title={t('declaredMetadata')}
+              subtitle={t('metadataDesc')}
             />
             <MetadataGrid skill={skill} />
           </section>
 
           <section className="rounded-[22px] border border-white/[0.08] bg-surface/65 p-4 md:p-5">
             <SectionHeading
-              title="Setup + Safety"
-              subtitle="Dependencies, environment variables, and security notes."
+              title={t('setupAndSafety')}
+              subtitle={t('setupAndSafetyDesc')}
             />
             <SetupOverview skill={skill} />
           </section>
@@ -791,8 +794,8 @@ function SkillDetailView({
           {(skill.scope || 'global') === 'agent' ? (
             <section className="rounded-[22px] border border-white/[0.08] bg-surface/65 p-4 md:p-5">
               <SectionHeading
-                title="Assigned Agents"
-                subtitle="The agents currently allowed to use this skill."
+                title={t('assignedAgents')}
+                subtitle={t('assignedAgentsDesc')}
               />
               {scopedAgents.length > 0 ? (
                 <div className="space-y-2">
@@ -814,7 +817,7 @@ function SkillDetailView({
                   ))}
                 </div>
               ) : (
-                <MutedNote>Agent assignments are currently empty.</MutedNote>
+                <MutedNote>{t('agentAssignmentsEmpty')}</MutedNote>
               )}
             </section>
           ) : null}
@@ -843,20 +846,21 @@ function HubSkillDetailView({
   onBack: () => void
   onInstall: () => void
 }) {
-  const detailDescription = preview?.description || skill.description || 'No description available.'
+  const { t } = useTranslation()
+  const detailDescription = preview?.description || skill.description || t('noDescriptionAvailable')
   const capabilitySummary = preview
     ? buildCapabilitySummary(preview)
-    : 'Previewing the skill file will reveal tools, capabilities, and runtime metadata.'
+    : t('previewWillRevealTools')
 
   return (
     <div className="space-y-6 pt-5">
-      <BackButton label="Back to marketplace" onClick={onBack} />
+      <BackButton label={t('backToMarketplace')} onClick={onBack} />
 
       <section className="rounded-[26px] border border-white/[0.08] bg-surface/70 p-5 md:p-6">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div className="max-w-3xl">
             <div className="text-[11px] font-700 uppercase tracking-[0.14em] text-text-3/65">
-              ClawHub Skill
+              {t('clawHubSkill')}
             </div>
             <h2 className="mt-2 font-display text-[28px] font-700 tracking-[-0.04em] text-text md:text-[34px]">
               {skill.name}
@@ -867,9 +871,9 @@ function HubSkillDetailView({
           </div>
 
           <div className="flex flex-wrap gap-2 xl:justify-end">
-            <ActionAnchor label="Open listing" href={skill.url} tone="secondary" />
+            <ActionAnchor label={t('openListing')} href={skill.url} tone="secondary" />
             <ActionButton
-              label={installed ? 'Installed' : installBusy ? 'Installing...' : 'Install skill'}
+              label={installed ? t('installed') : installBusy ? t('installing') : t('installSkill')}
               tone="primary"
               disabled={installed || installBusy}
               onClick={onInstall}
@@ -878,20 +882,20 @@ function HubSkillDetailView({
         </div>
 
         <div className="mt-5 flex flex-wrap gap-2">
-          <MiniBadge>{skill.downloads.toLocaleString()} installs</MiniBadge>
-          {typeof skill.stars === 'number' && skill.stars > 0 ? <MiniBadge>{skill.stars.toLocaleString()} stars</MiniBadge> : null}
+          <MiniBadge>{skill.downloads.toLocaleString()} {t('installs')}</MiniBadge>
+          {typeof skill.stars === 'number' && skill.stars > 0 ? <MiniBadge>{skill.stars.toLocaleString()} {t('stars')}</MiniBadge> : null}
           <MiniBadge>v{preview?.version || skill.version}</MiniBadge>
-          <MiniBadge>by {preview?.author || skill.author}</MiniBadge>
-          {skill.updatedAt ? <MiniBadge>Updated {formatTimestamp(skill.updatedAt)}</MiniBadge> : null}
-          {preview?.security ? <MiniBadge tone={securityTone(preview.security.level)}>{preview.security.level} risk</MiniBadge> : null}
+          <MiniBadge>{t('by')} {preview?.author || skill.author}</MiniBadge>
+          {skill.updatedAt ? <MiniBadge>{t('updated')} {formatTimestamp(skill.updatedAt)}</MiniBadge> : null}
+          {preview?.security ? <MiniBadge tone={securityTone(preview.security.level)}>{preview.security.level} {t('risk')}</MiniBadge> : null}
         </div>
 
         <div className="mt-6 grid gap-3 lg:grid-cols-3">
-          <DetailCard title="Marketplace" body={`Open the canonical listing whenever you want the publisher page or comments.`} />
-          <DetailCard title="Capabilities" body={capabilitySummary} />
+          <DetailCard title={t('marketplace')} body={t('marketplaceDesc')} />
+          <DetailCard title={t('capabilities')} body={capabilitySummary} />
           <DetailCard
-            title="Setup"
-            body={preview ? buildSetupSummary(preview) : 'Loading the parsed skill preview reveals setup requirements and env vars.'}
+            title={t('setup')}
+            body={preview ? buildSetupSummary(preview) : t('setupDesc')}
           />
         </div>
       </section>
@@ -899,45 +903,45 @@ function HubSkillDetailView({
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(300px,0.85fr)]">
         <section className="rounded-[22px] border border-white/[0.08] bg-surface/65 p-4 md:p-5">
           <SectionHeading
-            title="Skill Preview"
-            subtitle="Parsed from the actual remote skill file, not just the marketplace summary."
+            title={t('skillPreview')}
+            subtitle={t('skillPreviewDesc')}
           />
           {previewLoading ? (
             <div className="flex items-center gap-3 rounded-[16px] border border-white/[0.06] bg-bg/50 px-4 py-4 text-[13px] text-text-3/70">
               <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/[0.12] border-t-accent-bright" />
-              Loading the skill file preview...
+              {t('loadingSkillPreview')}
             </div>
           ) : previewError ? (
             <MutedNote>{previewError}</MutedNote>
           ) : preview?.content ? (
             <MarkdownPreview content={preview.content} />
           ) : (
-            <MutedNote>Open the listing for the full source page. A parsed preview is not available for this skill yet.</MutedNote>
+            <MutedNote>{t('noPreviewAvailable')}</MutedNote>
           )}
         </section>
 
         <div className="space-y-4">
           <section className="rounded-[22px] border border-white/[0.08] bg-surface/65 p-4 md:p-5">
             <SectionHeading
-              title="Detail Snapshot"
-              subtitle="Summary fields preserved directly from ClawHub search."
+              title={t('detailSnapshot')}
+              subtitle={t('detailSnapshotDesc')}
             />
             <div className="grid gap-2">
-              <MetadataRow label="Listing URL" value={skill.url} href={skill.url} />
-              <MetadataRow label="Author" value={preview?.author || skill.author} />
-              <MetadataRow label="Version" value={preview?.version || skill.version} />
-              {typeof skill.stars === 'number' ? <MetadataRow label="Stars" value={skill.stars.toLocaleString()} /> : null}
-              {skill.updatedAt ? <MetadataRow label="Updated" value={formatTimestamp(skill.updatedAt)} /> : null}
-              {skill.changelog ? <MetadataRow label="Changelog" value={skill.changelog} /> : null}
+              <MetadataRow label={t('listingUrl')} value={skill.url} href={skill.url} />
+              <MetadataRow label={t('author')} value={preview?.author || skill.author} />
+              <MetadataRow label={t('version')} value={preview?.version || skill.version} />
+              {typeof skill.stars === 'number' ? <MetadataRow label={t('stars')} value={skill.stars.toLocaleString()} /> : null}
+              {skill.updatedAt ? <MetadataRow label={t('updated')} value={formatTimestamp(skill.updatedAt)} /> : null}
+              {skill.changelog ? <MetadataRow label={t('changelog')} value={skill.changelog} /> : null}
             </div>
           </section>
 
           <section className="rounded-[22px] border border-white/[0.08] bg-surface/65 p-4 md:p-5">
             <SectionHeading
-              title="Setup + Safety"
-              subtitle="Derived from the parsed skill file whenever preview data is available."
+              title={t('setupAndSafety')}
+              subtitle={t('setupAndSafetyDesc')}
             />
-            {preview ? <SetupOverview skill={preview} /> : <MutedNote>No parsed setup metadata yet.</MutedNote>}
+            {preview ? <SetupOverview skill={preview} /> : <MutedNote>{t('noSetupMetadata')}</MutedNote>}
           </section>
         </div>
       </div>
@@ -958,28 +962,29 @@ function SuggestionsPanel({
   onApprove: (id: string) => void
   onReject: (id: string) => void
 }) {
+  const { t } = useTranslation()
   const drafts = suggestions.filter((entry) => entry.status === 'draft').slice(0, 3)
 
   return (
     <section className="rounded-[22px] border border-white/[0.08] bg-surface/70 p-4 md:p-5">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="text-[11px] font-700 uppercase tracking-[0.14em] text-text-3/65">Draft Suggestions</div>
+          <div className="text-[11px] font-700 uppercase tracking-[0.14em] text-text-3/65">{t('draftSuggestionsTitle')}</div>
           <p className="mt-1 text-[13px] text-text-3/75">
-            Conversation-derived drafts you can review before they become part of the library.
+            {t('draftSuggestionsDesc')}
           </p>
         </div>
-        <MiniBadge>{suggestions.filter((entry) => entry.status === 'draft').length} draft{suggestions.filter((entry) => entry.status === 'draft').length === 1 ? '' : 's'}</MiniBadge>
+        <MiniBadge>{suggestions.filter((entry) => entry.status === 'draft').length} {t('drafts')}</MiniBadge>
       </div>
 
       {loading ? (
         <div className="mt-4 flex items-center gap-3 rounded-[16px] border border-white/[0.06] bg-bg/50 px-4 py-4 text-[13px] text-text-3/70">
           <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/[0.12] border-t-accent-bright" />
-          Loading suggestion drafts...
+          {t('loadingSuggestionDrafts')}
         </div>
       ) : drafts.length === 0 ? (
         <MutedNote className="mt-4">
-          No draft suggestions yet. Use &apos;Draft from current chat&apos; after a reusable conversation.
+          {t('noDraftSuggestions')}
         </MutedNote>
       ) : (
         <div className="mt-4 space-y-3">
@@ -995,7 +1000,7 @@ function SuggestionsPanel({
                       {suggestion.sourceAgentName ? ` | ${suggestion.sourceAgentName}` : ''}
                     </div>
                   </div>
-                  <MiniBadge tone="warning">Draft</MiniBadge>
+                  <MiniBadge tone="warning">{t('draft')}</MiniBadge>
                 </div>
                 {suggestion.description ? (
                   <p className="mt-2 text-[12px] leading-[1.6] text-text-3/75">{suggestion.description}</p>
@@ -1003,7 +1008,7 @@ function SuggestionsPanel({
                 {suggestion.content ? (
                   <details className="mt-3 rounded-[12px] border border-white/[0.06] bg-surface/60 px-3 py-2">
                     <summary className="cursor-pointer list-none text-[11px] font-700 uppercase tracking-[0.12em] text-text-3/65 [&::-webkit-details-marker]:hidden">
-                      Preview draft body
+                      {t('previewDraftBody')}
                     </summary>
                     <pre className="mt-2 whitespace-pre-wrap text-[11px] leading-[1.6] text-text-3/75">
                       {truncateText(suggestion.content, 800)}
@@ -1012,10 +1017,10 @@ function SuggestionsPanel({
                 ) : null}
                 <div className="mt-3 flex flex-wrap gap-2">
                   <button type="button" onClick={() => onApprove(suggestion.id)} disabled={busy} className={primaryButtonClassName}>
-                    {busy ? 'Working...' : 'Approve'}
+                    {busy ? t('working') : t('approve')}
                   </button>
                   <button type="button" onClick={() => onReject(suggestion.id)} disabled={busy} className={secondaryButtonClassName}>
-                    Dismiss
+                    {t('dismiss')}
                   </button>
                 </div>
               </div>
@@ -1038,10 +1043,11 @@ function SkillCard({
   onOpen: () => void
   onEdit: () => void
 }) {
+  const { t } = useTranslation()
   const scopedAgents = (skill.agentIds || []).map((id) => agents[id]).filter(Boolean)
   const requirementTotal = countRequirements(skill)
   const description = skill.description || plainTextExcerpt(skill.content, 180)
-  const scopeLabel = (skill.scope || 'global') === 'agent' ? `${scopedAgents.length || skill.agentIds?.length || 0} agent${(scopedAgents.length || skill.agentIds?.length || 0) === 1 ? '' : 's'}` : 'Global'
+  const scopeLabel = (skill.scope || 'global') === 'agent' ? `${scopedAgents.length || skill.agentIds?.length || 0} ${t('agent')}${(scopedAgents.length || skill.agentIds?.length || 0) === 1 ? '' : 's'}` : t('global')
 
   return (
     <div className="group rounded-[18px] border border-white/[0.06] bg-surface p-4 text-left transition-all hover:border-white/[0.12] hover:bg-surface-2">
@@ -1049,20 +1055,20 @@ function SkillCard({
         <div className="min-w-0">
           <div className="truncate font-display text-[16px] font-600 text-text">{skill.name}</div>
           <div className="mt-1 text-[11px] text-text-3/60">
-            {skill.filename} | updated {formatTimestamp(skill.updatedAt || skill.createdAt)}
+            {skill.filename} | {t('updated')} {formatTimestamp(skill.updatedAt || skill.createdAt)}
           </div>
         </div>
         <MiniBadge>{scopeLabel}</MiniBadge>
       </div>
 
       <p className="mt-3 line-clamp-3 text-[13px] leading-[1.7] text-text-3/75">
-        {description || 'Open the detail view to inspect the full markdown instructions.'}
+        {description || t('skillCardDesc')}
       </p>
 
       <div className="mt-4 flex flex-wrap gap-2">
         {skill.version ? <MiniBadge>v{skill.version}</MiniBadge> : null}
-        {requirementTotal > 0 ? <MiniBadge>{requirementTotal} requirements</MiniBadge> : null}
-        {skill.security ? <MiniBadge tone={securityTone(skill.security.level)}>{skill.security.level} risk</MiniBadge> : null}
+        {requirementTotal > 0 ? <MiniBadge>{requirementTotal} {t('requirements')}</MiniBadge> : null}
+        {skill.security ? <MiniBadge tone={securityTone(skill.security.level)}>{skill.security.level} {t('risk')}</MiniBadge> : null}
       </div>
 
       {(skill.tags?.length || skill.toolNames?.length || skill.capabilities?.length) ? (
@@ -1090,18 +1096,18 @@ function SkillCard({
             ))}
           </div>
           {scopedAgents.length > 5 ? (
-            <span className="text-[10px] font-600 text-text-3/60">+{scopedAgents.length - 5} more</span>
+            <span className="text-[10px] font-600 text-text-3/60">+{scopedAgents.length - 5} {t('more')}</span>
           ) : null}
         </div>
       ) : null}
 
       <div className="mt-4 flex flex-wrap gap-2">
         <button type="button" onClick={onOpen} className={secondaryButtonClassName}>
-          Details
+          {t('details')}
           <ArrowRightIcon />
         </button>
         <button type="button" onClick={onEdit} className={ghostButtonClassName}>
-          Edit
+          {t('edit')}
           <EditIcon />
         </button>
       </div>
@@ -1122,6 +1128,7 @@ function HubSkillCard({
   onOpen: () => void
   onInstall: () => void
 }) {
+  const { t } = useTranslation()
   return (
     <div className="rounded-[18px] border border-white/[0.06] bg-surface p-4">
       <div className="flex items-start justify-between gap-3">
@@ -1130,8 +1137,8 @@ function HubSkillCard({
             {skill.name}
           </div>
           <div className="mt-1 text-[11px] text-text-3/60">
-            by {skill.author} | v{skill.version}
-            {skill.updatedAt ? ` | ${formatTimestamp(skill.updatedAt)}` : ''}
+            {t('by')} {skill.author} | v{skill.version}
+            {skill.updatedAt ? ` | ${t('updated')} ${formatTimestamp(skill.updatedAt)}` : ''}
           </div>
         </div>
         <button
@@ -1140,17 +1147,17 @@ function HubSkillCard({
           onClick={onInstall}
           className={installed ? disabledButtonClassName : primaryButtonClassName}
         >
-          {installed ? 'Installed' : busy ? 'Installing...' : 'Install'}
+          {installed ? t('installed') : busy ? t('installing') : t('install')}
         </button>
       </div>
 
       <p className="mt-3 line-clamp-3 text-[13px] leading-[1.7] text-text-3/75">
-        {skill.description || 'Open the detail view for the parsed skill preview and source listing.'}
+        {skill.description || t('hubCardDesc')}
       </p>
 
       <div className="mt-4 flex flex-wrap gap-2">
-        <MiniBadge>{skill.downloads.toLocaleString()} installs</MiniBadge>
-        {typeof skill.stars === 'number' && skill.stars > 0 ? <MiniBadge>{skill.stars.toLocaleString()} stars</MiniBadge> : null}
+        <MiniBadge>{skill.downloads.toLocaleString()} {t('installs')}</MiniBadge>
+        {typeof skill.stars === 'number' && skill.stars > 0 ? <MiniBadge>{skill.stars.toLocaleString()} {t('stars')}</MiniBadge> : null}
         {skill.tags.slice(0, 3).map((tag) => (
           <MiniBadge key={`${skill.id}-${tag}`}>{tag}</MiniBadge>
         ))}
@@ -1158,11 +1165,11 @@ function HubSkillCard({
 
       <div className="mt-4 flex flex-wrap gap-2">
         <button type="button" onClick={onOpen} className={secondaryButtonClassName}>
-          Details
+          {t('details')}
           <ArrowRightIcon />
         </button>
         <a href={skill.url} target="_blank" rel="noreferrer" className={ghostButtonClassName}>
-          Open listing
+          {t('openListing')}
           <ExternalLinkIcon />
         </a>
       </div>
@@ -1171,48 +1178,50 @@ function HubSkillCard({
 }
 
 function MetadataGrid({ skill }: { skill: Partial<Skill> }) {
+  const { t } = useTranslation()
   return (
     <div className="grid gap-2">
-      <MetadataRow label="Format" value={skill.sourceFormat === 'openclaw' ? 'OpenClaw' : 'Plain markdown'} />
-      {skill.version ? <MetadataRow label="Version" value={skill.version} /> : null}
-      {skill.author ? <MetadataRow label="Author" value={skill.author} /> : null}
-      {skill.homepage ? <MetadataRow label="Homepage" value={skill.homepage} href={skill.homepage} /> : null}
-      {skill.sourceUrl ? <MetadataRow label="Source URL" value={skill.sourceUrl} href={skill.sourceUrl} /> : null}
-      {skill.primaryEnv ? <MetadataRow label="Primary env" value={skill.primaryEnv} /> : null}
-      {skill.skillKey ? <MetadataRow label="Skill key" value={skill.skillKey} /> : null}
-      {skill.toolNames?.length ? <MetadataRow label="Tools" value={skill.toolNames.join(', ')} /> : null}
-      {skill.capabilities?.length ? <MetadataRow label="Capabilities" value={skill.capabilities.join(', ')} /> : null}
-      {skill.invocation?.userInvocable ? <MetadataRow label="Invocation" value="User invocable" /> : null}
-      {skill.commandDispatch ? <MetadataRow label="Dispatch" value={`${skill.commandDispatch.kind}:${skill.commandDispatch.toolName}`} /> : null}
-      {skill.tags?.length ? <MetadataRow label="Tags" value={skill.tags.join(', ')} /> : null}
+      <MetadataRow label={t('format')} value={skill.sourceFormat === 'openclaw' ? 'OpenClaw' : t('plainMarkdown')} />
+      {skill.version ? <MetadataRow label={t('version')} value={skill.version} /> : null}
+      {skill.author ? <MetadataRow label={t('author')} value={skill.author} /> : null}
+      {skill.homepage ? <MetadataRow label={t('homepage')} value={skill.homepage} href={skill.homepage} /> : null}
+      {skill.sourceUrl ? <MetadataRow label={t('sourceFile')} value={skill.sourceUrl} href={skill.sourceUrl} /> : null}
+      {skill.primaryEnv ? <MetadataRow label={t('primaryEnv')} value={skill.primaryEnv} /> : null}
+      {skill.skillKey ? <MetadataRow label={t('skillKey')} value={skill.skillKey} /> : null}
+      {skill.toolNames?.length ? <MetadataRow label={t('tools')} value={skill.toolNames.join(', ')} /> : null}
+      {skill.capabilities?.length ? <MetadataRow label={t('capabilities')} value={skill.capabilities.join(', ')} /> : null}
+      {skill.invocation?.userInvocable ? <MetadataRow label={t('invocation')} value={t('userInvocable')} /> : null}
+      {skill.commandDispatch ? <MetadataRow label={t('dispatch')} value={`${skill.commandDispatch.kind}:${skill.commandDispatch.toolName}`} /> : null}
+      {skill.tags?.length ? <MetadataRow label={t('tags')} value={skill.tags.join(', ')} /> : null}
     </div>
   )
 }
 
 function SetupOverview({ skill }: { skill: Partial<Skill> }) {
+  const { t } = useTranslation()
   const requirements = skill.skillRequirements
   const installOptions = skill.installOptions || []
   const security = skill.security
 
   return (
     <div className="space-y-3">
-      {requirements?.bins?.length ? <MetadataRow label="Bins" value={requirements.bins.join(', ')} /> : null}
-      {requirements?.env?.length ? <MetadataRow label="Env vars" value={requirements.env.join(', ')} /> : null}
-      {requirements?.config?.length ? <MetadataRow label="Config" value={requirements.config.join(', ')} /> : null}
-      {skill.detectedEnvVars?.length ? <MetadataRow label="Detected env vars" value={skill.detectedEnvVars.join(', ')} /> : null}
+      {requirements?.bins?.length ? <MetadataRow label={t('bins')} value={requirements.bins.join(', ')} /> : null}
+      {requirements?.env?.length ? <MetadataRow label={t('envVars')} value={requirements.env.join(', ')} /> : null}
+      {requirements?.config?.length ? <MetadataRow label={t('config')} value={requirements.config.join(', ')} /> : null}
+      {skill.detectedEnvVars?.length ? <MetadataRow label={t('detectedEnvVars')} value={skill.detectedEnvVars.join(', ')} /> : null}
       {installOptions.length ? (
         <MetadataRow
-          label="Install options"
+          label={t('installOptions')}
           value={installOptions.map((option) => option.label).join(', ')}
         />
       ) : null}
       {security ? (
         <div className="rounded-[14px] border border-white/[0.06] bg-bg/45 p-3">
           <div className="text-[11px] font-700 uppercase tracking-[0.14em] text-text-3/65">
-            Security
+            {t('security')}
           </div>
           <div className="mt-2 flex items-center gap-2">
-            <MiniBadge tone={securityTone(security.level)}>{security.level} risk</MiniBadge>
+            <MiniBadge tone={securityTone(security.level)}>{security.level} {t('risk')}</MiniBadge>
           </div>
           {security.notes.length ? (
             <ul className="mt-3 space-y-1 text-[12px] leading-[1.6] text-text-3/75">
@@ -1223,13 +1232,14 @@ function SetupOverview({ skill }: { skill: Partial<Skill> }) {
           ) : null}
         </div>
       ) : (
-        <MutedNote>No requirements or security warnings declared.</MutedNote>
+        <MutedNote>{t('noRequirementsDeclared')}</MutedNote>
       )}
     </div>
   )
 }
 
 function MarkdownPreview({ content }: { content: string }) {
+  const { t } = useTranslation()
   const [expanded, setExpanded] = useState(false)
   const previewContent = expanded ? content : truncateText(content, 5000)
 
@@ -1263,7 +1273,7 @@ function MarkdownPreview({ content }: { content: string }) {
           onClick={() => setExpanded((value) => !value)}
           className="cursor-pointer rounded-full border border-white/[0.08] px-3 py-1 text-[11px] font-600 text-text-3/80 transition-colors hover:border-white/[0.14] hover:text-text"
         >
-          {expanded ? 'Show shorter preview' : 'Show full skill'}
+          {expanded ? t('showShorterPreview') : t('showFullSkill')}
         </button>
       ) : null}
     </div>
@@ -1294,6 +1304,7 @@ function TabButton({
   onClick: () => void
   children: React.ReactNode
 }) {
+  const { t } = useTranslation()
   return (
     <button
       type="button"
@@ -1356,7 +1367,7 @@ function FilterRow({
     <div className="mt-4 flex flex-wrap items-center gap-2">
       <span className="text-[11px] font-700 uppercase tracking-[0.14em] text-text-3/60">{label}</span>
       <button type="button" onClick={onClear} className={active ? activeChipClassName : chipClassName}>
-        All
+        {t('all')}
       </button>
       {items.map((item) => (
         <button

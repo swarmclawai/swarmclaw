@@ -43,7 +43,7 @@ interface Props {
 type InspectorTab = 'dashboard' | 'config' | 'files'
 
 const TABS: { id: InspectorTab; label: string; openclawOnly?: boolean }[] = [
-  { id: 'dashboard', label: 'Dashboard' },
+  { id: 'dashboard', label: '仪表盘' },
   { id: 'config', label: 'Config' },
   { id: 'files', label: 'Files', openclawOnly: true },
 ]
@@ -1266,7 +1266,7 @@ function AutomationsSection({ schedules, agent }: { schedules: Array<{ id: strin
                 </div>
                 <div className="flex gap-2 mt-2">
                   <button onClick={() => void handleRunCron(c.id)} className="text-[10px] text-accent-bright bg-transparent border-none cursor-pointer hover:underline">Run Now</button>
-                  <button onClick={() => void handleRemoveCron(c.id)} className="text-[10px] text-red-400/70 bg-transparent border-none cursor-pointer hover:underline">Delete</button>
+                  <button onClick={() => void handleRemoveCron(c.id)} className="text-[10px] text-red-400/70 bg-transparent border-none cursor-pointer hover:underline">删除</button>
                 </div>
               </div>
             ))}
