@@ -1,3 +1,6 @@
+'use client'
+
+import { useTranslation } from 'react-i18next';
 import type { Connector, ConnectorPlatform, Session } from '@/types'
 import { cn } from '@/lib/utils'
 import { BsMicrosoftTeams } from 'react-icons/bs'
@@ -12,29 +15,30 @@ import {
   SiWhatsapp,
 } from 'react-icons/si'
 
-export const CONNECTOR_PLATFORM_META: Record<ConnectorPlatform, { label: string; color: string }> = {
-  discord: { label: 'Discord', color: '#5865F2' },
-  telegram: { label: 'Telegram', color: '#229ED9' },
-  slack: { label: 'Slack', color: '#4A154B' },
-  whatsapp: { label: 'WhatsApp', color: '#25D366' },
-  openclaw: { label: 'OpenClaw', color: '#F97316' },
-  bluebubbles: { label: 'BlueBubbles', color: '#2E89FF' },
-  signal: { label: 'Signal', color: '#3A76F0' },
-  teams: { label: 'Teams', color: '#6264A7' },
-  googlechat: { label: 'Google Chat', color: '#00AC47' },
-  matrix: { label: 'Matrix', color: '#0DBD8B' },
-  email: { label: 'Email', color: '#EA4335' },
-  webchat: { label: 'Web Chat', color: '#0EA5E9' },
-  mockmail: { label: 'MockMail', color: '#7C3AED' },
-  filequeue: { label: 'File Queue', color: '#22C55E' },
-  swarmdock: { label: 'SwarmDock', color: '#F59E0B' },
+// 注意：平台名称保留英文，因为它们用于 API 通信和内部逻辑，但界面显示使用翻译
+export const CONNECTOR_PLATFORM_META: Record<ConnectorPlatform, { labelKey: string; color: string }> = {
+  discord: { labelKey: 'platformDiscord', color: '#5865F2' },
+  telegram: { labelKey: 'platformTelegram', color: '#229ED9' },
+  slack: { labelKey: 'platformSlack', color: '#4A154B' },
+  whatsapp: { labelKey: 'platformWhatsApp', color: '#25D366' },
+  openclaw: { labelKey: 'platformOpenClaw', color: '#F97316' },
+  bluebubbles: { labelKey: 'platformBlueBubbles', color: '#2E89FF' },
+  signal: { labelKey: 'platformSignal', color: '#3A76F0' },
+  teams: { labelKey: 'platformTeams', color: '#6264A7' },
+  googlechat: { labelKey: 'platformGoogleChat', color: '#00AC47' },
+  matrix: { labelKey: 'platformMatrix', color: '#0DBD8B' },
+  email: { labelKey: 'platformEmail', color: '#EA4335' },
+  webchat: { labelKey: 'platformWebChat', color: '#0EA5E9' },
+  mockmail: { labelKey: 'platformMockMail', color: '#7C3AED' },
+  filequeue: { labelKey: 'platformFileQueue', color: '#22C55E' },
+  swarmdock: { labelKey: 'platformSwarmDock', color: '#F59E0B' },
 }
 
-const FALLBACK_CONNECTOR_PLATFORM_META = { label: 'Connector', color: '#64748B' } as const
+const FALLBACK_CONNECTOR_PLATFORM_META = { labelKey: 'platformConnector', color: '#64748B' } as const
 
 function formatUnknownConnectorPlatformLabel(platform: string): string {
   const trimmed = platform.trim()
-  if (!trimmed) return FALLBACK_CONNECTOR_PLATFORM_META.label
+  if (!trimmed) return 'Connector'
   return trimmed
     .replace(/[_-]+/g, ' ')
     .replace(/([a-z])([A-Z])/g, '$1 $2')
@@ -44,17 +48,24 @@ function formatUnknownConnectorPlatformLabel(platform: string): string {
     .join(' ')
 }
 
-export function resolveConnectorPlatformMeta(platform: string): { label: string; color: string } {
+export function resolveConnectorPlatformMeta(platform: string): { labelKey: string; color: string } {
   const known = CONNECTOR_PLATFORM_META[platform as ConnectorPlatform]
   if (known) return known
   return {
-    label: formatUnknownConnectorPlatformLabel(platform),
+    labelKey: `platform_${platform}`,
     color: FALLBACK_CONNECTOR_PLATFORM_META.color,
   }
 }
 
 export function getConnectorPlatformLabel(platform: string): string {
-  return resolveConnectorPlatformMeta(platform).label
+  const { t } = useTranslation()
+  const meta = resolveConnectorPlatformMeta(platform)
+  // 尝试获取翻译，如果不存在则回退到格式化后的平台名
+  try {
+    return t(meta.labelKey)
+  } catch {
+    return formatUnknownConnectorPlatformLabel(platform)
+  }
 }
 
 export function getConnectorIdFromSessionName(sessionName?: string | null): string | null {
@@ -187,12 +198,14 @@ export function ConnectorPlatformBadge({
   roundedClassName = 'rounded-[10px]',
   title,
 }: ConnectorPlatformBadgeProps) {
+  const { t } = useTranslation()
   const meta = resolveConnectorPlatformMeta(platform)
   const glyphSize = iconSize ?? Math.max(12, Math.floor(size * 0.52))
+  const platformLabel = getConnectorPlatformLabel(platform)
 
   return (
     <span
-      title={title || `${meta.label} connector`}
+      title={title || `${platformLabel} ${t('connectorLabel')}`}
       className={cn('inline-flex items-center justify-center shrink-0', roundedClassName, className)}
       style={{ width: size, height: size, backgroundColor: meta.color }}
     >

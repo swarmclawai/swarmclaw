@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslation } from 'react-i18next';
 import { useState, useRef, useEffect, useCallback, useEffectEvent } from 'react'
 import { api } from '@/lib/app/api-client'
 import { useAppStore } from '@/stores/use-app-store'
@@ -30,6 +31,7 @@ export function ModelCombobox({
   supportsDiscovery = true,
   className,
 }: ModelComboboxProps) {
+  const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [discoveredModels, setDiscoveredModels] = useState<string[]>([])
@@ -102,11 +104,11 @@ export function ModelCombobox({
       setDiscoveryState(result.ok ? 'ready' : 'notice')
       setDiscoveryMessage(result.message || '')
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to load live models.'
+      const message = error instanceof Error ? error.message : t('failedToLoadLiveModels')
       setDiscoveryState('notice')
       setDiscoveryMessage(message)
     }
-  }, [apiEndpoint, credentialId, discoveryKey, ollamaMode, providerId, supportsDiscovery])
+  }, [apiEndpoint, credentialId, discoveryKey, ollamaMode, providerId, supportsDiscovery, t])
 
   const resetDiscoveryState = useEffectEvent(() => {
     lastDiscoveryKeyRef.current = null
@@ -158,7 +160,7 @@ export function ModelCombobox({
             if (!open) setOpen(true)
           }}
           onFocus={() => setOpen(true)}
-          placeholder={value || 'Select model…'}
+          placeholder={value || t('selectModel')}
           className="w-full bg-transparent outline-none text-inherit placeholder:text-text-3/50"
           style={{ fontFamily: 'inherit' }}
         />
@@ -173,9 +175,9 @@ export function ModelCombobox({
             <div className="sticky top-0 z-[1] flex items-center justify-between gap-3 border-b border-white/[0.06] bg-surface-2/95 px-3 py-2 backdrop-blur">
               <div className={`min-w-0 text-[11px] ${discoveryState === 'notice' ? 'text-text-3/80' : 'text-text-3/60'}`}>
                 {discoveryState === 'loading'
-                  ? 'Checking live model catalog...'
-                  : discoveryMessage || 'Type any model name or load the live catalog.'}
-                {discoveryCached && discoveryState === 'ready' ? ' Cached.' : ''}
+                  ? t('checkingLiveCatalog')
+                  : discoveryMessage || t('typeAnyModelOrLoadCatalog')}
+                {discoveryCached && discoveryState === 'ready' ? ` ${t('cached')}` : ''}
               </div>
               <button
                 type="button"
@@ -186,7 +188,7 @@ export function ModelCombobox({
                 disabled={discoveryState === 'loading'}
                 className="shrink-0 rounded-[7px] border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-[10px] font-600 text-text-3/80 transition-colors hover:bg-white/[0.06] hover:text-text disabled:cursor-default disabled:opacity-60"
               >
-                {discoveryState === 'loading' ? 'Loading...' : discoveredModels.length > 0 ? 'Refresh' : 'Fetch live'}
+                {discoveryState === 'loading' ? t('loading') : discoveredModels.length > 0 ? t('refresh') : t('fetchLive')}
               </button>
             </div>
           )}
@@ -202,7 +204,7 @@ export function ModelCombobox({
                 <button
                   onClick={(e) => removeModel(m, e)}
                   className="ml-2 p-0.5 rounded hover:bg-white/[0.08] text-text-3 hover:text-red-400 transition-colors shrink-0"
-                  title="Remove custom model"
+                  title={t('removeCustomModel')}
                 >
                   <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none">
                     <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
@@ -220,12 +222,12 @@ export function ModelCombobox({
               <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 16 16" fill="none">
                 <path d="M8 3v10M3 8h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
               </svg>
-              <span className="truncate">Add &ldquo;{trimmedQuery}&rdquo;</span>
+              <span className="truncate">{t('addModel', { model: trimmedQuery })}</span>
             </div>
           )}
 
           {filtered.length === 0 && !showAdd && (
-            <div className="px-3 py-2 text-[14px] text-text-3">No models found</div>
+            <div className="px-3 py-2 text-[14px] text-text-3">{t('noModelsFound')}</div>
           )}
         </div>
       )}

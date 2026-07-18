@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslation } from 'react-i18next';
 import { useState } from 'react'
 import { SidebarPanelShell } from '@/components/layout/sidebar-panel-shell'
 import { MainContent } from '@/components/layout/main-content'
@@ -8,13 +9,14 @@ import { AgentList } from '@/components/agents/agent-list'
 import { useAppStore } from '@/stores/use-app-store'
 
 export default function AgentsLayout({ children }: { children: React.ReactNode }) {
+  const { t } = useTranslation()
   const [agentViewMode, setAgentViewMode] = useState<'chat' | 'config'>('chat')
 
   return (
     <>
       <SidebarPanelShell
-        title="Agents"
-        createLabel="Agent"
+        title={t('agents')}
+        createLabel={t('agent')}
         onNew={() => useAppStore.getState().setAgentSheetOpen(true)}
         headerContent={
           <div className="flex gap-1 px-4 pb-2">
@@ -26,7 +28,7 @@ export default function AgentsLayout({ children }: { children: React.ReactNode }
                   ${agentViewMode === mode ? 'bg-accent-soft text-accent-bright' : 'bg-transparent text-text-3 hover:text-text-2'}`}
                 style={{ fontFamily: 'inherit' }}
               >
-                {mode}
+                {mode === 'chat' ? t('chat') : t('config')}
               </button>
             ))}
           </div>

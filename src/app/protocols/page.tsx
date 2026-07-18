@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslation } from 'react-i18next';
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useAgentsQuery } from '@/features/agents/queries'
@@ -130,6 +131,7 @@ function splitCsv(value: string): string[] {
 }
 
 export default function ProtocolsPage() {
+  const { t } = useTranslation()
   const router = useRouter()
   const searchParams = useSearchParams()
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
@@ -226,11 +228,11 @@ export default function ProtocolsPage() {
 
   const handleCreate = useCallback(async () => {
     if (!form.title.trim()) {
-      setError('A structured session title is required.')
+      setError(t('titleRequired'))
       return
     }
     if (form.participantAgentIds.length === 0) {
-      setError('Select at least one participant.')
+      setError(t('selectParticipant'))
       return
     }
     try {
@@ -259,9 +261,9 @@ export default function ProtocolsPage() {
       }))
       setSelectedRunId(run.id)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to create structured session.')
+      setError(err instanceof Error ? err.message : t('createRunFailed'))
     }
-  }, [createRunMutation, form])
+  }, [createRunMutation, form, t])
 
   const handleAction = useCallback(async (payload: RunActionPayload) => {
     if (!detail?.run.id) return
@@ -270,22 +272,22 @@ export default function ProtocolsPage() {
       await runActionMutation.mutateAsync({ runId: detail.run.id, payload })
       if (payload.action === 'inject_context') setContextDraft('')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to update structured session.')
+      setError(err instanceof Error ? err.message : t('updateRunFailed'))
     } finally {
       setActionPending(null)
     }
-  }, [detail, runActionMutation])
+  }, [detail, runActionMutation, t])
 
   const handleBranchAction = useCallback(async (runId: string, payload: RunActionPayload) => {
     setActionPending(`${payload.action}:${runId}`)
     try {
       await runActionMutation.mutateAsync({ runId, payload })
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to update branch run.')
+      setError(err instanceof Error ? err.message : t('updateBranchFailed'))
     } finally {
       setActionPending(null)
     }
-  }, [runActionMutation])
+  }, [runActionMutation, t])
 
   const openTemplateEditor = useCallback((template: ProtocolTemplate | null = null) => {
     setEditingTemplateId(template?.builtIn ? null : template?.id || null)
@@ -306,11 +308,11 @@ export default function ProtocolsPage() {
         entryStepId: templateDraft.entryStepId.trim() || steps[0]?.id || null,
       }
       if (!payload.name || !payload.description || payload.steps.length === 0) {
-        setError('Templates need a name, description, and at least one step.')
+        setError(t('templateValidationError'))
         return
       }
       if (payload.entryStepId && !payload.steps.some((step) => step.id === payload.entryStepId)) {
-        setError('The entry step id must match one of the defined steps.')
+        setError(t('entryStepValidationError'))
         return
       }
       setTemplatePending(editingTemplateId ? 'save-edit' : 'save-new')
@@ -325,11 +327,11 @@ export default function ProtocolsPage() {
       setEditingTemplateId(null)
       setTemplateDraft(DEFAULT_TEMPLATE_DRAFT)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to save structured-session template.')
+      setError(err instanceof Error ? err.message : t('saveTemplateFailed'))
     } finally {
       setTemplatePending(null)
     }
-  }, [editingTemplateId, templateDraft, upsertTemplateMutation])
+  }, [editingTemplateId, templateDraft, upsertTemplateMutation, t])
 
   const handleDeleteTemplate = useCallback(async (templateId: string) => {
     setTemplatePending(`delete:${templateId}`)
@@ -343,11 +345,11 @@ export default function ProtocolsPage() {
         templateId: current.templateId === templateId ? 'facilitated_discussion' : current.templateId,
       }))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to delete structured-session template.')
+      setError(err instanceof Error ? err.message : t('deleteTemplateFailed'))
     } finally {
       setTemplatePending(null)
     }
-  }, [deleteTemplateMutation])
+  }, [deleteTemplateMutation, t])
 
   const handleSelectRun = useCallback((runId: string) => {
     setSelectedRunId(runId)
@@ -362,19 +364,19 @@ export default function ProtocolsPage() {
             <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
               <div className="max-w-[780px]">
                 <div className="inline-flex rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1 text-[11px] font-700 uppercase tracking-[0.18em] text-text-3/70">
-                  Structured Sessions
+                  {t('structuredSessions')}
                 </div>
-                <h1 className="mt-4 font-display text-[34px] font-700 tracking-[-0.03em] text-text">Bounded Collaboration Runs</h1>
+                <h1 className="mt-4 font-display text-[34px] font-700 tracking-[-0.03em] text-text">{t('boundedCollaborationRuns')}</h1>
                 <p className="mt-3 max-w-[720px] text-[15px] leading-relaxed text-text-3/72">
-                  Start structured sessions from chats, chatrooms, tasks, or schedules. Runs stay temporary and bounded, while templates remain reusable for the next time you need them.
+                  {t('protocolsDescription')}
                 </p>
               </div>
               <div className="w-full max-w-[520px] rounded-[20px] border border-white/[0.06] bg-surface/70 p-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <div className="text-[11px] font-700 uppercase tracking-[0.12em] text-text-3/55">Launch and Templates</div>
+                    <div className="text-[11px] font-700 uppercase tracking-[0.12em] text-text-3/55">{t('launchAndTemplates')}</div>
                     <div className="mt-1 text-[13px] leading-relaxed text-text-3/68">
-                      Start from here when you need a blank run. Normal use should start from the chat, task, or chatroom you are already in.
+                      {t('launchAndTemplatesDesc')}
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -383,45 +385,45 @@ export default function ProtocolsPage() {
                       onClick={() => setLauncherOpen(true)}
                       className="rounded-[10px] bg-accent-bright px-3 py-2 text-[12px] font-700 text-black transition-all hover:opacity-90 cursor-pointer"
                     >
-                      Start structured session
+                      {t('startStructuredSession')}
                     </button>
                     <button
                       type="button"
                       onClick={() => openTemplateEditor()}
                       className="rounded-[10px] border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-[12px] font-700 text-text-2 transition-all hover:bg-white/[0.08] cursor-pointer"
                     >
-                      New template
+                      {t('newTemplate')}
                     </button>
                     <button
                       type="button"
                       onClick={() => router.push(DEFAULT_BUILDER_ROUTE)}
                       className="rounded-[10px] border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-[12px] font-700 text-text-2 transition-all hover:bg-white/[0.08] cursor-pointer"
                     >
-                      Open visual builder
+                      {t('openVisualBuilder')}
                     </button>
                   </div>
                 </div>
 
                 <div className="mt-4 grid gap-3 md:grid-cols-3">
                   <div className="rounded-[16px] border border-white/[0.06] bg-white/[0.03] p-4">
-                    <div className="text-[11px] font-700 uppercase tracking-[0.12em] text-text-3/55">Built-in Templates</div>
+                    <div className="text-[11px] font-700 uppercase tracking-[0.12em] text-text-3/55">{t('builtInTemplates')}</div>
                     <div className="mt-2 text-[28px] font-700 tracking-[-0.03em] text-text">{builtInTemplates.length}</div>
                     <div className="mt-2 text-[12px] leading-relaxed text-text-3/68">
-                      Use a neutral starter for review, discussion, decision rounds, or single-agent structured work.
+                      {t('builtInTemplatesDesc')}
                     </div>
                   </div>
                   <div className="rounded-[16px] border border-white/[0.06] bg-white/[0.03] p-4">
-                    <div className="text-[11px] font-700 uppercase tracking-[0.12em] text-text-3/55">Custom Templates</div>
+                    <div className="text-[11px] font-700 uppercase tracking-[0.12em] text-text-3/55">{t('customTemplates')}</div>
                     <div className="mt-2 text-[28px] font-700 tracking-[-0.03em] text-text">{customTemplates.length}</div>
                     <div className="mt-2 text-[12px] leading-relaxed text-text-3/68">
-                      Keep reusable step graphs here without forcing every launch through advanced JSON authoring.
+                      {t('customTemplatesDesc')}
                     </div>
                   </div>
                   <div className="rounded-[16px] border border-white/[0.06] bg-white/[0.03] p-4">
-                    <div className="text-[11px] font-700 uppercase tracking-[0.12em] text-text-3/55">Recent Runs</div>
+                    <div className="text-[11px] font-700 uppercase tracking-[0.12em] text-text-3/55">{t('recentRuns')}</div>
                     <div className="mt-2 text-[28px] font-700 tracking-[-0.03em] text-text">{runs.length}</div>
                     <div className="mt-2 text-[12px] leading-relaxed text-text-3/68">
-                      Use the list below for inspection, retries, archives, and branch-aware detail.
+                      {t('recentRunsDesc')}
                     </div>
                   </div>
                 </div>
@@ -429,10 +431,10 @@ export default function ProtocolsPage() {
                 <div className="mt-4 rounded-[16px] border border-white/[0.06] bg-white/[0.03] p-4">
                   <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
                     <div className="max-w-[720px]">
-                      <div className="text-[11px] font-700 uppercase tracking-[0.12em] text-text-3/55">Visual Workflow Templates</div>
-                      <div className="mt-2 text-[15px] font-700 text-text">Pick a built-in protocol and open it in the builder.</div>
+                      <div className="text-[11px] font-700 uppercase tracking-[0.12em] text-text-3/55">{t('visualWorkflowTemplates')}</div>
+                      <div className="mt-2 text-[15px] font-700 text-text">{t('visualWorkflowTemplatesTitle')}</div>
                       <div className="mt-2 text-[13px] leading-relaxed text-text-3/72">
-                        Use the gallery for the fastest path into structured workflows. Custom templates stay here too, so teams can refine reusable runs without dropping straight into JSON first.
+                        {t('visualWorkflowTemplatesDesc')}
                       </div>
                     </div>
                     <button
@@ -440,7 +442,7 @@ export default function ProtocolsPage() {
                       onClick={() => router.push(DEFAULT_BUILDER_ROUTE)}
                       className="rounded-[10px] bg-accent-bright px-3 py-2 text-[12px] font-700 text-black transition-all hover:opacity-90 cursor-pointer"
                     >
-                      Open builder
+                      {t('openBuilder')}
                     </button>
                   </div>
                   <div className="mt-4">
@@ -450,14 +452,14 @@ export default function ProtocolsPage() {
 
                 <details className="mt-4 rounded-[16px] border border-white/[0.06] bg-white/[0.03] p-4">
                   <summary className="cursor-pointer list-none text-[11px] font-700 uppercase tracking-[0.12em] text-text-3/55">
-                    Advanced Manual Run Builder
+                    {t('advancedManualRunBuilder')}
                   </summary>
                   <div className="mt-4 space-y-4">
                     <div className="grid gap-3 md:grid-cols-2">
                       <input
                         value={form.title}
                         onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
-                        placeholder="Title"
+                        placeholder={t('title')}
                         className="rounded-[12px] border border-white/[0.06] bg-white/[0.04] px-3 py-2.5 text-[14px] text-text outline-none placeholder:text-text-3/35 md:col-span-2"
                       />
                       <select
@@ -474,7 +476,7 @@ export default function ProtocolsPage() {
                         onChange={(event) => setForm((current) => ({ ...current, facilitatorAgentId: event.target.value }))}
                         className="rounded-[12px] border border-white/[0.06] bg-white/[0.04] px-3 py-2.5 text-[14px] text-text outline-none"
                       >
-                        <option value="">Facilitator: first participant</option>
+                        <option value="">{t('facilitatorFirstParticipant')}</option>
                         {Object.values(agents).map((agent) => (
                           <option key={agent.id} value={agent.id}>{agent.name}</option>
                         ))}
@@ -482,13 +484,13 @@ export default function ProtocolsPage() {
                       <input
                         value={form.goal}
                         onChange={(event) => setForm((current) => ({ ...current, goal: event.target.value }))}
-                        placeholder="Objective or goal"
+                        placeholder={t('objectiveOrGoal')}
                         className="rounded-[12px] border border-white/[0.06] bg-white/[0.04] px-3 py-2.5 text-[14px] text-text outline-none placeholder:text-text-3/35 md:col-span-2"
                       />
                       <textarea
                         value={form.kickoffMessage}
                         onChange={(event) => setForm((current) => ({ ...current, kickoffMessage: event.target.value }))}
-                        placeholder="Optional kickoff context"
+                        placeholder={t('optionalKickoffContext')}
                         rows={3}
                         className="rounded-[12px] border border-white/[0.06] bg-white/[0.04] px-3 py-2.5 text-[14px] text-text outline-none placeholder:text-text-3/35 md:col-span-2"
                       />
@@ -497,7 +499,7 @@ export default function ProtocolsPage() {
                         onChange={(event) => setForm((current) => ({ ...current, parentChatroomId: event.target.value }))}
                         className="rounded-[12px] border border-white/[0.06] bg-white/[0.04] px-3 py-2.5 text-[14px] text-text outline-none"
                       >
-                        <option value="">No parent chatroom</option>
+                        <option value="">{t('noParentChatroom')}</option>
                         {Object.values(chatrooms).map((chatroom) => (
                           <option key={chatroom.id} value={chatroom.id}>{chatroom.name}</option>
                         ))}
@@ -507,7 +509,7 @@ export default function ProtocolsPage() {
                         onChange={(event) => setForm((current) => ({ ...current, taskId: event.target.value }))}
                         className="rounded-[12px] border border-white/[0.06] bg-white/[0.04] px-3 py-2.5 text-[14px] text-text outline-none"
                       >
-                        <option value="">No linked task</option>
+                        <option value="">{t('noLinkedTask')}</option>
                         {Object.values(tasks).map((task) => (
                           <option key={task.id} value={task.id}>{task.title}</option>
                         ))}
@@ -515,19 +517,19 @@ export default function ProtocolsPage() {
                       <input
                         value={form.roundLimit}
                         onChange={(event) => setForm((current) => ({ ...current, roundLimit: event.target.value }))}
-                        placeholder="Round limit"
+                        placeholder={t('roundLimit')}
                         className="rounded-[12px] border border-white/[0.06] bg-white/[0.04] px-3 py-2.5 text-[14px] text-text outline-none placeholder:text-text-3/35"
                       />
                       <input
                         value={form.decisionMode}
                         onChange={(event) => setForm((current) => ({ ...current, decisionMode: event.target.value }))}
-                        placeholder="Decision mode"
+                        placeholder={t('decisionMode')}
                         className="rounded-[12px] border border-white/[0.06] bg-white/[0.04] px-3 py-2.5 text-[14px] text-text outline-none placeholder:text-text-3/35"
                       />
                     </div>
 
                     <div>
-                      <div className="text-[11px] font-700 uppercase tracking-[0.12em] text-text-3/55">Participants</div>
+                      <div className="text-[11px] font-700 uppercase tracking-[0.12em] text-text-3/55">{t('participants')}</div>
                       <div className="mt-2 flex max-h-[180px] flex-wrap gap-2 overflow-y-auto rounded-[14px] border border-white/[0.06] bg-white/[0.03] p-3">
                         {Object.values(agents).map((agent) => {
                           const active = form.participantAgentIds.includes(agent.id)
@@ -564,7 +566,7 @@ export default function ProtocolsPage() {
                                 ? 'border-white/[0.08] bg-white/[0.04] text-text-3/75'
                                 : 'border-sky-500/20 bg-sky-500/10 text-sky-200'
                             }`}>
-                              {selectedTemplate.builtIn ? 'built in' : 'custom'}
+                              {selectedTemplate.builtIn ? t('builtIn') : t('custom')}
                             </span>
                             {!selectedTemplate.builtIn && (
                               <button
@@ -572,7 +574,7 @@ export default function ProtocolsPage() {
                                 onClick={() => openTemplateEditor(selectedTemplate)}
                                 className="rounded-[8px] border border-white/[0.08] bg-white/[0.04] px-2.5 py-1 text-[11px] font-700 text-text-2 transition-all hover:bg-white/[0.08] cursor-pointer"
                               >
-                                Edit
+                                {t('edit')}
                               </button>
                             )}
                           </div>
@@ -594,7 +596,7 @@ export default function ProtocolsPage() {
                         checked={form.autoStart}
                         onChange={(event) => setForm((current) => ({ ...current, autoStart: event.target.checked }))}
                       />
-                      Start immediately after creation
+                      {t('startImmediately')}
                     </label>
 
                     <button
@@ -602,7 +604,7 @@ export default function ProtocolsPage() {
                       onClick={() => void handleCreate()}
                       className="inline-flex items-center justify-center rounded-[12px] bg-accent-bright px-4 py-2.5 text-[13px] font-700 text-black transition-all hover:opacity-90 cursor-pointer"
                     >
-                      Create structured session
+                      {t('createStructuredSession')}
                     </button>
                   </div>
                 </details>
@@ -612,10 +614,10 @@ export default function ProtocolsPage() {
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <div className="text-[12px] font-700 uppercase tracking-[0.12em] text-sky-200/72">
-                          {editingTemplateId ? 'Edit Custom Template' : 'New Custom Template'}
+                          {editingTemplateId ? t('editCustomTemplate') : t('newCustomTemplate')}
                         </div>
                         <div className="mt-1 text-[12px] leading-relaxed text-text-3/72">
-                          Persist a neutral structured-session template with JSON step definitions.
+                          {t('templateEditorDesc')}
                         </div>
                       </div>
                       <button
@@ -627,14 +629,14 @@ export default function ProtocolsPage() {
                         }}
                         className="rounded-[8px] border border-white/[0.08] bg-white/[0.04] px-2.5 py-1 text-[11px] font-700 text-text-2 transition-all hover:bg-white/[0.08] cursor-pointer"
                       >
-                        Close
+                        {t('close')}
                       </button>
                     </div>
                     <div className="mt-3 grid gap-3 md:grid-cols-2">
                       <input
                         value={templateDraft.name}
                         onChange={(event) => setTemplateDraft((current) => ({ ...current, name: event.target.value }))}
-                        placeholder="Template name"
+                        placeholder={t('templateName')}
                         className="rounded-[12px] border border-white/[0.06] bg-black/20 px-3 py-2.5 text-[14px] text-text outline-none placeholder:text-text-3/35"
                       />
                       <label className="flex items-center gap-2 rounded-[12px] border border-white/[0.06] bg-black/20 px-3 py-2.5 text-[13px] text-text-2">
@@ -643,31 +645,31 @@ export default function ProtocolsPage() {
                           checked={templateDraft.singleAgentAllowed}
                           onChange={(event) => setTemplateDraft((current) => ({ ...current, singleAgentAllowed: event.target.checked }))}
                         />
-                        Allow single-agent runs
+                        {t('allowSingleAgentRuns')}
                       </label>
                       <textarea
                         value={templateDraft.description}
                         onChange={(event) => setTemplateDraft((current) => ({ ...current, description: event.target.value }))}
-                        placeholder="Template description"
+                        placeholder={t('templateDescription')}
                         rows={3}
                         className="rounded-[12px] border border-white/[0.06] bg-black/20 px-3 py-2.5 text-[14px] text-text outline-none placeholder:text-text-3/35 md:col-span-2"
                       />
                       <input
                         value={templateDraft.tags}
                         onChange={(event) => setTemplateDraft((current) => ({ ...current, tags: event.target.value }))}
-                        placeholder="Tags (comma separated)"
+                        placeholder={t('tagsCommaSeparated')}
                         className="rounded-[12px] border border-white/[0.06] bg-black/20 px-3 py-2.5 text-[14px] text-text outline-none placeholder:text-text-3/35"
                       />
                       <input
                         value={templateDraft.recommendedOutputs}
                         onChange={(event) => setTemplateDraft((current) => ({ ...current, recommendedOutputs: event.target.value }))}
-                        placeholder="Recommended outputs (comma separated)"
+                        placeholder={t('recommendedOutputsCommaSeparated')}
                         className="rounded-[12px] border border-white/[0.06] bg-black/20 px-3 py-2.5 text-[14px] text-text outline-none placeholder:text-text-3/35"
                       />
                       <input
                         value={templateDraft.entryStepId}
                         onChange={(event) => setTemplateDraft((current) => ({ ...current, entryStepId: event.target.value }))}
-                        placeholder="Entry step id"
+                        placeholder={t('entryStepId')}
                         className="rounded-[12px] border border-white/[0.06] bg-black/20 px-3 py-2.5 text-[14px] text-text outline-none placeholder:text-text-3/35 md:col-span-2"
                       />
                       <textarea
@@ -684,8 +686,8 @@ export default function ProtocolsPage() {
                         className="rounded-[10px] bg-accent-bright px-3 py-2 text-[12px] font-700 text-black transition-all hover:opacity-90 cursor-pointer"
                       >
                         {templatePending === 'save-new' || templatePending === 'save-edit'
-                          ? 'Saving…'
-                          : editingTemplateId ? 'Save template' : 'Create template'}
+                          ? t('saving')
+                          : editingTemplateId ? t('saveTemplate') : t('createTemplate')}
                       </button>
                       {editingTemplateId && (
                         <>
@@ -694,14 +696,14 @@ export default function ProtocolsPage() {
                             onClick={() => router.push(`/protocols/builder/${editingTemplateId}`)}
                             className="rounded-[10px] border border-blue-500/20 bg-blue-500/10 px-3 py-2 text-[12px] font-700 text-blue-200 transition-all hover:bg-blue-500/14 cursor-pointer"
                           >
-                            Visual Builder
+                            {t('visualBuilder')}
                           </button>
                           <button
                             type="button"
                             onClick={() => void handleDeleteTemplate(editingTemplateId)}
                             className="rounded-[10px] border border-red-500/20 bg-red-500/10 px-3 py-2 text-[12px] font-700 text-red-200 transition-all hover:bg-red-500/14 cursor-pointer"
                           >
-                            {templatePending === `delete:${editingTemplateId}` ? 'Deleting…' : 'Delete template'}
+                            {templatePending === `delete:${editingTemplateId}` ? t('deleting') : t('deleteTemplate')}
                           </button>
                         </>
                       )}
@@ -711,7 +713,7 @@ export default function ProtocolsPage() {
 
                 {customTemplates.length > 0 && (
                   <div className="mt-4 rounded-[14px] border border-white/[0.06] bg-white/[0.03] p-3">
-                    <div className="text-[11px] font-700 uppercase tracking-[0.12em] text-text-3/55">Custom Templates</div>
+                    <div className="text-[11px] font-700 uppercase tracking-[0.12em] text-text-3/55">{t('customTemplates')}</div>
                     <div className="mt-3 flex flex-wrap gap-2">
                       {customTemplates.map((template) => (
                         <button
@@ -739,22 +741,22 @@ export default function ProtocolsPage() {
             <section className="min-h-0 rounded-[24px] border border-white/[0.06] bg-white/[0.02] p-4">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <h2 className="text-[16px] font-700 text-text">Runs</h2>
-                  <span className="text-[12px] text-text-3/60">{filteredRuns.length} visible</span>
+                  <h2 className="text-[16px] font-700 text-text">{t('runs')}</h2>
+                  <span className="text-[12px] text-text-3/60">{t('visibleCount', { count: filteredRuns.length })}</span>
                 </div>
                 <button
                   type="button"
                   onClick={() => setLauncherOpen(true)}
                   className="rounded-[10px] border border-white/[0.08] bg-white/[0.04] px-3 py-1.5 text-[11px] font-700 text-text-2 transition-all hover:bg-white/[0.08] cursor-pointer"
                 >
-                  Start
+                  {t('start')}
                 </button>
               </div>
               <div className="mt-4 space-y-3">
                 <input
                   value={runSearch}
                   onChange={(event) => setRunSearch(event.target.value)}
-                  placeholder="Search title, template, or summary"
+                  placeholder={t('searchRunsPlaceholder')}
                   className="w-full rounded-[12px] border border-white/[0.06] bg-white/[0.04] px-3 py-2.5 text-[13px] text-text outline-none placeholder:text-text-3/35"
                 />
                 <div className="flex flex-wrap gap-2">
@@ -769,17 +771,17 @@ export default function ProtocolsPage() {
                           : 'border-white/[0.08] bg-transparent text-text-3/72 hover:bg-white/[0.04]'
                       }`}
                     >
-                      {filter}
+                      {filter === 'all' ? t('all') : t(filter)}
                     </button>
                   ))}
                 </div>
               </div>
               <div className="mt-4 max-h-[880px] space-y-2 overflow-y-auto pr-1">
                 {loading ? (
-                  <div className="text-[13px] text-text-3/65">Loading structured sessions…</div>
+                  <div className="text-[13px] text-text-3/65">{t('loadingRuns')}</div>
                 ) : filteredRuns.length === 0 ? (
                   <div className="rounded-[16px] border border-white/[0.06] bg-white/[0.03] p-4 text-[13px] text-text-3/65">
-                    No structured sessions match the current filters.
+                    {t('noRunsMatch')}
                   </div>
                 ) : filteredRuns.map((run) => (
                   <button
@@ -802,8 +804,8 @@ export default function ProtocolsPage() {
                       </span>
                     </div>
                     <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-text-3/65">
-                      <span>{run.participantAgentIds.length} participant{run.participantAgentIds.length === 1 ? '' : 's'}</span>
-                      <span>Step {Math.min(currentStepIndex(run) + 1, Math.max(stepsForRun(run).length, 1))}/{stepsForRun(run).length}</span>
+                      <span>{t('participantsCount', { count: run.participantAgentIds.length })}</span>
+                      <span>{t('stepProgress', { current: Math.min(currentStepIndex(run) + 1, Math.max(stepsForRun(run).length, 1)), total: stepsForRun(run).length })}</span>
                       <span>{timeAgo(run.updatedAt)}</span>
                     </div>
                   </button>
@@ -813,26 +815,26 @@ export default function ProtocolsPage() {
 
             <section className="min-h-0 rounded-[24px] border border-white/[0.06] bg-white/[0.02] p-4 md:p-5">
               {detailLoading ? (
-                <div className="text-[13px] text-text-3/65">Loading structured session detail…</div>
+                <div className="text-[13px] text-text-3/65">{t('loadingRunDetail')}</div>
               ) : !detail ? (
                 <div className="rounded-[16px] border border-white/[0.06] bg-white/[0.03] p-4 text-[13px] text-text-3/65">
-                  Select a structured session to inspect its protocol state, transcript, and outputs.
+                  {t('selectRunToInspect')}
                 </div>
               ) : (
                 <div className="flex min-h-0 flex-col gap-4">
                   <div className="flex flex-col gap-3 rounded-[20px] border border-white/[0.06] bg-white/[0.03] p-4">
                     <div className="flex flex-wrap items-start gap-3">
                       <div className="min-w-0 flex-1">
-                        <div className="text-[12px] font-700 uppercase tracking-[0.12em] text-text-3/55">Current Run</div>
+                        <div className="text-[12px] font-700 uppercase tracking-[0.12em] text-text-3/55">{t('currentRun')}</div>
                         <h2 className="mt-2 text-[24px] font-700 tracking-[-0.02em] text-text">{detail.run.title}</h2>
                         <div className="mt-2 flex flex-wrap gap-2 text-[12px] text-text-3/68">
                           <span>{detail.run.templateName}</span>
                           <span>•</span>
-                          <span>{detail.run.sourceRef.kind}</span>
+                          <span>{t(detail.run.sourceRef.kind)}</span>
                           {detail.run.systemOwned && (
                             <>
                               <span>•</span>
-                              <span>branch run</span>
+                              <span>{t('branchRun')}</span>
                             </>
                           )}
                           <span>•</span>
@@ -851,43 +853,43 @@ export default function ProtocolsPage() {
                           className="rounded-[10px] border border-sky-500/20 bg-sky-500/10 px-3 py-2 text-[12px] font-700 text-sky-100 cursor-pointer"
                         >
                           {detail.run.status === 'running' || detail.run.status === 'waiting' || detail.run.status === 'paused'
-                            ? 'Watch Live Room'
-                            : 'Open Transcript Room'}
+                            ? t('watchLiveRoom')
+                            : t('openTranscriptRoom')}
                         </button>
                       )}
                       {detail.run.status === 'draft' && (
                         <button type="button" onClick={() => void handleAction({ action: 'start' })} className="rounded-[10px] bg-accent-bright px-3 py-2 text-[12px] font-700 text-black cursor-pointer">
-                          {actionPending === 'start' ? 'Starting…' : 'Start'}
+                          {actionPending === 'start' ? t('starting') : t('start')}
                         </button>
                       )}
                       {(detail.run.status === 'waiting' || detail.run.status === 'paused') && (
                         <button type="button" onClick={() => void handleAction({ action: 'resume' })} className="rounded-[10px] bg-accent-bright px-3 py-2 text-[12px] font-700 text-black cursor-pointer">
-                          {actionPending === 'resume' ? 'Resuming…' : 'Resume'}
+                          {actionPending === 'resume' ? t('resuming') : t('resume')}
                         </button>
                       )}
                       {detail.run.status !== 'completed' && detail.run.status !== 'cancelled' && detail.run.status !== 'archived' && detail.run.status !== 'paused' && (
                         <button type="button" onClick={() => void handleAction({ action: 'pause' })} className="rounded-[10px] border border-indigo-500/20 bg-indigo-500/10 px-3 py-2 text-[12px] font-700 text-indigo-200 cursor-pointer">
-                          {actionPending === 'pause' ? 'Pausing…' : 'Pause'}
+                          {actionPending === 'pause' ? t('pausing') : t('pause')}
                         </button>
                       )}
                       {detail.run.status !== 'completed' && detail.run.status !== 'cancelled' && detail.run.status !== 'archived' && (
                         <button type="button" onClick={() => void handleAction({ action: 'retry_phase' })} className="rounded-[10px] border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-[12px] font-700 text-text-2 cursor-pointer">
-                          {actionPending === 'retry_phase' ? 'Retrying…' : 'Retry step'}
+                          {actionPending === 'retry_phase' ? t('retrying') : t('retryStep')}
                         </button>
                       )}
                       {detail.run.status !== 'completed' && detail.run.status !== 'cancelled' && detail.run.status !== 'archived' && !!currentStepDefinition(detail.run) && (
                         <button type="button" onClick={() => void handleAction({ action: 'skip_phase' })} className="rounded-[10px] border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-[12px] font-700 text-text-2 cursor-pointer">
-                          {actionPending === 'skip_phase' ? 'Skipping…' : 'Skip step'}
+                          {actionPending === 'skip_phase' ? t('skipping') : t('skipStep')}
                         </button>
                       )}
                       {detail.run.status !== 'completed' && detail.run.status !== 'cancelled' && detail.run.status !== 'archived' && (
                         <button type="button" onClick={() => void handleAction({ action: 'cancel' })} className="rounded-[10px] border border-red-500/20 bg-red-500/10 px-3 py-2 text-[12px] font-700 text-red-200 cursor-pointer">
-                          {actionPending === 'cancel' ? 'Cancelling…' : 'Cancel'}
+                          {actionPending === 'cancel' ? t('cancelling') : t('cancel')}
                         </button>
                       )}
                       {(detail.run.status === 'completed' || detail.run.status === 'cancelled' || detail.run.status === 'failed') && (
                         <button type="button" onClick={() => void handleAction({ action: 'archive' })} className="rounded-[10px] border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-[12px] font-700 text-text-2 cursor-pointer">
-                          {actionPending === 'archive' ? 'Archiving…' : 'Archive'}
+                          {actionPending === 'archive' ? t('archiving') : t('archive')}
                         </button>
                       )}
                     </div>
@@ -903,20 +905,20 @@ export default function ProtocolsPage() {
                     )}
                     {detail.run.summary && (
                       <div className="rounded-[16px] border border-emerald-500/14 bg-emerald-500/8 px-4 py-3">
-                        <div className="text-[11px] font-700 uppercase tracking-[0.12em] text-emerald-200/80">Latest Summary</div>
+                        <div className="text-[11px] font-700 uppercase tracking-[0.12em] text-emerald-200/80">{t('latestSummary')}</div>
                         <div className="mt-2 whitespace-pre-wrap text-[13px] leading-relaxed text-text-2">{detail.run.summary}</div>
                       </div>
                     )}
                     <div className="rounded-[16px] border border-white/[0.06] bg-white/[0.02] p-4">
-                      <div className="text-[11px] font-700 uppercase tracking-[0.12em] text-text-3/55">Operator Context</div>
+                      <div className="text-[11px] font-700 uppercase tracking-[0.12em] text-text-3/55">{t('operatorContext')}</div>
                       <div className="mt-2 text-[12px] leading-relaxed text-text-3/68">
-                        Inject steering context without becoming a normal protocol participant.
+                        {t('operatorContextDesc')}
                       </div>
                       <textarea
                         value={contextDraft}
                         onChange={(event) => setContextDraft(event.target.value)}
                         rows={3}
-                        placeholder="Add guidance, constraints, or a correction for the next step."
+                        placeholder={t('contextPlaceholder')}
                         className="mt-3 w-full rounded-[12px] border border-white/[0.06] bg-black/20 px-3 py-2.5 text-[13px] text-text outline-none placeholder:text-text-3/35"
                       />
                       <div className="mt-3 flex flex-wrap gap-2">
@@ -926,11 +928,11 @@ export default function ProtocolsPage() {
                           disabled={!contextDraft.trim()}
                           className="rounded-[10px] border border-sky-500/20 bg-sky-500/10 px-3 py-2 text-[12px] font-700 text-sky-100 transition-all enabled:hover:bg-sky-500/16 disabled:cursor-not-allowed disabled:opacity-40 cursor-pointer"
                         >
-                          {actionPending === 'inject_context' ? 'Injecting…' : 'Inject context'}
+                          {actionPending === 'inject_context' ? t('injecting') : t('injectContext')}
                         </button>
                         {!!detail.run.operatorContext?.length && (
                           <span className="self-center text-[12px] text-text-3/62">
-                            {detail.run.operatorContext.length} operator note{detail.run.operatorContext.length === 1 ? '' : 's'}
+                            {t('operatorNotes', { count: detail.run.operatorContext.length })}
                           </span>
                         )}
                       </div>
@@ -941,7 +943,7 @@ export default function ProtocolsPage() {
                     <div className="min-h-0 space-y-4">
                       {!!Object.keys(detail.run.parallelState || {}).length && (
                         <div className="rounded-[20px] border border-white/[0.06] bg-white/[0.03] p-4">
-                          <div className="text-[12px] font-700 uppercase tracking-[0.12em] text-text-3/55">Parallel Branches</div>
+                          <div className="text-[12px] font-700 uppercase tracking-[0.12em] text-text-3/55">{t('parallelBranches')}</div>
                           <div className="mt-3 space-y-3">
                             {Object.values(detail.run.parallelState || {}).map((state) => (
                               <div key={state.stepId} className="rounded-[16px] border border-white/[0.06] bg-white/[0.02] p-3">
@@ -949,11 +951,11 @@ export default function ProtocolsPage() {
                                   <div>
                                     <div className="text-[13px] font-700 text-text">{stepsForRun(detail.run).find((step) => step.id === state.stepId)?.label || state.stepId}</div>
                                     <div className="mt-1 text-[11px] text-text-3/62">
-                                      {state.joinReady ? 'Join ready' : `${state.waitingOnBranchIds?.length || 0} branch${(state.waitingOnBranchIds?.length || 0) === 1 ? '' : 'es'} still running`}
+                                      {state.joinReady ? t('joinReady') : t('branchesRunning', { count: state.waitingOnBranchIds?.length || 0 })}
                                     </div>
                                   </div>
                                   <span className={`rounded-full border px-2 py-0.5 text-[10px] font-700 uppercase tracking-[0.12em] ${state.joinReady ? statusTone('completed') : statusTone('waiting')}`}>
-                                    {state.joinReady ? 'ready' : 'waiting'}
+                                    {state.joinReady ? t('ready') : t('waiting')}
                                   </span>
                                 </div>
                                 <div className="mt-3 space-y-2">
@@ -981,7 +983,7 @@ export default function ProtocolsPage() {
                                           onClick={() => handleSelectRun(branch.runId)}
                                           className="rounded-[10px] border border-white/[0.08] bg-white/[0.04] px-3 py-1.5 text-[11px] font-700 text-text-2 cursor-pointer"
                                         >
-                                          Open branch
+                                          {t('openBranch')}
                                         </button>
                                         {(branch.status === 'failed' || branch.status === 'paused' || branch.status === 'waiting') && (
                                           <button
@@ -989,7 +991,7 @@ export default function ProtocolsPage() {
                                             onClick={() => void handleBranchAction(branch.runId, { action: 'retry_phase' })}
                                             className="rounded-[10px] border border-white/[0.08] bg-white/[0.04] px-3 py-1.5 text-[11px] font-700 text-text-2 cursor-pointer"
                                           >
-                                            {actionPending === `retry_phase:${branch.runId}` ? 'Retrying…' : 'Retry branch'}
+                                            {actionPending === `retry_phase:${branch.runId}` ? t('retrying') : t('retryBranch')}
                                           </button>
                                         )}
                                       </div>
@@ -1004,7 +1006,7 @@ export default function ProtocolsPage() {
 
                       {!!Object.keys(detail.run.forEachState || {}).length && (
                         <div className="rounded-[20px] border border-white/[0.06] bg-white/[0.03] p-4">
-                          <div className="text-[12px] font-700 uppercase tracking-[0.12em] text-text-3/55">For-Each Branches</div>
+                          <div className="text-[12px] font-700 uppercase tracking-[0.12em] text-text-3/55">{t('forEachBranches')}</div>
                           <div className="mt-3 space-y-3">
                             {Object.values(detail.run.forEachState || {}).map((state) => (
                               <div key={state.stepId} className="rounded-[16px] border border-white/[0.06] bg-white/[0.02] p-3">
@@ -1012,11 +1014,11 @@ export default function ProtocolsPage() {
                                   <div>
                                     <div className="text-[13px] font-700 text-text">{stepsForRun(detail.run).find((s) => s.id === state.stepId)?.label || state.stepId}</div>
                                     <div className="mt-1 text-[11px] text-text-3/62">
-                                      {state.items.length} item{state.items.length === 1 ? '' : 's'} • {state.joinReady ? 'all done' : `${state.waitingOnBranchIds?.length || 0} running`}
+                                      {t('forEachItems', { count: state.items.length })} • {state.joinReady ? t('allDone') : t('forEachRunning', { count: state.waitingOnBranchIds?.length || 0 })}
                                     </div>
                                   </div>
                                   <span className={`rounded-full border px-2 py-0.5 text-[10px] font-700 uppercase tracking-[0.12em] ${state.joinReady ? statusTone('completed') : statusTone('waiting')}`}>
-                                    {state.joinReady ? 'done' : 'waiting'}
+                                    {state.joinReady ? t('done') : t('waiting')}
                                   </span>
                                 </div>
                                 <div className="mt-3 space-y-2">
@@ -1041,7 +1043,7 @@ export default function ProtocolsPage() {
                                           onClick={() => handleSelectRun(branch.runId)}
                                           className="rounded-[10px] border border-white/[0.08] bg-white/[0.04] px-3 py-1.5 text-[11px] font-700 text-text-2 cursor-pointer"
                                         >
-                                          Open branch
+                                          {t('openBranch')}
                                         </button>
                                       </div>
                                     </div>
@@ -1055,14 +1057,14 @@ export default function ProtocolsPage() {
 
                       {!!Object.keys(detail.run.subflowState || {}).length && (
                         <div className="rounded-[20px] border border-white/[0.06] bg-white/[0.03] p-4">
-                          <div className="text-[12px] font-700 uppercase tracking-[0.12em] text-text-3/55">Subflows</div>
+                          <div className="text-[12px] font-700 uppercase tracking-[0.12em] text-text-3/55">{t('subflows')}</div>
                           <div className="mt-3 space-y-3">
                             {Object.values(detail.run.subflowState || {}).map((state) => (
                               <div key={state.stepId} className="rounded-[16px] border border-white/[0.06] bg-white/[0.02] p-3">
                                 <div className="flex flex-wrap items-center justify-between gap-3">
                                   <div>
                                     <div className="text-[13px] font-700 text-text">{stepsForRun(detail.run).find((s) => s.id === state.stepId)?.label || state.templateId}</div>
-                                    <div className="mt-1 text-[11px] text-text-3/62">Template: {state.templateId}</div>
+                                    <div className="mt-1 text-[11px] text-text-3/62">{t('templateLabel')}: {state.templateId}</div>
                                     {state.summary && <div className="mt-1 text-[12px] text-text-2">{state.summary}</div>}
                                     {state.lastError && <div className="mt-1 text-[12px] text-red-300">{state.lastError}</div>}
                                   </div>
@@ -1076,7 +1078,7 @@ export default function ProtocolsPage() {
                                     onClick={() => handleSelectRun(state.childRunId)}
                                     className="rounded-[10px] border border-white/[0.08] bg-white/[0.04] px-3 py-1.5 text-[11px] font-700 text-text-2 cursor-pointer"
                                   >
-                                    Open subflow
+                                    {t('openSubflow')}
                                   </button>
                                 </div>
                               </div>
@@ -1087,7 +1089,7 @@ export default function ProtocolsPage() {
 
                       {!!Object.keys(detail.run.swarmState || {}).length && (
                         <div className="rounded-[20px] border border-white/[0.06] bg-white/[0.03] p-4">
-                          <div className="text-[12px] font-700 uppercase tracking-[0.12em] text-text-3/55">Swarm Claims</div>
+                          <div className="text-[12px] font-700 uppercase tracking-[0.12em] text-text-3/55">{t('swarmClaims')}</div>
                           <div className="mt-3 space-y-3">
                             {Object.values(detail.run.swarmState || {}).map((state) => (
                               <div key={state.stepId} className="rounded-[16px] border border-white/[0.06] bg-white/[0.02] p-3">
@@ -1095,14 +1097,14 @@ export default function ProtocolsPage() {
                                   <div>
                                     <div className="text-[13px] font-700 text-text">{stepsForRun(detail.run).find((s) => s.id === state.stepId)?.label || state.stepId}</div>
                                     <div className="mt-1 text-[11px] text-text-3/62">
-                                      {state.workItems.length} work item{state.workItems.length === 1 ? '' : 's'} • {state.claims.length} claimed • {state.unclaimedItemIds.length} unclaimed
-                                      {state.timedOut && ' • timed out'}
+                                      {t('workItems', { count: state.workItems.length })} • {t('claimedCount', { count: state.claims.length })} • {t('unclaimedCount', { count: state.unclaimedItemIds.length })}
+                                      {state.timedOut && ` • ${t('timedOut')}`}
                                     </div>
                                   </div>
                                   <span className={`rounded-full border px-2 py-0.5 text-[10px] font-700 uppercase tracking-[0.12em] ${
                                     state.closedAt ? statusTone('completed') : state.timedOut ? statusTone('failed') : statusTone('waiting')
                                   }`}>
-                                    {state.closedAt ? 'closed' : state.timedOut ? 'timed out' : 'open'}
+                                    {state.closedAt ? t('closed') : state.timedOut ? t('timedOut') : t('open')}
                                   </span>
                                 </div>
                                 <div className="mt-3 space-y-1">
@@ -1129,7 +1131,7 @@ export default function ProtocolsPage() {
                       )}
 
                       <div className="rounded-[20px] border border-white/[0.06] bg-white/[0.03] p-4">
-                      <div className="text-[12px] font-700 uppercase tracking-[0.12em] text-text-3/55">Protocol</div>
+                      <div className="text-[12px] font-700 uppercase tracking-[0.12em] text-text-3/55">{t('protocol')}</div>
                       <div className="mt-3 space-y-2">
                           {stepsForRun(detail.run).map((step, index) => {
                             const isDagMode = Object.keys(detail.run.stepState || {}).length > 0
@@ -1154,7 +1156,7 @@ export default function ProtocolsPage() {
                             const depLabels = (step.dependsOnStepIds || [])
                               .map((depId) => stepsForRun(detail.run).find((s) => s.id === depId)?.label || depId)
                             const statusColor = isFailed ? 'text-red-400' : done ? 'text-emerald-300' : active ? 'text-accent-bright' : isReady ? 'text-blue-300' : isWaiting ? 'text-amber-300' : 'text-text-3/55'
-                            const statusLabel = isFailed ? 'failed' : done ? 'done' : active ? 'running' : isReady ? 'ready' : isWaiting ? 'waiting' : 'pending'
+                            const statusLabel = isFailed ? t('failed') : done ? t('done') : active ? t('running') : isReady ? t('ready') : isWaiting ? t('waiting') : t('pending')
                             const borderClass = isFailed ? 'border-red-500/20 bg-red-500/10' : active ? 'border-accent-bright/20 bg-accent-soft/35' : isReady ? 'border-blue-400/20 bg-blue-500/10' : isWaiting ? 'border-amber-400/20 bg-amber-500/10' : 'border-white/[0.06] bg-white/[0.02]'
                             return (
                               <div key={step.id} className={`rounded-[14px] border px-4 py-3 ${borderClass}`}>
@@ -1164,38 +1166,38 @@ export default function ProtocolsPage() {
                                 </div>
                                 <div className="mt-1 text-[12px] text-text-3/68">{step.kind.replace(/_/g, ' ')}</div>
                                 {depLabels.length > 0 && (
-                                  <div className="mt-1 text-[11px] text-text-3/50">depends on: {depLabels.join(', ')}</div>
+                                  <div className="mt-1 text-[11px] text-text-3/50">{t('dependsOn')}: {depLabels.join(', ')}</div>
                                 )}
                                 {isFailed && detail.run.stepState?.[step.id]?.error && (
                                   <div className="mt-2 text-[11px] text-red-300">{detail.run.stepState[step.id].error}</div>
                                 )}
                                 {step.kind === 'repeat' && (
-                                  <div className="mt-2 text-[11px] text-text-3/58">Iteration {iterationCount}/{step.repeat?.maxIterations || 0}</div>
+                                  <div className="mt-2 text-[11px] text-text-3/58">{t('iterationProgress', { current: iterationCount, max: step.repeat?.maxIterations || 0 })}</div>
                                 )}
                                 {step.kind === 'parallel' && parallelState && (
                                   <div className="mt-2 text-[11px] text-text-3/58">
-                                    {parallelState.branches.length} branch{parallelState.branches.length === 1 ? '' : 'es'} • {parallelState.joinReady ? 'join ready' : `${parallelState.waitingOnBranchIds?.length || 0} pending`}
+                                    {t('branchesCount', { count: parallelState.branches.length })} • {parallelState.joinReady ? t('joinReady') : t('branchesPending', { count: parallelState.waitingOnBranchIds?.length || 0 })}
                                   </div>
                                 )}
                                 {step.kind === 'for_each' && forEachState && (
                                   <div className="mt-2 text-[11px] text-text-3/58">
-                                    {forEachState.items.length} item{forEachState.items.length === 1 ? '' : 's'} • {forEachState.joinReady ? 'all done' : `${forEachState.waitingOnBranchIds?.length || 0} pending`}
+                                    {t('itemsCount', { count: forEachState.items.length })} • {forEachState.joinReady ? t('allDone') : t('itemsPending', { count: forEachState.waitingOnBranchIds?.length || 0 })}
                                   </div>
                                 )}
                                 {step.kind === 'subflow' && subflowState && (
                                   <div className="mt-2 text-[11px] text-text-3/58">
-                                    template: {subflowState.templateId} • {subflowState.status}
+                                    {t('templateLabel')}: {subflowState.templateId} • {subflowState.status}
                                   </div>
                                 )}
                                 {step.kind === 'swarm_claim' && swarmState && (
                                   <div className="mt-2 text-[11px] text-text-3/58">
-                                    {swarmState.claims.length} claim{swarmState.claims.length === 1 ? '' : 's'} • {swarmState.unclaimedItemIds.length} unclaimed
-                                    {swarmState.timedOut && ' • timed out'}
+                                    {t('claimsCount', { count: swarmState.claims.length })} • {t('unclaimedCount', { count: swarmState.unclaimedItemIds.length })}
+                                    {swarmState.timedOut && ` • ${t('timedOut')}`}
                                   </div>
                                 )}
                                 {step.kind === 'join' && (
                                   <div className="mt-2 text-[11px] text-text-3/58">
-                                    {joinSource?.joinReady ? 'ready to merge' : 'waiting for parallel branches'}
+                                    {joinSource?.joinReady ? t('readyToMerge') : t('waitingForParallel')}
                                   </div>
                                 )}
                               </div>
@@ -1205,10 +1207,10 @@ export default function ProtocolsPage() {
                       </div>
 
                       <div className="rounded-[20px] border border-white/[0.06] bg-white/[0.03] p-4">
-                        <div className="text-[12px] font-700 uppercase tracking-[0.12em] text-text-3/55">Artifacts</div>
+                        <div className="text-[12px] font-700 uppercase tracking-[0.12em] text-text-3/55">{t('artifacts')}</div>
                         <div className="mt-3 space-y-3">
                           {(detail.run.artifacts || []).length === 0 ? (
-                            <div className="text-[13px] text-text-3/65">No artifacts yet.</div>
+                            <div className="text-[13px] text-text-3/65">{t('noArtifacts')}</div>
                           ) : detail.run.artifacts?.map((artifact) => (
                             <div key={artifact.id} className="rounded-[14px] border border-white/[0.06] bg-white/[0.02] p-4">
                               <div className="flex items-center justify-between gap-3">
@@ -1231,9 +1233,9 @@ export default function ProtocolsPage() {
                       <div className="rounded-[20px] border border-white/[0.06] bg-white/[0.03] p-4">
                         <div className="flex items-center justify-between gap-3">
                           <div>
-                            <div className="text-[12px] font-700 uppercase tracking-[0.12em] text-text-3/55">Transcript Preview</div>
+                            <div className="text-[12px] font-700 uppercase tracking-[0.12em] text-text-3/55">{t('transcriptPreview')}</div>
                             <div className="mt-1 text-[12px] text-text-3/62">
-                              The full live room stays hidden from the normal chatroom list and opens only from this run or its parent context.
+                              {t('transcriptPreviewDesc')}
                             </div>
                           </div>
                           {detail.transcript?.id && (
@@ -1242,7 +1244,7 @@ export default function ProtocolsPage() {
                               onClick={() => router.push(`/chatrooms/${encodeURIComponent(detail.transcript?.id || '')}`)}
                               className="rounded-[10px] border border-white/[0.08] bg-white/[0.04] px-3 py-1.5 text-[11px] font-700 text-text-2 cursor-pointer"
                             >
-                              Open Room
+                              {t('openRoom')}
                             </button>
                           )}
                         </div>
@@ -1257,16 +1259,16 @@ export default function ProtocolsPage() {
                               <div className="mt-2 whitespace-pre-wrap text-[13px] leading-relaxed text-text-2">{message.text}</div>
                             </div>
                           )) : (
-                            <div className="text-[13px] text-text-3/65">No transcript messages yet.</div>
+                            <div className="text-[13px] text-text-3/65">{t('noTranscriptMessages')}</div>
                           )}
                         </div>
                       </div>
 
                       <div className="rounded-[20px] border border-white/[0.06] bg-white/[0.03] p-4">
-                        <div className="text-[12px] font-700 uppercase tracking-[0.12em] text-text-3/55">Event Timeline</div>
+                        <div className="text-[12px] font-700 uppercase tracking-[0.12em] text-text-3/55">{t('eventTimeline')}</div>
                         <div className="mt-3 max-h-[360px] space-y-3 overflow-y-auto pr-1">
                           {detail.events.length === 0 ? (
-                            <div className="text-[13px] text-text-3/65">No run events yet.</div>
+                            <div className="text-[13px] text-text-3/65">{t('noRunEvents')}</div>
                           ) : detail.events.map((event) => (
                             <div key={event.id} className="rounded-[14px] border border-white/[0.06] bg-white/[0.02] p-3">
                               <div className="flex items-center justify-between gap-3">

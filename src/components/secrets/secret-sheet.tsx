@@ -158,7 +158,7 @@ export function SecretSheet() {
 
         {scope === 'agent' && (
           <div>
-            <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-2">Agents</label>
+            <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-2">智能体</label>
             <div className="max-h-[240px] overflow-y-auto rounded-[12px] border border-white/[0.06] bg-white/[0.03]">
               {agentList.length === 0 ? (
                 <p className="p-3 text-[12px] text-text-3">No agents available</p>
@@ -200,7 +200,7 @@ export function SecretSheet() {
             </button>
           )}
           <div className="flex-1" />
-          <button onClick={handleClose} className="px-5 py-3 rounded-[14px] border border-white/[0.08] bg-transparent text-text-2 text-[14px] font-600 cursor-pointer hover:bg-surface-2 transition-colors" style={{ fontFamily: 'inherit' }}>Cancel</button>
+          <button onClick={handleClose} className="px-5 py-3 rounded-[14px] border border-white/[0.08] bg-transparent text-text-2 text-[14px] font-600 cursor-pointer hover:bg-surface-2 transition-colors" style={{ fontFamily: 'inherit' }}>取消</button>
           <button
             onClick={handleSave}
             disabled={saving || !name.trim() || (!editing && !value.trim())}

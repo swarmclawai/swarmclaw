@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslation } from 'react-i18next';
 import { useEffect, useMemo, useState } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { api } from '@/lib/app/api-client'
@@ -11,6 +12,7 @@ import { ActivityTab } from './tabs/activity-tab'
 import type { BoardTask } from '@/types'
 
 export function ProjectDetail() {
+  const { t } = useTranslation()
   const activeProjectFilter = useAppStore((s) => s.activeProjectFilter)
   const projects = useAppStore((s) => s.projects)
   const tasks = useAppStore((s) => s.tasks) as Record<string, BoardTask>
@@ -55,10 +57,10 @@ export function ProjectDetail() {
             </svg>
           </div>
           <h2 className="font-display text-[20px] font-700 text-text mb-2 tracking-[-0.02em]">
-            Select a Project
+            {t('selectProject')}
           </h2>
           <p className="text-[14px] text-text-3/60">
-            Choose a project from the list to see its agents, tasks, and activity.
+            {t('selectProjectDesc')}
           </p>
         </div>
       </div>

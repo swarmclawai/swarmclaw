@@ -467,7 +467,7 @@ export function StepAgents({
                             rel="noopener noreferrer"
                             className="text-[13px] text-accent-bright hover:underline whitespace-nowrap"
                           >
-                            Open Dashboard
+                            打开仪表盘
                           </a>
                         )}
                       </div>

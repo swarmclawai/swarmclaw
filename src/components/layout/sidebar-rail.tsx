@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslation } from 'react-i18next';
 import { useState, useEffect } from 'react'
 import { usePathname } from 'next/navigation'
 import { useAppStore } from '@/stores/use-app-store'
@@ -27,6 +28,7 @@ export function SidebarRail({
   isViewEnabled: (view: AppView) => boolean
   mobile?: boolean
 }) {
+  const { t } = useTranslation()
   const pathname = usePathname()
   const navigateTo = useNavigate()
   const currentUser = useAppStore((s) => s.currentUser)
@@ -108,7 +110,7 @@ export function SidebarRail({
           <button
             onClick={toggleRail}
             className="ml-auto w-7 h-7 rounded-[8px] flex items-center justify-center text-text-3 hover:text-text hover:bg-white/[0.04] transition-all cursor-pointer bg-transparent border-none"
-            title="Collapse sidebar"
+            title={t('collapseSidebar')}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
               <polyline points="11 17 6 12 11 7" />
@@ -121,7 +123,7 @@ export function SidebarRail({
       {/* Expand button when collapsed */}
       {!railExpanded && !mobile && (
         <div className="flex justify-center mb-2">
-          <button onClick={toggleRail} className="rail-btn" title="Expand sidebar">
+          <button onClick={toggleRail} className="rail-btn" title={t('expandSidebar')}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
               <polyline points="13 17 18 12 13 7" />
               <polyline points="6 17 11 12 6 7" />
@@ -151,17 +153,17 @@ export function SidebarRail({
               </div>
             )}
             <div className="min-w-0">
-              <div className="truncate">{defaultAgent?.name || 'Choose Agent'}</div>
+              <div className="truncate">{defaultAgent?.name || t('chooseAgent')}</div>
               <div className="text-[10px] font-500 text-accent-bright/75 mt-0.5">
-                {defaultAgent ? 'Default shortcut' : 'Pick an agent to open its thread'}
+                {defaultAgent ? t('defaultShortcut') : t('pickAgentThread')}
               </div>
             </div>
           </button>
         </div>
       ) : (
         <RailTooltip
-          label={defaultAgent?.name || 'Choose Agent'}
-          description={defaultAgent ? 'Open your default agent shortcut chat' : 'Choose an agent thread'}
+          label={defaultAgent?.name || t('chooseAgent')}
+          description={defaultAgent ? t('openDefaultChat') : t('chooseAgentThread')}
         >
           <button onClick={goToDefaultChat} className={`rail-btn self-center mb-2 ${isDefaultChat ? 'active' : ''}`}>
             {defaultAgent ? (
@@ -187,14 +189,14 @@ export function SidebarRail({
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
               <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
             </svg>
-            Search
+            {t('search')}
             <kbd className="ml-auto px-1.5 py-0.5 rounded-[5px] bg-white/[0.06] border border-white/[0.08] text-[10px] font-mono text-text-3">
               ⌘K
             </kbd>
           </button>
         </div>
       ) : (
-        <RailTooltip label="Search" description="Search across all entities (⌘K)">
+        <RailTooltip label={t('search')} description={t('searchDescription')}>
           <button
             onClick={() => window.dispatchEvent(new CustomEvent('swarmclaw:open-search'))}
             className="rail-btn self-center mb-2"
@@ -211,21 +213,21 @@ export function SidebarRail({
         <div className={`flex flex-col gap-3 ${railExpanded ? 'px-3' : 'items-center'}`}>
           <div className={`flex flex-col gap-0.5 ${railExpanded ? '' : 'items-center'}`}>
             {railExpanded ? (
-              <div className="px-3 pb-1 text-[10px] font-700 uppercase tracking-[0.12em] text-text-3/45">Workspace</div>
+              <div className="px-3 pb-1 text-[10px] font-700 uppercase tracking-[0.12em] text-text-3/45">{t('workspace')}</div>
             ) : (
               <div className="my-1 h-px w-6 bg-white/[0.06]" />
             )}
-            <NavItem view="home" label="Home" expanded={railExpanded} isActive={isNavActive('home')} onClick={() => handleNavClick('home')}>
+            <NavItem view="home" label={t('home')} expanded={railExpanded} isActive={isNavActive('home')} onClick={() => handleNavClick('home')}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" />
               </svg>
             </NavItem>
-            <NavItem view="agents" label="Agents" expanded={railExpanded} isActive={isNavActive('agents')} onClick={() => handleNavClick('agents')}>
+            <NavItem view="agents" label={t('agents')} expanded={railExpanded} isActive={isNavActive('agents')} onClick={() => handleNavClick('agents')}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
               </svg>
             </NavItem>
-            <NavItem view="org_chart" label="Org Chart" expanded={railExpanded} isActive={isNavActive('org_chart')} onClick={() => handleNavClick('org_chart')}>
+            <NavItem view="org_chart" label={t('orgChart')} expanded={railExpanded} isActive={isNavActive('org_chart')} onClick={() => handleNavClick('org_chart')}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <rect x="9" y="2" width="6" height="4" rx="1" />
                 <rect x="2" y="18" width="6" height="4" rx="1" />
@@ -235,35 +237,35 @@ export function SidebarRail({
                 <path d="M5 14h14" />
               </svg>
             </NavItem>
-            <NavItem view="inbox" label="Inbox" expanded={railExpanded} isActive={isNavActive('inbox')} onClick={() => handleNavClick('inbox')}>
+            <NavItem view="inbox" label={t('inbox')} expanded={railExpanded} isActive={isNavActive('inbox')} onClick={() => handleNavClick('inbox')}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M22 12h-5l-2 3H9l-2-3H2" />
                 <path d="M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" />
               </svg>
             </NavItem>
-            <NavItem view="chatrooms" label="Chatrooms" expanded={railExpanded} isActive={isNavActive('chatrooms')} onClick={() => handleNavClick('chatrooms')}>
+            <NavItem view="chatrooms" label={t('chatrooms')} expanded={railExpanded} isActive={isNavActive('chatrooms')} onClick={() => handleNavClick('chatrooms')}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
                 <path d="M8 10h8" /><path d="M8 14h4" />
               </svg>
             </NavItem>
-            <NavItem view="protocols" label="Sessions" expanded={railExpanded} isActive={isNavActive('protocols')} onClick={() => handleNavClick('protocols')}>
+            <NavItem view="protocols" label={t('sessions')} expanded={railExpanded} isActive={isNavActive('protocols')} onClick={() => handleNavClick('protocols')}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M8 6h13" /><path d="M8 12h13" /><path d="M8 18h13" />
                 <path d="M3 6h.01" /><path d="M3 12h.01" /><path d="M3 18h.01" />
               </svg>
             </NavItem>
-            <NavItem view="projects" label="Projects" expanded={railExpanded} isActive={isNavActive('projects')} onClick={() => handleNavClick('projects')}>
+            <NavItem view="projects" label={t('projects')} expanded={railExpanded} isActive={isNavActive('projects')} onClick={() => handleNavClick('projects')}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <path d="M2 20a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8l-7-7H4a2 2 0 0 0-2 2v17Z" /><path d="M14 2v7h7" />
               </svg>
             </NavItem>
-            <NavItem view="swarmfeed" label="Feed" expanded={railExpanded} isActive={isNavActive('swarmfeed')} onClick={() => handleNavClick('swarmfeed')}>
+            <NavItem view="swarmfeed" label={t('feed')} expanded={railExpanded} isActive={isNavActive('swarmfeed')} onClick={() => handleNavClick('swarmfeed')}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M4 11a9 9 0 0 1 9 9" /><path d="M4 4a16 16 0 0 1 16 16" /><circle cx="5" cy="19" r="1" />
               </svg>
             </NavItem>
-            <NavItem view="marketplace" label="Marketplace" expanded={railExpanded} isActive={isNavActive('marketplace')} onClick={() => handleNavClick('marketplace')}>
+            <NavItem view="marketplace" label={t('marketplace')} expanded={railExpanded} isActive={isNavActive('marketplace')} onClick={() => handleNavClick('marketplace')}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z" /><line x1="3" x2="21" y1="6" y2="6" /><path d="M16 10a4 4 0 0 1-8 0" />
               </svg>
@@ -272,17 +274,17 @@ export function SidebarRail({
 
           <div className={`flex flex-col gap-0.5 ${railExpanded ? '' : 'items-center'}`}>
             {railExpanded ? (
-              <div className="px-3 pb-1 text-[10px] font-700 uppercase tracking-[0.12em] text-text-3/45">Execution</div>
+              <div className="px-3 pb-1 text-[10px] font-700 uppercase tracking-[0.12em] text-text-3/45">{t('execution')}</div>
             ) : (
               <div className="my-1 h-px w-6 bg-white/[0.06]" />
             )}
-            <NavItem view="tasks" label="Tasks" expanded={railExpanded} isActive={isNavActive('tasks')} onClick={() => handleNavClick('tasks')}>
+            <NavItem view="tasks" label={t('tasks')} expanded={railExpanded} isActive={isNavActive('tasks')} onClick={() => handleNavClick('tasks')}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" /><rect x="9" y="3" width="6" height="4" rx="1" /><path d="M9 14l2 2 4-4" />
               </svg>
             </NavItem>
 
-            <NavItem view="missions" label="Missions" expanded={railExpanded} isActive={isNavActive('missions')} onClick={() => handleNavClick('missions')}>
+            <NavItem view="missions" label={t('missions')} expanded={railExpanded} isActive={isNavActive('missions')} onClick={() => handleNavClick('missions')}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <circle cx="12" cy="12" r="10" />
                 <circle cx="12" cy="12" r="6" />
@@ -290,22 +292,22 @@ export function SidebarRail({
               </svg>
             </NavItem>
 
-            <NavItem view="schedules" label="Schedules" expanded={railExpanded} isActive={isNavActive('schedules')} onClick={() => handleNavClick('schedules')}>
+            <NavItem view="schedules" label={t('schedules')} expanded={railExpanded} isActive={isNavActive('schedules')} onClick={() => handleNavClick('schedules')}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
               </svg>
             </NavItem>
-            <NavItem view="memory" label="Memory" expanded={railExpanded} isActive={isNavActive('memory')} onClick={() => handleNavClick('memory')}>
+            <NavItem view="memory" label={t('memory')} expanded={railExpanded} isActive={isNavActive('memory')} onClick={() => handleNavClick('memory')}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <ellipse cx="12" cy="5" rx="9" ry="3" /><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" /><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
               </svg>
             </NavItem>
-            <NavItem view="runs" label="Runs" expanded={railExpanded} isActive={isNavActive('runs')} onClick={() => handleNavClick('runs')}>
+            <NavItem view="runs" label={t('runs')} expanded={railExpanded} isActive={isNavActive('runs')} onClick={() => handleNavClick('runs')}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
               </svg>
             </NavItem>
-            <NavItem view="quality" label="Quality" expanded={railExpanded} isActive={isNavActive('quality')} onClick={() => handleNavClick('quality')}>
+            <NavItem view="quality" label={t('quality')} expanded={railExpanded} isActive={isNavActive('quality')} onClick={() => handleNavClick('quality')}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M9 12l2 2 4-4" />
                 <path d="M12 3l7 4v5c0 4.4-2.9 8.5-7 9-4.1-.5-7-4.6-7-9V7l7-4z" />
@@ -315,38 +317,38 @@ export function SidebarRail({
 
           <div className={`flex flex-col gap-0.5 ${railExpanded ? '' : 'items-center'}`}>
             {railExpanded ? (
-              <div className="px-3 pb-1 text-[10px] font-700 uppercase tracking-[0.12em] text-text-3/45">Knowledge</div>
+              <div className="px-3 pb-1 text-[10px] font-700 uppercase tracking-[0.12em] text-text-3/45">{t('knowledge')}</div>
             ) : (
               <div className="my-1 h-px w-6 bg-white/[0.06]" />
             )}
-            <NavItem view="knowledge" label="Knowledge" expanded={railExpanded} isActive={isNavActive('knowledge')} onClick={() => handleNavClick('knowledge')}>
+            <NavItem view="knowledge" label={t('knowledge')} expanded={railExpanded} isActive={isNavActive('knowledge')} onClick={() => handleNavClick('knowledge')}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <circle cx="12" cy="12" r="10" /><line x1="2" y1="12" x2="22" y2="12" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
               </svg>
             </NavItem>
-            <NavItem view="skills" label="Skills" badge={skillDraftCount} expanded={railExpanded} isActive={isNavActive('skills')} onClick={() => handleNavClick('skills')}>
+            <NavItem view="skills" label={t('skills')} badge={skillDraftCount} expanded={railExpanded} isActive={isNavActive('skills')} onClick={() => handleNavClick('skills')}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" /><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
               </svg>
             </NavItem>
-            <NavItem view="connectors" label="Connectors" expanded={railExpanded} isActive={isNavActive('connectors')} onClick={() => handleNavClick('connectors')}>
+            <NavItem view="connectors" label={t('connectors')} expanded={railExpanded} isActive={isNavActive('connectors')} onClick={() => handleNavClick('connectors')}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <path d="M15 7h3a5 5 0 0 1 5 5 5 5 0 0 1-5 5h-3m-6 0H6a5 5 0 0 1-5-5 5 5 0 0 1 5-5h3" /><line x1="8" y1="12" x2="16" y2="12" />
               </svg>
             </NavItem>
             {isViewEnabled('webhooks') && (
-              <NavItem view="webhooks" label="Webhooks" expanded={railExpanded} isActive={isNavActive('webhooks')} onClick={() => handleNavClick('webhooks')}>
+              <NavItem view="webhooks" label={t('webhooks')} expanded={railExpanded} isActive={isNavActive('webhooks')} onClick={() => handleNavClick('webhooks')}>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                   <path d="M22 12h-4l-3 7L9 5l-3 7H2" />
                 </svg>
               </NavItem>
             )}
-            <NavItem view="mcp_servers" label="MCP Servers" expanded={railExpanded} isActive={isNavActive('mcp_servers')} onClick={() => handleNavClick('mcp_servers')}>
+            <NavItem view="mcp_servers" label={t('mcpServers')} expanded={railExpanded} isActive={isNavActive('mcp_servers')} onClick={() => handleNavClick('mcp_servers')}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <rect x="2" y="2" width="20" height="8" rx="2" /><rect x="2" y="14" width="20" height="8" rx="2" /><line x1="6" y1="6" x2="6.01" y2="6" /><line x1="6" y1="18" x2="6.01" y2="18" />
               </svg>
             </NavItem>
-            <NavItem view="extensions" label="Extensions" expanded={railExpanded} isActive={isNavActive('extensions')} onClick={() => handleNavClick('extensions')}>
+            <NavItem view="extensions" label={t('extensions')} expanded={railExpanded} isActive={isNavActive('extensions')} onClick={() => handleNavClick('extensions')}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M12 2v4m0 12v4M2 12h4m12 0h4" /><circle cx="12" cy="12" r="4" /><path d="M8 8L5.5 5.5M16 8l2.5-2.5M8 16l-2.5 2.5M16 16l2.5 2.5" />
               </svg>
@@ -355,43 +357,43 @@ export function SidebarRail({
 
           <div className={`flex flex-col gap-0.5 ${railExpanded ? '' : 'items-center'}`}>
             {railExpanded ? (
-              <div className="px-3 pb-1 text-[10px] font-700 uppercase tracking-[0.12em] text-text-3/45">System</div>
+              <div className="px-3 pb-1 text-[10px] font-700 uppercase tracking-[0.12em] text-text-3/45">{t('system')}</div>
             ) : (
               <div className="my-1 h-px w-6 bg-white/[0.06]" />
             )}
-            <NavItem view="secrets" label="Secrets" expanded={railExpanded} isActive={isNavActive('secrets')} onClick={() => handleNavClick('secrets')}>
+            <NavItem view="secrets" label={t('secrets')} expanded={railExpanded} isActive={isNavActive('secrets')} onClick={() => handleNavClick('secrets')}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" />
               </svg>
             </NavItem>
-            <NavItem view="wallets" label="Wallets" expanded={railExpanded} isActive={isNavActive('wallets')} onClick={() => handleNavClick('wallets')}>
+            <NavItem view="wallets" label={t('wallets')} expanded={railExpanded} isActive={isNavActive('wallets')} onClick={() => handleNavClick('wallets')}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <rect x="2" y="6" width="20" height="14" rx="2" /><path d="M22 10H18a2 2 0 0 0 0 4h4" /><path d="M6 6V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2" />
               </svg>
             </NavItem>
-            <NavItem view="providers" label="Providers" expanded={railExpanded} isActive={isNavActive('providers')} onClick={() => handleNavClick('providers')}>
+            <NavItem view="providers" label={t('providers')} expanded={railExpanded} isActive={isNavActive('providers')} onClick={() => handleNavClick('providers')}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z" />
               </svg>
             </NavItem>
-            <NavItem view="usage" label="Usage" expanded={railExpanded} isActive={isNavActive('usage')} onClick={() => handleNavClick('usage')}>
+            <NavItem view="usage" label={t('usage')} expanded={railExpanded} isActive={isNavActive('usage')} onClick={() => handleNavClick('usage')}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <line x1="18" y1="20" x2="18" y2="10" /><line x1="12" y1="20" x2="12" y2="4" /><line x1="6" y1="20" x2="6" y2="14" />
               </svg>
             </NavItem>
-            <NavItem view="activity" label="Activity" expanded={railExpanded} isActive={isNavActive('activity')} onClick={() => handleNavClick('activity')}>
+            <NavItem view="activity" label={t('activity')} expanded={railExpanded} isActive={isNavActive('activity')} onClick={() => handleNavClick('activity')}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <path d="M12 8v4l3 3" /><circle cx="12" cy="12" r="10" />
               </svg>
             </NavItem>
-            <NavItem view="autonomy" label="Autonomy" expanded={railExpanded} isActive={isNavActive('autonomy')} onClick={() => handleNavClick('autonomy')}>
+            <NavItem view="autonomy" label={t('autonomy')} expanded={railExpanded} isActive={isNavActive('autonomy')} onClick={() => handleNavClick('autonomy')}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M12 3l7 3v6c0 4.4-2.92 8.46-7 9-4.08-.54-7-4.6-7-9V6l7-3z" />
                 <path d="M12 8v5" />
                 <path d="M12 16h.01" />
               </svg>
             </NavItem>
-            <NavItem view="logs" label="Logs" expanded={railExpanded} isActive={isNavActive('logs')} onClick={() => handleNavClick('logs')}>
+            <NavItem view="logs" label={t('logs')} expanded={railExpanded} isActive={isNavActive('logs')} onClick={() => handleNavClick('logs')}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /><polyline points="10 9 9 9 8 9" />
               </svg>
@@ -415,13 +417,13 @@ export function SidebarRail({
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="shrink-0">
                 <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" /><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
               </svg>
-              Docs
+              {t('docs')}
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="ml-auto opacity-40">
                 <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" />
               </svg>
             </a>
           ) : (
-            <RailTooltip label="Docs" description="Open documentation site">
+            <RailTooltip label={t('docs')} description={t('openDocs')}>
               <a href="https://swarmclaw.ai/docs" target="_blank" rel="noopener noreferrer" className="rail-btn">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                   <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" /><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
@@ -441,13 +443,13 @@ export function SidebarRail({
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="shrink-0">
                 <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
               </svg>
-              Star on GitHub
+              {t('starOnGitHub')}
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="ml-auto opacity-40">
                 <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" />
               </svg>
             </a>
           ) : (
-            <RailTooltip label="Star on GitHub" description="Support SwarmClaw with a GitHub star">
+            <RailTooltip label={t('starOnGitHub')} description={t('supportGitHubStar')}>
               <a href={GITHUB_REPO_URL} target="_blank" rel="noopener noreferrer" className="rail-btn">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                   <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
@@ -468,13 +470,13 @@ export function SidebarRail({
                 <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
                 <path d="M8 10h.01M12 10h.01M16 10h.01" />
               </svg>
-              Join Discord
+              {t('joinDiscord')}
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="ml-auto opacity-40">
                 <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" />
               </svg>
             </a>
           ) : (
-            <RailTooltip label="Join Discord" description="Open the SwarmClaw community">
+            <RailTooltip label={t('joinDiscord')} description={t('openDiscord')}>
               <a href={DISCORD_URL} target="_blank" rel="noopener noreferrer" className="rail-btn">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                   <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
@@ -487,13 +489,13 @@ export function SidebarRail({
           {railExpanded ? (
             <NotificationCenter variant="row" align="left" direction="up" />
           ) : (
-            <RailTooltip label="Notifications" description="View system notifications">
+            <RailTooltip label={t('notifications')} description={t('viewNotifications')}>
               <div className="rail-btn flex items-center justify-center">
                 <NotificationCenter align="left" direction="up" />
               </div>
             </RailTooltip>
           )}
-          <NavItem view="settings" label="Settings" expanded={railExpanded} isActive={isNavActive('settings')} onClick={() => handleNavClick('settings')}>
+          <NavItem view="settings" label={t('settings')} expanded={railExpanded} isActive={isNavActive('settings')} onClick={() => handleNavClick('settings')}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
               <circle cx="12" cy="12" r="3" />
               <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
@@ -511,7 +513,7 @@ export function SidebarRail({
               <span className="text-[13px] font-500 text-text-2 capitalize truncate">{currentUser}</span>
             </button>
           ) : (
-            <RailTooltip label="Profile" description="Edit your profile">
+            <RailTooltip label={t('profile')} description={t('editProfile')}>
               <button onClick={onSwitchUser} className="mt-2 bg-transparent border-none cursor-pointer shrink-0">
                 <Avatar user={currentUser!} size="sm" avatarSeed={appSettings.userAvatarSeed} />
               </button>

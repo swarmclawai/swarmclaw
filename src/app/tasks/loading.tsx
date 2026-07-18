@@ -1,5 +1,9 @@
+'use client'
+
+import { useTranslation } from 'react-i18next';
 import { PageLoader } from '@/components/ui/page-loader'
 
 export default function Loading() {
-  return <PageLoader label="Loading tasks..." />
+  const { t } = useTranslation()
+  return <PageLoader label={t('loadingTasks')} />
 }

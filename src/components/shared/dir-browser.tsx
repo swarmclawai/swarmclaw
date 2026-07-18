@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslation } from 'react-i18next';
 import { useEffect, useState, useMemo } from 'react'
 import { api } from '@/lib/app/api-client'
 import { SearchInput } from '@/components/ui/search-input'
@@ -25,6 +26,7 @@ interface DirBrowserProps {
 type Mode = 'native' | 'browse'
 
 export function DirBrowser({ value, file, onChange, onClear }: DirBrowserProps) {
+  const { t } = useTranslation()
   const [mode, setMode] = useState<Mode>('native')
   const [picking, setPicking] = useState<'file' | 'folder' | null>(null)
 
@@ -128,7 +130,7 @@ export function DirBrowser({ value, file, onChange, onClear }: DirBrowserProps) 
           className="shrink-0 px-3 py-3 rounded-[14px] border border-white/[0.08] bg-surface text-text-3 text-[13px] cursor-pointer hover:bg-surface-2 transition-colors"
           style={{ fontFamily: 'inherit' }}
         >
-          Clear
+          {t('clear')}
         </button>
       </div>
     )
@@ -147,13 +149,13 @@ export function DirBrowser({ value, file, onChange, onClear }: DirBrowserProps) 
               style={{ fontFamily: 'inherit' }}
             >
               {picking === 'folder' ? (
-                <span className="text-text-3">Opening...</span>
+                <span className="text-text-3">{t('opening')}</span>
               ) : (
                 <>
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" className="text-text-3">
                     <path d="M10 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-2Z" />
                   </svg>
-                  Choose Folder
+                  {t('chooseFolder')}
                 </>
               )}
             </button>
@@ -164,14 +166,14 @@ export function DirBrowser({ value, file, onChange, onClear }: DirBrowserProps) 
               style={{ fontFamily: 'inherit' }}
             >
               {picking === 'file' ? (
-                <span className="text-text-3">Opening...</span>
+                <span className="text-text-3">{t('opening')}</span>
               ) : (
                 <>
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-text-3">
                     <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
                     <polyline points="14 2 14 8 20 8" />
                   </svg>
-                  Choose File
+                  {t('chooseFile')}
                 </>
               )}
             </button>
@@ -180,7 +182,7 @@ export function DirBrowser({ value, file, onChange, onClear }: DirBrowserProps) 
             onClick={() => setMode('browse')}
             className="text-[12px] text-text-3/60 hover:text-text-3 transition-colors cursor-pointer bg-transparent border-none p-0"
           >
-            Or browse directories manually
+            {t('orBrowseManually')}
           </button>
         </>
       ) : (
@@ -191,7 +193,7 @@ export function DirBrowser({ value, file, onChange, onClear }: DirBrowserProps) 
             value={pathInput}
             onChange={(e) => setPathInput(e.target.value)}
             onKeyDown={handlePathSubmit}
-            placeholder="Type a path and press Enter..."
+            placeholder={t('typePathPlaceholder')}
             className="w-full px-4 py-3 rounded-[14px] border border-white/[0.08] bg-surface text-text text-[14px] font-mono outline-none transition-all duration-200 placeholder:text-text-3/50 focus-glow"
           />
 
@@ -230,17 +232,17 @@ export function DirBrowser({ value, file, onChange, onClear }: DirBrowserProps) 
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               onClear={() => setSearch('')}
-              placeholder="Filter directories..."
+              placeholder={t('filterDirectories')}
             />
           )}
 
           {/* Directory list */}
           <div className="max-h-[200px] overflow-y-auto rounded-[14px] border border-white/[0.06] bg-surface divide-y divide-white/[0.04]">
             {loading ? (
-              <div className="py-8 text-center text-[13px] text-text-3/50">Loading...</div>
+              <div className="py-8 text-center text-[13px] text-text-3/50">{t('loading')}</div>
             ) : filteredDirs.length === 0 ? (
               <div className="py-8 text-center text-[13px] text-text-3/50">
-                {search ? 'No matching directories' : 'No subdirectories'}
+                {search ? t('noMatchingDirectories') : t('noSubdirectories')}
               </div>
             ) : (
               filteredDirs.map((d) => (
@@ -268,14 +270,14 @@ export function DirBrowser({ value, file, onChange, onClear }: DirBrowserProps) 
               className="flex-1 py-3 rounded-[14px] border border-accent-bright/20 bg-accent-soft text-accent-bright text-[14px] font-600 cursor-pointer hover:brightness-110 transition-all"
               style={{ fontFamily: 'inherit' }}
             >
-              Select This Directory
+              {t('selectThisDirectory')}
             </button>
           </div>
           <button
             onClick={() => setMode('native')}
             className="text-[12px] text-text-3/60 hover:text-text-3 transition-colors cursor-pointer bg-transparent border-none p-0"
           >
-            Or use system file picker
+            {t('orUseSystemPicker')}
           </button>
         </>
       )}

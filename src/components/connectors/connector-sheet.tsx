@@ -1390,7 +1390,7 @@ export function ConnectorSheet() {
       {/* Error display */}
       {runtimeConnector?.lastError && (
         <div className="mb-6 p-4 rounded-[14px] bg-red-500/[0.06] border border-red-500/15">
-          <div className="text-[12px] font-600 text-red-400 mb-1">Error</div>
+          <div className="text-[12px] font-600 text-red-400 mb-1">错误</div>
           <div className="text-[12px] text-red-400/70 leading-[1.5] font-mono">{runtimeConnector.lastError}</div>
         </div>
       )}

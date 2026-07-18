@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslation } from 'react-i18next';
 import { useEffect, useCallback, useState, useRef, useMemo } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { useAgentsQuery } from '@/features/agents/queries'
@@ -69,6 +70,7 @@ function attentionRank(task: BoardTask, now: number | null): number {
 }
 
 export default function TasksPage() {
+  const { t } = useTranslation()
   const now = useNow()
   const setTaskSheetOpen = useAppStore((s) => s.setTaskSheetOpen)
   const setEditingTaskId = useAppStore((s) => s.setEditingTaskId)
@@ -105,43 +107,43 @@ export default function TasksPage() {
     setBulkActing(true)
     try {
       await bulkUpdateTasksMutation.mutateAsync({ ids: [...selectedIds], patch: { status } })
-      toast.success(`Moved ${selectedIds.size} task(s) to ${status}`)
+      toast.success(t('bulkMoved', { count: selectedIds.size, status }))
       clearSelection()
     } catch {
-      toast.error('Bulk update failed')
+      toast.error(t('bulkUpdateFailed'))
     } finally {
       setBulkActing(false)
     }
-  }, [bulkUpdateTasksMutation, clearSelection, selectedIds])
+  }, [bulkUpdateTasksMutation, clearSelection, selectedIds, t])
 
   const handleBulkAgent = useCallback(async (agentId: string) => {
     if (selectedIds.size === 0) return
     setBulkActing(true)
     try {
       await bulkUpdateTasksMutation.mutateAsync({ ids: [...selectedIds], patch: { agentId } })
-      const name = agents[agentId]?.name || 'agent'
-      toast.success(`Assigned ${selectedIds.size} task(s) to ${name}`)
+      const name = agents[agentId]?.name || t('agent')
+      toast.success(t('bulkAssignedAgent', { count: selectedIds.size, name }))
       clearSelection()
     } catch {
-      toast.error('Bulk assign failed')
+      toast.error(t('bulkAssignFailed'))
     } finally {
       setBulkActing(false)
     }
-  }, [agents, bulkUpdateTasksMutation, clearSelection, selectedIds])
+  }, [agents, bulkUpdateTasksMutation, clearSelection, selectedIds, t])
 
   const handleBulkProject = useCallback(async (projectId: string | null) => {
     if (selectedIds.size === 0) return
     setBulkActing(true)
     try {
       await bulkUpdateTasksMutation.mutateAsync({ ids: [...selectedIds], patch: { projectId } })
-      toast.success(projectId ? `Assigned ${selectedIds.size} task(s) to project` : `Cleared project from ${selectedIds.size} task(s)`)
+      toast.success(projectId ? t('bulkAssignedProject', { count: selectedIds.size }) : t('bulkClearedProject', { count: selectedIds.size }))
       clearSelection()
     } catch {
-      toast.error('Bulk assign failed')
+      toast.error(t('bulkAssignFailed'))
     } finally {
       setBulkActing(false)
     }
-  }, [bulkUpdateTasksMutation, clearSelection, selectedIds])
+  }, [bulkUpdateTasksMutation, clearSelection, selectedIds, t])
 
   // Bulk action bar dropdowns
   const [bulkAgentOpen, setBulkAgentOpen] = useState(false)
@@ -268,7 +270,7 @@ export default function TasksPage() {
 
   const handleGitHubImport = useCallback(async () => {
     if (!githubRepo.trim()) {
-      setGitHubImportError('Repository is required.')
+      setGitHubImportError(t('githubRepoRequired'))
       return
     }
 
@@ -292,12 +294,12 @@ export default function TasksPage() {
       })
       setGitHubImportResult(result)
       const summary = result.created.length > 0
-        ? `Imported ${result.created.length} issue(s) from ${result.repo}`
-        : `No new issues imported from ${result.repo}`
-      const suffix = result.skipped.length > 0 ? `, skipped ${result.skipped.length} existing` : ''
+        ? t('githubImportSuccess', { count: result.created.length, repo: result.repo })
+        : t('githubImportNoNew', { repo: result.repo })
+      const suffix = result.skipped.length > 0 ? `, ${t('githubSkipped', { count: result.skipped.length })}` : ''
       toast.success(summary + suffix)
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'GitHub import failed'
+      const message = err instanceof Error ? err.message : t('githubImportFailed')
       setGitHubImportError(message)
       toast.error(message)
     } finally {
@@ -311,6 +313,7 @@ export default function TasksPage() {
     githubState,
     githubToken,
     importGitHubIssuesMutation,
+    t,
   ])
 
   // Task counts per project (non-archived)
@@ -336,18 +339,18 @@ export default function TasksPage() {
   }, [now, scopedTasks])
 
   const activeScopeLabel = useMemo(() => {
-    if (taskScopeFilter === 'all') return 'All tasks'
-    if (taskScopeFilter === 'agent' && filterAgentId && agents[filterAgentId]) return `${agents[filterAgentId].name} activity`
-    return 'User-facing tasks'
-  }, [agents, filterAgentId, taskScopeFilter])
+    if (taskScopeFilter === 'all') return t('allTasks')
+    if (taskScopeFilter === 'agent' && filterAgentId && agents[filterAgentId]) return t('agentActivity', { name: agents[filterAgentId].name })
+    return t('userFacingTasks')
+  }, [agents, filterAgentId, taskScopeFilter, t])
 
   const activeAttentionLabel = useMemo(() => {
     if (attentionFilter === 'all') return null
-    if (attentionFilter === 'needs-attention') return 'Needs attention'
-    if (attentionFilter === 'blocked') return 'Blocked tasks'
-    if (attentionFilter === 'overdue') return 'Overdue tasks'
-    return 'Failed tasks'
-  }, [attentionFilter])
+    if (attentionFilter === 'needs-attention') return t('needsAttention')
+    if (attentionFilter === 'blocked') return t('blockedTasks')
+    if (attentionFilter === 'overdue') return t('overdueTasks')
+    return t('failedTasks')
+  }, [attentionFilter, t])
 
   // Custom dropdown state
   const [projectDropdownOpen, setProjectDropdownOpen] = useState(false)
@@ -392,10 +395,10 @@ export default function TasksPage() {
     <div className="flex-1 min-h-0 flex flex-col h-full overflow-hidden">
       <div className="flex items-center justify-between px-8 pt-6 pb-4 shrink-0">
         <div>
-          <h1 className="font-display text-[28px] font-800 tracking-[-0.03em]">Task Board</h1>
+          <h1 className="font-display text-[28px] font-800 tracking-[-0.03em]">{t('taskBoard')}</h1>
           <div className="flex items-center gap-3 mt-1">
             <p className="text-[13px] text-text-3">
-              {stats.total} task{stats.total !== 1 ? 's' : ''}
+              {t('tasksCount', { count: stats.total })}
             </p>
             <span className="inline-flex items-center gap-1 rounded-full bg-white/[0.04] px-2 py-1 text-[11px] font-600 text-text-2">
               {taskScopeFilter === 'agent' && filterAgentId && agents[filterAgentId] ? (
@@ -410,12 +413,12 @@ export default function TasksPage() {
             {stats.running > 0 && (
               <span className="inline-flex items-center gap-1 text-[11px] font-600 text-blue-400">
                 <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
-                {stats.running} running
+                {t('runningCount', { count: stats.running })}
               </span>
             )}
             {stats.overdue > 0 && (
               <span className="text-[11px] font-600 text-red-400">
-                {stats.overdue} overdue
+                {t('overdueCount', { count: stats.overdue })}
               </span>
             )}
           </div>
@@ -423,8 +426,8 @@ export default function TasksPage() {
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1 p-1 rounded-[11px] bg-surface-2 border border-white/[0.06]">
             {([
-              ['board', 'Board'],
-              ['list', 'List'],
+              ['board', t('board')],
+              ['list', t('list')],
             ] as const).map(([value, label]) => (
               <button
                 key={value}
@@ -454,7 +457,7 @@ export default function TasksPage() {
                   <AgentAvatar seed={agents[filterAgentId].avatarSeed || null} avatarUrl={agents[filterAgentId].avatarUrl} name={agents[filterAgentId].name} size={18} />
                   {agents[filterAgentId].name}
                 </>
-              ) : taskScopeFilter === 'all' ? 'All Tasks' : 'User View'}
+              ) : taskScopeFilter === 'all' ? t('allTasks') : t('userView')}
               <svg width="10" height="10" viewBox="0 0 10 10" fill="none" className="ml-auto opacity-50">
                 <path d="M2.5 4L5 6.5L7.5 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
@@ -472,12 +475,12 @@ export default function TasksPage() {
                   style={{ fontFamily: 'inherit' }}
                 >
                   <span className="mt-0.5 inline-flex h-5 items-center rounded-full bg-emerald-500/12 px-1.5 text-[10px] font-700 uppercase tracking-[0.08em] text-emerald-400">
-                    Default
+                    {t('default')}
                   </span>
                   <span className="min-w-0">
-                    <span className="block">User-facing tasks</span>
+                    <span className="block">{t('userFacingTasks')}</span>
                     <span className="mt-0.5 block text-[11px] font-500 text-text-3/60">
-                      Hide scheduled, delegated, and agent-created internal work.
+                      {t('userFacingDescription')}
                     </span>
                   </span>
                 </button>
@@ -492,12 +495,12 @@ export default function TasksPage() {
                   style={{ fontFamily: 'inherit' }}
                 >
                   <span className="mt-0.5 inline-flex h-5 items-center rounded-full bg-white/[0.06] px-1.5 text-[10px] font-700 uppercase tracking-[0.08em] text-text-3">
-                    All
+                    {t('all')}
                   </span>
                   <span className="min-w-0">
-                    <span className="block">All tasks</span>
+                    <span className="block">{t('allTasks')}</span>
                     <span className="mt-0.5 block text-[11px] font-500 text-text-3/60">
-                      Include internal agent execution, schedules, and delegations.
+                      {t('allTasksDescription')}
                     </span>
                   </span>
                 </button>
@@ -518,7 +521,7 @@ export default function TasksPage() {
                     <span className="min-w-0 flex-1">
                       <span className="block truncate">{a.name}</span>
                       <span className="mt-0.5 block text-[11px] font-500 text-text-3/60">
-                        Assigned, created, or delegated by this agent
+                        {t('agentTasksDescription')}
                       </span>
                     </span>
                   </button>
@@ -541,7 +544,7 @@ export default function TasksPage() {
                     <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: projects[activeProjectFilter].color || '#6366F1' }} />
                     {projects[activeProjectFilter].name}
                   </>
-                ) : 'All Projects'}
+                ) : t('allProjects')}
                 <svg width="10" height="10" viewBox="0 0 10 10" fill="none" className="ml-auto opacity-50">
                   <path d="M2.5 4L5 6.5L7.5 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
@@ -554,7 +557,7 @@ export default function TasksPage() {
                       ${!activeProjectFilter ? 'bg-white/[0.06] text-text' : 'bg-transparent text-text-3 hover:bg-white/[0.04]'}`}
                     style={{ fontFamily: 'inherit' }}
                   >
-                    All Projects
+                    {t('allProjects')}
                   </button>
                   {Object.values(projects).map((p) => (
                     <button
@@ -583,7 +586,7 @@ export default function TasksPage() {
                 bg-transparent border-white/[0.06] text-text-3 hover:bg-white/[0.03] appearance-none"
               style={{ fontFamily: 'inherit', minWidth: 110 }}
             >
-              <option value="">All Tags</option>
+              <option value="">{t('allTags')}</option>
               {allTags.map((tag) => (
                 <option key={tag} value={tag}>{tag}</option>
               ))}
@@ -597,7 +600,7 @@ export default function TasksPage() {
                 : 'bg-transparent border-white/[0.06] text-text-3 hover:bg-white/[0.03]'}`}
             style={{ fontFamily: 'inherit' }}
           >
-            {showArchived ? 'Hide' : 'Show'} Archived{!showArchived && archivedCount > 0 ? ` (${archivedCount})` : ''}
+            {showArchived ? t('hideArchived') : t('showArchived')}{!showArchived && archivedCount > 0 ? ` (${archivedCount})` : ''}
           </button>
           <button
             onClick={() => {
@@ -607,7 +610,7 @@ export default function TasksPage() {
             className="px-4 py-2 rounded-[10px] text-[13px] font-600 cursor-pointer transition-all border border-white/[0.08] bg-white/[0.04] text-text-2 hover:bg-white/[0.08]"
             style={{ fontFamily: 'inherit' }}
           >
-            Import GitHub
+            {t('importGitHub')}
           </button>
           <button
             onClick={() => {
@@ -618,17 +621,17 @@ export default function TasksPage() {
               hover:brightness-110 active:scale-[0.97] transition-all shadow-[0_2px_12px_rgba(99,102,241,0.2)]"
             style={{ fontFamily: 'inherit' }}
           >
-            + New Task
+            {t('newTask')}
           </button>
         </div>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 px-8 pb-4">
         {[
-          { key: 'needs-attention', label: 'Needs Attention', value: stats.attention, tone: 'text-red-300', accent: 'bg-red-500/10' },
-          { key: 'blocked', label: 'Blocked', value: stats.blocked, tone: 'text-rose-400', accent: 'bg-rose-500/10' },
-          { key: 'overdue', label: 'Overdue', value: stats.overdue, tone: 'text-red-400', accent: 'bg-red-500/10' },
-          { key: 'failed', label: 'Failed', value: stats.failed, tone: 'text-orange-400', accent: 'bg-orange-500/10' },
+          { key: 'needs-attention', label: t('needsAttention'), value: stats.attention, tone: 'text-red-300', accent: 'bg-red-500/10' },
+          { key: 'blocked', label: t('blocked'), value: stats.blocked, tone: 'text-rose-400', accent: 'bg-rose-500/10' },
+          { key: 'overdue', label: t('overdue'), value: stats.overdue, tone: 'text-red-400', accent: 'bg-red-500/10' },
+          { key: 'failed', label: t('failed'), value: stats.failed, tone: 'text-orange-400', accent: 'bg-orange-500/10' },
         ].map((item) => (
           <button
             key={item.key}
@@ -647,7 +650,7 @@ export default function TasksPage() {
               {item.value}
             </div>
             <p className="mt-1 text-[11px] text-text-3/60">
-              {item.value === 0 ? 'Nothing waiting here' : 'Click to focus this queue'}
+              {item.value === 0 ? t('nothingWaiting') : t('clickToFocus')}
             </p>
           </button>
         ))}
@@ -655,11 +658,11 @@ export default function TasksPage() {
 
       <div className="flex flex-wrap items-center gap-2 px-8 pb-3">
         {([
-          ['all', 'All'],
-          ['needs-attention', 'Needs Attention'],
-          ['blocked', 'Blocked'],
-          ['overdue', 'Overdue'],
-          ['failed', 'Failed'],
+          ['all', t('all')],
+          ['needs-attention', t('needsAttention')],
+          ['blocked', t('blocked')],
+          ['overdue', t('overdue')],
+          ['failed', t('failed')],
         ] as const).map(([value, label]) => (
           <button
             key={value}
@@ -687,10 +690,10 @@ export default function TasksPage() {
               {taskScopeFilter === 'agent' && filterAgentId && agents[filterAgentId] ? (
                 <>
                   <AgentAvatar seed={agents[filterAgentId].avatarSeed || null} avatarUrl={agents[filterAgentId].avatarUrl} name={agents[filterAgentId].name} size={14} />
-                  {agents[filterAgentId].name} activity
+                  {t('agentActivity', { name: agents[filterAgentId].name })}
                 </>
               ) : (
-                'User-facing tasks'
+                t('userFacingTasks')
               )}
               <button
                 onClick={() => {
@@ -776,24 +779,24 @@ export default function TasksPage() {
             </div>
           ) : filteredTasks.length === 0 ? (
             <div className="max-w-3xl mx-auto rounded-[16px] border border-dashed border-white/[0.08] px-6 py-14 text-center">
-              <p className="text-[14px] font-600 text-text-2 mb-1">No tasks match this view</p>
-              <p className="text-[12px] text-text-3/60">Try clearing one of the active filters or switching back to all tasks.</p>
+              <p className="text-[14px] font-600 text-text-2 mb-1">{t('noTasksMatch')}</p>
+              <p className="text-[12px] text-text-3/60">{t('noTasksMatchDesc')}</p>
             </div>
           ) : (
             <div className="max-w-4xl mx-auto">
               <div className="flex items-center justify-between mb-4">
                 <div>
                   <h2 className="font-display text-[18px] font-700 tracking-[-0.02em] text-text">
-                    {attentionFilter === 'all' ? 'Task List' : activeAttentionLabel || 'Task List'}
+                    {attentionFilter === 'all' ? t('taskList') : activeAttentionLabel || t('taskList')}
                   </h2>
                   <p className="text-[12px] text-text-3/60">
                     {attentionFilter === 'all'
-                      ? 'All visible tasks, sorted by urgency and freshness.'
-                      : 'Sorted by failures, blockers, and due dates.'}
+                      ? t('taskListDescAll')
+                      : t('taskListDescFiltered')}
                   </p>
                 </div>
                 <div className="text-[12px] text-text-3/60">
-                  {filteredTasks.length} visible task{filteredTasks.length !== 1 ? 's' : ''}
+                  {t('visibleTasks', { count: filteredTasks.length })}
                 </div>
               </div>
               <div className="flex flex-col gap-3">
@@ -823,46 +826,46 @@ export default function TasksPage() {
           setGitHubImportError(null)
         }}
         wide
-        title="Import GitHub Issues"
-        description="Pull issues from a GitHub repository into the task board as backlog items."
+        title={t('importGitHubTitle')}
+        description={t('importGitHubDesc')}
       >
         <div className="mx-auto w-full max-w-2xl">
           <div className="mb-6">
-            <h2 className="font-display text-[24px] font-800 tracking-[-0.03em] text-text">Import GitHub Issues</h2>
+            <h2 className="font-display text-[24px] font-800 tracking-[-0.03em] text-text">{t('importGitHubTitle')}</h2>
             <p className="mt-2 text-[14px] text-text-3">
-              Pull issues from a GitHub repository into the task board as backlog items.
+              {t('importGitHubDesc')}
             </p>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_180px]">
             <label className="block">
-              <span className="mb-2 block text-[12px] font-700 uppercase tracking-[0.08em] text-text-3/70">Repository</span>
+              <span className="mb-2 block text-[12px] font-700 uppercase tracking-[0.08em] text-text-3/70">{t('repository')}</span>
               <input
                 value={githubRepo}
                 onChange={(e) => setGitHubRepo(e.target.value)}
-                placeholder="owner/repo or https://github.com/owner/repo"
+                placeholder={t('repoPlaceholder')}
                 className={inputClass}
                 style={{ fontFamily: 'inherit' }}
               />
             </label>
             <label className="block">
-              <span className="mb-2 block text-[12px] font-700 uppercase tracking-[0.08em] text-text-3/70">State</span>
+              <span className="mb-2 block text-[12px] font-700 uppercase tracking-[0.08em] text-text-3/70">{t('state')}</span>
               <select
                 value={githubState}
                 onChange={(e) => setGitHubState(e.target.value as 'open' | 'closed' | 'all')}
                 className={inputClass}
                 style={{ fontFamily: 'inherit' }}
               >
-                <option value="open">Open issues</option>
-                <option value="closed">Closed issues</option>
-                <option value="all">All issues</option>
+                <option value="open">{t('openIssues')}</option>
+                <option value="closed">{t('closedIssues')}</option>
+                <option value="all">{t('allIssues')}</option>
               </select>
             </label>
           </div>
 
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <label className="block">
-              <span className="mb-2 block text-[12px] font-700 uppercase tracking-[0.08em] text-text-3/70">Limit</span>
+              <span className="mb-2 block text-[12px] font-700 uppercase tracking-[0.08em] text-text-3/70">{t('limit')}</span>
               <input
                 type="number"
                 min={1}
@@ -874,7 +877,7 @@ export default function TasksPage() {
               />
             </label>
             <label className="block">
-              <span className="mb-2 block text-[12px] font-700 uppercase tracking-[0.08em] text-text-3/70">Labels</span>
+              <span className="mb-2 block text-[12px] font-700 uppercase tracking-[0.08em] text-text-3/70">{t('labels')}</span>
               <input
                 value={githubLabels}
                 onChange={(e) => setGitHubLabels(e.target.value)}
@@ -886,12 +889,12 @@ export default function TasksPage() {
           </div>
 
           <label className="mt-4 block">
-            <span className="mb-2 block text-[12px] font-700 uppercase tracking-[0.08em] text-text-3/70">GitHub token</span>
+            <span className="mb-2 block text-[12px] font-700 uppercase tracking-[0.08em] text-text-3/70">{t('githubToken')}</span>
             <input
               type="password"
               value={githubToken}
               onChange={(e) => setGitHubToken(e.target.value)}
-              placeholder="Optional. Needed for private repos or higher rate limits."
+              placeholder={t('githubTokenPlaceholder')}
               className={inputClass}
               style={{ fontFamily: 'inherit' }}
             />
@@ -899,12 +902,12 @@ export default function TasksPage() {
 
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <span className="inline-flex items-center rounded-full bg-white/[0.05] px-3 py-1 text-[12px] font-600 text-text-2">
-              Imported tasks land in backlog
+              {t('importedToBacklog')}
             </span>
             {activeProjectFilter && projects[activeProjectFilter] && (
               <span className="inline-flex items-center gap-1.5 rounded-full bg-accent-soft px-3 py-1 text-[12px] font-600 text-accent-bright">
                 <span className="h-2 w-2 rounded-full" style={{ backgroundColor: projects[activeProjectFilter].color || '#6366F1' }} />
-                Project: {projects[activeProjectFilter].name}
+                {t('project')}: {projects[activeProjectFilter].name}
               </span>
             )}
           </div>
@@ -920,19 +923,19 @@ export default function TasksPage() {
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-[14px] font-700 text-text">{githubImportResult.repo}</span>
                 <span className="rounded-full bg-white/[0.05] px-2 py-1 text-[11px] font-600 text-text-3">
-                  {githubImportResult.fetched} fetched
+                  {t('fetched', { count: githubImportResult.fetched })}
                 </span>
                 <span className="rounded-full bg-emerald-500/10 px-2 py-1 text-[11px] font-600 text-emerald-300">
-                  {githubImportResult.created.length} created
+                  {t('createdCount', { count: githubImportResult.created.length })}
                 </span>
                 <span className="rounded-full bg-amber-500/10 px-2 py-1 text-[11px] font-600 text-amber-300">
-                  {githubImportResult.skipped.length} skipped
+                  {t('skippedCount', { count: githubImportResult.skipped.length })}
                 </span>
               </div>
 
               {githubImportResult.created.length > 0 && (
                 <div className="mt-4">
-                  <p className="text-[12px] font-700 uppercase tracking-[0.08em] text-text-3/60">Created</p>
+                  <p className="text-[12px] font-700 uppercase tracking-[0.08em] text-text-3/60">{t('created')}</p>
                   <div className="mt-2 flex flex-col gap-2">
                     {githubImportResult.created.slice(0, 8).map((item) => (
                       item.url ? (
@@ -960,7 +963,7 @@ export default function TasksPage() {
 
               {githubImportResult.skipped.length > 0 && (
                 <div className="mt-4">
-                  <p className="text-[12px] font-700 uppercase tracking-[0.08em] text-text-3/60">Skipped existing</p>
+                  <p className="text-[12px] font-700 uppercase tracking-[0.08em] text-text-3/60">{t('skippedExisting')}</p>
                   <div className="mt-2 flex flex-col gap-2">
                     {githubImportResult.skipped.slice(0, 8).map((item) => (
                       item.url ? (
@@ -997,7 +1000,7 @@ export default function TasksPage() {
               className="px-4 py-2 rounded-[10px] border border-white/[0.08] bg-transparent text-[13px] font-600 text-text-3 transition-colors hover:bg-white/[0.04] hover:text-text-2"
               style={{ fontFamily: 'inherit' }}
             >
-              Close
+              {t('close')}
             </button>
             <button
               onClick={handleGitHubImport}
@@ -1005,7 +1008,7 @@ export default function TasksPage() {
               className="px-5 py-2.5 rounded-[12px] border-none bg-accent-bright text-white text-[14px] font-700 transition-all disabled:cursor-not-allowed disabled:opacity-60"
               style={{ fontFamily: 'inherit' }}
             >
-              {githubImporting ? 'Importing...' : 'Import issues'}
+              {githubImporting ? t('importing') : t('importIssues')}
             </button>
           </div>
         </div>
@@ -1015,7 +1018,7 @@ export default function TasksPage() {
       {selectionMode && (
         <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-2 px-4 py-3 rounded-[16px] bg-surface-2/95 backdrop-blur-xl border border-white/[0.1] shadow-[0_8px_40px_rgba(0,0,0,0.5)] z-50">
           <span className="text-[13px] font-600 text-text mr-2">
-            {selectedIds.size} selected
+            {t('selectedCount', { count: selectedIds.size })}
           </span>
           <div className="w-px h-5 bg-white/[0.08]" />
 
@@ -1028,7 +1031,7 @@ export default function TasksPage() {
               style={{ fontFamily: 'inherit' }}
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M5 12h14M12 5l7 7-7 7" /></svg>
-              Move
+              {t('move')}
             </button>
             {bulkStatusOpen && (
               <div className="absolute bottom-full left-0 mb-1 min-w-[140px] py-1 rounded-[10px] border border-white/[0.08] bg-surface-2 shadow-lg">
@@ -1055,7 +1058,7 @@ export default function TasksPage() {
               style={{ fontFamily: 'inherit' }}
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /></svg>
-              Agent
+              {t('agent')}
             </button>
             {bulkAgentOpen && (
               <div className="absolute bottom-full left-0 mb-1 min-w-[180px] max-h-[200px] overflow-y-auto py-1 rounded-[10px] border border-white/[0.08] bg-surface-2 shadow-lg">
@@ -1084,7 +1087,7 @@ export default function TasksPage() {
                 style={{ fontFamily: 'inherit' }}
               >
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M2 20a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8l-7-7H4a2 2 0 0 0-2 2v17Z" /><path d="M14 2v7h7" /></svg>
-                Project
+                {t('project')}
               </button>
               {bulkProjectOpen && (
                 <div className="absolute bottom-full left-0 mb-1 min-w-[160px] max-h-[200px] overflow-y-auto py-1 rounded-[10px] border border-white/[0.08] bg-surface-2 shadow-lg">
@@ -1093,7 +1096,7 @@ export default function TasksPage() {
                     className="w-full flex items-center gap-2 px-3 py-2 text-[12px] font-600 cursor-pointer border-none text-left bg-transparent text-text-3 hover:bg-white/[0.06] hover:text-text transition-colors"
                     style={{ fontFamily: 'inherit' }}
                   >
-                    No project
+                    {t('noProject')}
                   </button>
                   {Object.values(projects).map((p) => (
                     <button
@@ -1121,14 +1124,14 @@ export default function TasksPage() {
             style={{ fontFamily: 'inherit' }}
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21 8v13H3V8" /><path d="M1 3h22v5H1z" /><path d="M10 12h4" /></svg>
-            Archive
+            {t('archive')}
           </button>
 
           {/* Clear selection */}
           <button
             onClick={clearSelection}
             className="p-1.5 rounded-[8px] text-text-3 hover:text-text hover:bg-white/[0.06] border-none bg-transparent cursor-pointer transition-colors"
-            title="Clear selection (Esc)"
+            title={t('clearSelectionTitle')}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
           </button>

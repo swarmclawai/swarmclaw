@@ -1,0 +1,20 @@
+{
+  "dashboard": "Dashboard",
+  "settings": "Settings",
+  "tasks": "Tasks",
+  "agents": "Agents",
+  "projects": "Projects",
+  "activity": "Activity",
+  "inbox": "Inbox",
+  "cancel": "Cancel",
+  "save": "Save",
+  "delete": "Delete",
+  "loading": "Loading",
+  "error": "Error",
+  "create": "Create",
+  "edit": "Edit",
+  "search": "Search",
+  "filter": "Filter",
+  "welcome": "Welcome",
+  "home": "Home"
+}

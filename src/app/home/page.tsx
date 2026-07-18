@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslation } from 'react-i18next';
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AreaChart, Area, ResponsiveContainer, Tooltip } from 'recharts'
@@ -84,6 +85,7 @@ const PLATFORM_LABELS: Record<string, string> = {
 }
 
 export default function HomePage() {
+  const { t } = useTranslation()
   const router = useRouter()
   const now = useNow()
   const agents = useAppStore((s) => s.agents)
@@ -240,7 +242,7 @@ export default function HomePage() {
   if (!pageReady) {
     return (
       <MainContent>
-        <PageLoader label="Loading dashboard..." />
+        <PageLoader label={t('loadingDashboard')} />
       </MainContent>
     )
   }
@@ -311,7 +313,7 @@ export default function HomePage() {
               SwarmClaw
             </h1>
             <p className="text-[14px] text-text-3 mt-1">
-              Workspace overview for your agent chats, tasks, and automations
+              {t('workspaceOverview')}
             </p>
           </div>
 
@@ -320,15 +322,15 @@ export default function HomePage() {
           {/* Quick actions / triage */}
           <section className="mb-8" style={{ animation: 'fade-up 0.6s var(--ease-spring) 0.15s both' }}>
             <SectionHeader
-              label="Needs Attention"
-              action={activeTaskCount > 0 ? { label: 'Open Tasks', onClick: () => navigateTo('tasks') } : undefined}
+              label={t('needsAttention')}
+              action={activeTaskCount > 0 ? { label: t('openTasks'), onClick: () => navigateTo('tasks') } : undefined}
             />
             <div className="rounded-[18px] border border-white/[0.06] bg-white/[0.025] p-4">
               <div className="flex flex-wrap items-center gap-2 mb-4">
-                <StatusPill label={`${allTasks.filter((task) => task.status === 'failed').length} failed task${allTasks.filter((task) => task.status === 'failed').length === 1 ? '' : 's'}`} tone={allTasks.some((task) => task.status === 'failed') ? 'danger' : 'neutral'} />
-                <StatusPill label={`${allTasks.filter((task) => (task.blockedBy?.length || 0) > 0).length} blocked task${allTasks.filter((task) => (task.blockedBy?.length || 0) > 0).length === 1 ? '' : 's'}`} tone={allTasks.some((task) => (task.blockedBy?.length || 0) > 0) ? 'warning' : 'neutral'} />
-                <StatusPill label={`${allConnectors.filter((connector) => connector.status === 'error').length} connector issue${allConnectors.filter((connector) => connector.status === 'error').length === 1 ? '' : 's'}`} tone={allConnectors.some((connector) => connector.status === 'error') ? 'danger' : 'neutral'} />
-                <StatusPill label={`${runningAgentIds.size} active agent${runningAgentIds.size === 1 ? '' : 's'}`} tone={runningAgentIds.size > 0 ? 'success' : 'neutral'} />
+                <StatusPill label={t('failedTasks', { count: allTasks.filter((task) => task.status === 'failed').length })} tone={allTasks.some((task) => task.status === 'failed') ? 'danger' : 'neutral'} />
+                <StatusPill label={t('blockedTasks', { count: allTasks.filter((task) => (task.blockedBy?.length || 0) > 0).length })} tone={allTasks.some((task) => (task.blockedBy?.length || 0) > 0) ? 'warning' : 'neutral'} />
+                <StatusPill label={t('connectorIssues', { count: allConnectors.filter((connector) => connector.status === 'error').length })} tone={allConnectors.some((connector) => connector.status === 'error') ? 'danger' : 'neutral'} />
+                <StatusPill label={t('activeAgents', { count: runningAgentIds.size })} tone={runningAgentIds.size > 0 ? 'success' : 'neutral'} />
               </div>
 
               {(() => {
@@ -341,7 +343,7 @@ export default function HomePage() {
                       id: `blocked:${task.id}`,
                       tone: 'warning' as const,
                       label: task.title,
-                      meta: `${task.agentId && agents[task.agentId] ? agents[task.agentId]!.name : 'Task'} is blocked by dependencies`,
+                      meta: `${task.agentId && agents[task.agentId] ? agents[task.agentId]!.name : t('task')} ${t('blockedByDependencies')}`,
                       onClick: () => handleTaskClick(task),
                     })),
                   ...allTasks
@@ -351,7 +353,7 @@ export default function HomePage() {
                       id: `failed:${task.id}`,
                       tone: 'danger' as const,
                       label: task.title,
-                      meta: `Failed ${timeAgo(task.updatedAt || task.createdAt, now)}`,
+                      meta: `${t('failed')} ${timeAgo(task.updatedAt || task.createdAt, now)}`,
                       onClick: () => handleTaskClick(task),
                     })),
                   ...allConnectors
@@ -361,7 +363,7 @@ export default function HomePage() {
                       id: `connector:${connector.id}`,
                       tone: 'danger' as const,
                       label: connector.name,
-                      meta: `${PLATFORM_LABELS[connector.platform] || connector.platform} connector needs attention`,
+                      meta: `${PLATFORM_LABELS[connector.platform] || connector.platform} ${t('connectorNeedsAttention')}`,
                       onClick: () => navigateTo('connectors'),
                     })),
                   ...Object.values(schedules)
@@ -371,7 +373,7 @@ export default function HomePage() {
                       id: `schedule:${schedule.id}`,
                       tone: 'warning' as const,
                       label: schedule.name,
-                      meta: 'Schedule missed its expected run window',
+                      meta: t('scheduleMissed'),
                       onClick: () => navigateTo('schedules'),
                     })),
                   ...unreadNotifications
@@ -380,7 +382,7 @@ export default function HomePage() {
                       id: `notification:${notification.id}`,
                       tone: 'info' as const,
                       label: notification.title,
-                      meta: notification.message || 'Unread notification',
+                      meta: notification.message || t('unreadNotification'),
                       onClick: () => handleNotificationClick(notification),
                     })),
                 ].slice(0, 6)
@@ -388,9 +390,9 @@ export default function HomePage() {
                 if (items.length === 0) {
                   return (
                     <div className="rounded-[14px] border border-dashed border-white/[0.06] bg-white/[0.02] px-4 py-5">
-                      <p className="text-[13px] font-600 text-text">Everything looks stable.</p>
+                      <p className="text-[13px] font-600 text-text">{t('everythingStable')}</p>
                       <p className="text-[12px] text-text-3/60 mt-1">
-                        No failed tasks, no blocked tasks, and no connector issues right now.
+                        {t('noIssues')}
                       </p>
                     </div>
                   )
@@ -426,17 +428,17 @@ export default function HomePage() {
 
           {/* Quick Stats */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
-            <StatCard label="Agents" value={String(agentCount)} hint="Total active agents configured in your dashboard" index={0} />
-            <StatCard label="Active Tasks" value={String(activeTaskCount)} accent={activeTaskCount > 0} hint="Tasks currently running or queued for execution" index={1} />
-            <StatCard label="Today's Cost" value={`$${todayCost.toFixed(2)}`} hint="Estimated API cost for today across all providers" index={2} />
-            <StatCard label="Connectors" value={`${activeConnectorCount}/${allConnectors.length}`} accent={activeConnectorCount > 0} hint="Active bridges to chat platforms, local queues, and agent channels." index={3} />
+            <StatCard label={t('agents')} value={String(agentCount)} hint={t('totalActiveAgentsHint')} index={0} />
+            <StatCard label={t('activeTasks')} value={String(activeTaskCount)} accent={activeTaskCount > 0} hint={t('activeTasksHint')} index={1} />
+            <StatCard label={t('todaysCost')} value={`$${todayCost.toFixed(2)}`} hint={t('todaysCostHint')} index={2} />
+            <StatCard label={t('connectors')} value={`${activeConnectorCount}/${allConnectors.length}`} accent={activeConnectorCount > 0} hint={t('connectorsHint')} index={3} />
           </div>
 
           {/* Cost trend sparkline */}
           {costTrend.length > 1 && (
             <div className="mb-10 px-1" style={{ animation: 'fade-up 0.6s var(--ease-spring) 0.3s both' }}>
               <p className="text-[10px] text-text-3/50 uppercase tracking-wider mb-1 flex items-center gap-1.5">
-                7-day cost trend <HintTip text="Daily API spend over the past week — hover for details" />
+                {t('costTrend')} <HintTip text={t('costTrendHint')} />
               </p>
               <ResponsiveContainer width="100%" height={60}>
                 <AreaChart data={costTrend} margin={{ top: 2, right: 0, bottom: 0, left: 0 }} style={{ cursor: 'crosshair' }}>
@@ -478,7 +480,7 @@ export default function HomePage() {
                     <path d="M13.73 21a2 2 0 0 1-3.46 0" />
                   </svg>
                   <span className="text-[12px] font-600 text-amber-400">
-                    {unreadNotificationCount} unread notification{unreadNotificationCount !== 1 ? 's' : ''}
+                    {t('unreadNotifications', { count: unreadNotificationCount })}
                   </span>
                 </div>
                 <div className="flex flex-col">
@@ -514,7 +516,7 @@ export default function HomePage() {
 
           {/* Connector Status */}
           <section className="mb-8" style={{ animation: 'fade-up 0.6s var(--ease-spring) 0.4s both' }}>
-            <SectionHeader label="Connectors" action={allConnectors.length > 0 ? { label: 'View all \u2192', onClick: () => navigateTo('connectors') } : undefined} />
+            <SectionHeader label={t('connectors')} action={allConnectors.length > 0 ? { label: t('viewAll'), onClick: () => navigateTo('connectors') } : undefined} />
             {allConnectors.length > 0 ? (
               <div className="flex gap-2 flex-wrap">
                 {allConnectors.map((c) => (
@@ -532,7 +534,7 @@ export default function HomePage() {
                 ))}
               </div>
             ) : (
-              <EmptySection text="No connectors configured — bridge agents to Discord, Slack, Telegram, or WhatsApp" />
+              <EmptySection text={t('noConnectors')} />
             )}
           </section>
 
@@ -540,7 +542,7 @@ export default function HomePage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8" style={{ animation: 'fade-up 0.6s var(--ease-spring) 0.45s both' }}>
             {/* Running Tasks */}
             <section>
-              <SectionHeader label="Running Tasks" action={runningTasks.length > 0 ? { label: 'View all \u2192', onClick: () => navigateTo('tasks') } : undefined} />
+              <SectionHeader label={t('runningTasks')} action={runningTasks.length > 0 ? { label: t('viewAll'), onClick: () => navigateTo('tasks') } : undefined} />
               {runningTasks.length > 0 ? (
                 <div className="flex flex-col gap-1">
                   {runningTasks.map((task) => {
@@ -559,7 +561,7 @@ export default function HomePage() {
                         <div className="flex-1 min-w-0">
                           <span className="text-[13px] font-500 text-text truncate block">{task.title}</span>
                           <span className="text-[11px] text-text-3/50">
-                            {agent?.name || 'Unassigned'} · {task.status === 'running' ? 'running' : 'queued'}{task.startedAt ? ` · ${timeAgo(task.startedAt, now)}` : ''}
+                            {agent?.name || t('unassigned')} · {task.status === 'running' ? t('running') : t('queued')}{task.startedAt ? ` · ${timeAgo(task.startedAt, now)}` : ''}
                           </span>
                         </div>
                       </button>
@@ -567,13 +569,13 @@ export default function HomePage() {
                   })}
                 </div>
               ) : (
-                <div className="py-4 px-3 text-[12px] text-text-3/40">No tasks running</div>
+                <div className="py-4 px-3 text-[12px] text-text-3/40">{t('noTasksRunning')}</div>
               )}
             </section>
 
             {/* Upcoming Schedules */}
             <section>
-              <SectionHeader label="Upcoming Schedules" action={upcomingSchedules.length > 0 ? { label: 'View all \u2192', onClick: () => navigateTo('schedules') } : undefined} />
+              <SectionHeader label={t('upcomingSchedules')} action={upcomingSchedules.length > 0 ? { label: t('viewAll'), onClick: () => navigateTo('schedules') } : undefined} />
               {upcomingSchedules.length > 0 ? (
                 <div className="flex flex-col gap-1">
                   {upcomingSchedules.map((sched) => {
@@ -589,7 +591,7 @@ export default function HomePage() {
                         <div className="flex-1 min-w-0">
                           <span className="text-[13px] font-500 text-text truncate block">{sched.name}</span>
                           <span className="text-[11px] text-text-3/50">
-                            {agent?.name || 'No agent'} · {sched.nextRunAt ? timeUntil(sched.nextRunAt, now) : '—'}
+                            {agent?.name || t('noAgent')} · {sched.nextRunAt ? timeUntil(sched.nextRunAt, now) : '—'}
                           </span>
                         </div>
                       </div>
@@ -597,14 +599,14 @@ export default function HomePage() {
                   })}
                 </div>
               ) : (
-                <div className="py-4 px-3 text-[12px] text-text-3/40">No upcoming schedules</div>
+                <div className="py-4 px-3 text-[12px] text-text-3/40">{t('noUpcomingSchedules')}</div>
               )}
             </section>
           </div>
 
           {/* Pinned Agents */}
           <section className="mb-8" style={{ animation: 'fade-up 0.6s var(--ease-spring) 0.5s both' }}>
-            <SectionHeader label="Pinned Agents" />
+            <SectionHeader label={t('pinnedAgents')} />
             {pinnedAgents.length > 0 ? (
               <div className="flex gap-3 overflow-x-auto pb-2">
                 {pinnedAgents.map((agent) => {
@@ -642,11 +644,11 @@ export default function HomePage() {
                             <span className="w-1 h-1 rounded-full bg-accent-bright/70 animate-bounce [animation-delay:150ms]" />
                             <span className="w-1 h-1 rounded-full bg-accent-bright/70 animate-bounce [animation-delay:300ms]" />
                           </span>
-                          typing
+                          {t('typing')}
                         </span>
                       ) : (
                         <span className={`text-[10px] ${isOnline ? 'text-emerald-400/80' : 'text-text-3/50'}`}>
-                          {isOnline ? 'Online' : lastActive ? timeAgo(lastActive, now) : 'Idle'}
+                          {isOnline ? t('online') : lastActive ? timeAgo(lastActive, now) : t('idle')}
                         </span>
                       )}
                       {modelLabel && (
@@ -661,7 +663,7 @@ export default function HomePage() {
             ) : (
               <div className="py-6 px-4 rounded-[14px] bg-white/[0.02] border border-dashed border-white/[0.06] text-center">
                 <p className="text-[13px] text-text-3/60">
-                  Star agents from the chat list for quick access
+                  {t('starAgentsHint')}
                 </p>
               </div>
             )}
@@ -669,13 +671,13 @@ export default function HomePage() {
 
           {/* Recent Chats */}
           <section className="mb-8" style={{ animation: 'fade-up 0.6s var(--ease-spring) 0.55s both' }}>
-            <SectionHeader label="Recent Chats" />
+            <SectionHeader label={t('recentChats')} />
             {recentChats.length > 0 ? (
               <div className="flex flex-col gap-1">
                 {recentChats.map((session) => {
                   const agent = session.agentId ? agents[session.agentId] : null
                   const lastMsg = getSessionLastMessage(session)
-                  const displayName = agent?.name || 'Chat'
+                  const displayName = agent?.name || t('chat')
                   return (
                     <button
                       key={session.id}
@@ -710,14 +712,14 @@ export default function HomePage() {
                 })}
               </div>
             ) : (
-              <EmptySection text="No chats yet — start by clicking an agent" />
+              <EmptySection text={t('noChats')} />
             )}
           </section>
 
           {/* Activity Feed */}
           {recentActivity.length > 0 && (
             <section className="mb-10" style={{ animation: 'fade-up 0.6s var(--ease-spring) 0.6s both' }}>
-              <SectionHeader label="Recent Activity" />
+              <SectionHeader label={t('recentActivity')} />
               <div className="flex flex-col gap-0.5">
                 {recentActivity.map((entry) => (
                   <div key={entry.id} className="flex items-center gap-2.5 px-3 py-2 rounded-[10px]">

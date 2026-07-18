@@ -360,7 +360,7 @@ export function ExtensionSheet() {
 
           {editing.settingsFields && editing.settingsFields.length > 0 && (
             <div className="py-4 px-4 rounded-[14px] bg-surface border border-white/[0.06] space-y-3">
-              <div className="text-[13px] font-600 text-text">Settings</div>
+              <div className="text-[13px] font-600 text-text">设置</div>
               {extensionSettingsLoading ? (
                 <p className="text-[11px] text-text-3/60">Loading...</p>
               ) : (

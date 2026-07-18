@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslation } from 'react-i18next';
 import {
   Dialog,
   DialogContent,
@@ -26,13 +27,16 @@ export function ConfirmDialog({
   open,
   title,
   message,
-  confirmLabel = 'Confirm',
+  confirmLabel,
   confirmDisabled = false,
   cancelDisabled = false,
   danger,
   onConfirm,
   onCancel,
 }: Props) {
+  const { t } = useTranslation()
+  const label = confirmLabel || t('confirm')
+
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => { if (!nextOpen && !cancelDisabled) onCancel() }}>
       <DialogContent
@@ -55,7 +59,7 @@ export function ConfirmDialog({
               disabled={cancelDisabled}
               className="flex-1 px-4 py-2.5 text-[13px]"
             >
-              Cancel
+              {t('cancel')}
             </Button>
             <Button
               type="button"
@@ -68,7 +72,7 @@ export function ConfirmDialog({
                   : 'shadow-[0_4px_20px_rgba(99,102,241,0.2)]'}
                 disabled:active:scale-100`}
             >
-              {confirmLabel}
+              {label}
             </Button>
           </DialogFooter>
         </div>

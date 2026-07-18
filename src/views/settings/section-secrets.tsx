@@ -85,7 +85,7 @@ export function SecretsSection({ appSettings, inputClass }: SettingsSectionProps
               {deletingSecret === secret.rowId ? (
                 <div className="flex gap-2">
                   <button onClick={() => setDeletingSecret(null)} className="px-3 py-1.5 text-[13px] font-600 bg-transparent border-none text-text-3 cursor-pointer hover:text-text-2 transition-colors" style={{ fontFamily: 'inherit' }}>Keep</button>
-                  <button onClick={() => handleDeleteSecret(secret.rowId)} className="px-3 py-1.5 text-[13px] font-600 bg-danger text-white border-none cursor-pointer rounded-[8px] transition-colors hover:brightness-110" style={{ fontFamily: 'inherit' }}>Delete</button>
+                  <button onClick={() => handleDeleteSecret(secret.rowId)} className="px-3 py-1.5 text-[13px] font-600 bg-danger text-white border-none cursor-pointer rounded-[8px] transition-colors hover:brightness-110" style={{ fontFamily: 'inherit' }}>删除</button>
                 </div>
               ) : (
                 <button onClick={() => setDeletingSecret(secret.rowId)} className="px-3 py-1.5 text-[13px] font-500 bg-transparent border-none text-text-3 cursor-pointer hover:text-danger transition-colors" style={{ fontFamily: 'inherit' }}>Remove</button>
@@ -120,7 +120,7 @@ export function SecretsSection({ appSettings, inputClass }: SettingsSectionProps
           )}
 
           <div className="flex gap-3 pt-2">
-            <button onClick={() => setAddingSecret(false)} className="flex-1 py-3 rounded-[14px] border border-white/[0.08] bg-transparent text-text-2 text-[14px] font-600 cursor-pointer hover:bg-surface-2 transition-colors" style={{ fontFamily: 'inherit' }}>Cancel</button>
+            <button onClick={() => setAddingSecret(false)} className="flex-1 py-3 rounded-[14px] border border-white/[0.08] bg-transparent text-text-2 text-[14px] font-600 cursor-pointer hover:bg-surface-2 transition-colors" style={{ fontFamily: 'inherit' }}>取消</button>
             <button onClick={handleAddSecret} disabled={!secretName.trim() || !secretValue.trim()} className="flex-1 py-3 rounded-[14px] border-none bg-accent-bright text-white text-[14px] font-600 cursor-pointer disabled:opacity-30 transition-all hover:brightness-110" style={{ fontFamily: 'inherit' }}>Save Secret</button>
           </div>
         </div>
