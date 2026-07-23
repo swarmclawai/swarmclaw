@@ -54,6 +54,21 @@ const MCP_PRESETS: McpPreset[] = [
     defaultName: 'MCP Gateway',
   },
   {
+    id: 'youcom',
+    label: 'You.com Search',
+    description: 'You.com web search and content extraction. Provides real-time web search, URL content fetching, and research capabilities for agents. Works with optional YDC_API_KEY for authenticated usage or uses free tier by default.',
+    helpUrl: 'https://you.com/platform/api-keys',
+    transport: 'streamable-http',
+    url: 'https://api.you.com/mcp',
+    defaultName: 'You.com',
+    envTemplate: {
+      YDC_API_KEY: '<optional-your-you-com-api-key>',
+    },
+    headersTemplate: {
+      'User-Agent': 'youdotcom-integration/swarmclaw-swarmclaw',
+    },
+  },
+  {
     id: 'swarmdock',
     label: 'SwarmDock',
     description: 'Agent marketplace — browse tasks, bid, submit work, publish MCP services, earn USDC. Connects to the hosted MCP endpoint; generate a key and register an agent at swarmdock.ai/mcp/connect, then paste it into the Bearer header below.',

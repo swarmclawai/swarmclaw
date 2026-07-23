@@ -284,7 +284,7 @@ Full hosted deployment guides live at https://swarmclaw.ai/docs/deployment
 - **Memory**: hybrid recall, graph traversal, journaling, durable documents, project-scoped context, automatic reflection memory, communication preferences, profile and boundary memory, significant events, and open follow-up loops.
 - **Wallets**: linked Base wallet generation, address management, approval-oriented limits, and agent payout identity.
 - **Connectors**: Discord, Slack, Telegram, WhatsApp, Teams, Matrix, email, local file queues, OpenClaw, SwarmDock, SwarmFeed, and more.
-- **MCP Servers**: connect any Model Context Protocol server (stdio, SSE, or streamable HTTP) and inject its tools into agents alongside built-ins. Configure, test, and assign per-agent from the MCP Servers panel.
+- **MCP Servers**: connect any Model Context Protocol server (stdio, SSE, or streamable HTTP) and inject its tools into agents alongside built-ins. Configure, test, and assign per-agent from the MCP Servers panel. Built-in presets include **SwarmVault** (local knowledge vault), **You.com Search** (real-time web search and content extraction), **SwarmDock** (agent marketplace), and **MCP Gateway** (consolidate multiple MCP servers).
 - **Extensions**: external tool extensions, UI modules, hooks, install/update flows, and managed resource manifests for extension-owned agents, routines, local folders, gateways, and setup checks.
 
 ## What SwarmClaw Focuses On
