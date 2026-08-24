@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 
 import { explainElevenLabsError, resolveElevenLabsConfig, synthesizeElevenLabsMp3 } from '@/lib/server/elevenlabs'
+import { synthesizeMiniMaxMp3 } from '@/lib/server/minimax-tts'
 import { safeParseBody } from '@/lib/server/safe-parse-body'
 
 const TtsRequestSchema = z.object({
@@ -14,6 +15,12 @@ export async function POST(req: Request) {
   if (error) return error
 
   try {
+    if (process.env.MINIMAX_API_KEY) {
+      const audioBuffer = await synthesizeMiniMaxMp3({ text: body.text, voiceId: body.voiceId })
+      return new NextResponse(new Uint8Array(audioBuffer), {
+        headers: { 'Content-Type': 'audio/mpeg', 'Cache-Control': 'no-cache' },
+      })
+    }
     resolveElevenLabsConfig(body.voiceId)
     const audioBuffer = await synthesizeElevenLabsMp3({ text: body.text, voiceId: body.voiceId })
     return new NextResponse(new Uint8Array(audioBuffer), {
