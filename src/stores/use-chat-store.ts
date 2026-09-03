@@ -474,6 +474,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
       window.dispatchEvent(new Event('swarmclaw:scroll-bottom'))
     }
 
+    // The store has a single live-stream slot. When the user opens another
+    // session mid-stream, ChatArea hands that slot over (streamingSessionId
+    // changes) while this request keeps running in the background. A detached
+    // stream must not touch shared UI state: the server persists its reply and
+    // the session is refreshed once it finishes. Ownership is regained if the
+    // user returns to this session while it is still running.
+    const ownsLiveStream = () => get().streamingSessionId === sessionId
+    const setIfOwner = (patch: Partial<ChatState> | ((s: ChatState) => Partial<ChatState>)) => {
+      if (ownsLiveStream()) set(patch)
+    }
+
     let fullText = ''
     let suggestions: string[] | null = null
     let toolCallCounter = 0
@@ -483,13 +494,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     try { await streamChat(sessionId, text, imagePath, imageUrl, (event: SSEEvent) => {
       // Forward events to voice conversation handler if active
-      get().onStreamEvent?.(event)
+      if (ownsLiveStream()) get().onStreamEvent?.(event)
       if (event.t === 'd') {
         fullText += event.text || ''
         const visibleText = stripHiddenControlTokens(fullText)
 
         // Sound: stream start
-        if (!soundFiredStart && get().soundEnabled) {
+        if (!soundFiredStart && get().soundEnabled && ownsLiveStream()) {
           soundFiredStart = true
           playStreamStart()
         }
@@ -502,7 +513,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           patch.streamPhase = 'responding'
         }
 
-        set(patch)
+        setIfOwner(patch)
       } else if (event.t === 'md') {
         // Parse metadata events (usage/run/queue/thinking). Ignore unknown keys.
         try {
@@ -526,7 +537,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
             }
           }
           if (Object.keys(mdPatch).length > 0) {
-            set(mdPatch)
+            setIfOwner(mdPatch)
           }
         } catch {
           // Ignore non-JSON metadata payloads.
@@ -534,7 +545,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       } else if (event.t === 'r') {
         fullText = event.text || ''
         const visibleText = stripHiddenControlTokens(fullText)
-        set({ streamText: visibleText, displayText: visibleText })
+        setIfOwner({ streamText: visibleText, displayText: visibleText })
       } else if (event.t === 'tool_call') {
         // Dedup: skip if the last tool event matches name+input and is still running
         const currentEvents = get().toolEvents
@@ -548,7 +559,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           // Duplicate — skip without triggering subscribers
         } else {
           const id = `tc-${++toolCallCounter}`
-          set({
+          setIfOwner({
             streamPhase: 'tool' as const,
             streamToolName: event.toolName || 'unknown',
             toolEvents: [...currentEvents, {
@@ -589,11 +600,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
             || output.includes('ETIMEDOUT')
             || output.includes('Error:')
           events[idx] = { ...events[idx], status: isError ? 'error' : 'done', output }
-          if (soundOn) {
+          if (soundOn && ownsLiveStream()) {
             if (isError) playError()
             else playToolComplete()
           }
-          set({ toolEvents: events })
+          setIfOwner({ toolEvents: events })
         }
       } else if (event.t === 'reset') {
         // Server rolled back state after a transient error — clear accumulated
@@ -602,17 +613,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
         const visibleText = stripHiddenControlTokens(fullText)
         toolCallCounter = 0
         soundFiredStart = false
-        set({ streamText: visibleText, displayText: visibleText, toolEvents: [], streamPhase: 'connecting' })
+        setIfOwner({ streamText: visibleText, displayText: visibleText, toolEvents: [], streamPhase: 'connecting' })
       } else if (event.t === 'err') {
         const errText = event.text || 'Unknown'
         if (!shouldIgnoreTransientError(errText)) {
           fullText += '\n[Error: ' + errText + ']'
           const visibleText = stripHiddenControlTokens(fullText)
-          set({ streamText: visibleText, displayText: visibleText })
-          if (get().soundEnabled) playError()
+          setIfOwner({ streamText: visibleText, displayText: visibleText })
+          if (get().soundEnabled && ownsLiveStream()) playError()
         }
       } else if (event.t === 'thinking') {
-        set((s) => ({ thinkingText: s.thinkingText + (event.text || '') }))
+        setIfOwner((s) => ({ thinkingText: s.thinkingText + (event.text || '') }))
       } else if (event.t === 'status') {
         try {
           const parsed = JSON.parse(event.text || '{}')
@@ -621,7 +632,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
             && typeof parsed === 'object'
             && ['goal', 'status', 'summary', 'nextAction'].some((key) => key in parsed)
           ) {
-            set({ agentStatus: parsed })
+            setIfOwner({ agentStatus: parsed })
           }
         } catch {
           // ignore malformed status
@@ -632,6 +643,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }, attachedFiles, { replyToId })
 
     if (get().soundEnabled && soundFiredStart) playStreamEnd()
+    if (!ownsLiveStream()) {
+      // Another session owns the live slot now. The reply is already persisted
+      // server-side; merging it here would drop it into the wrong chat.
+      markSessionRunIdle(sessionId)
+      void useAppStore.getState().refreshSession(sessionId)
+      return
+    }
     const visibleFinalText = stripHiddenControlTokens(fullText)
     if (visibleFinalText.trim()) {
       const currentToolEvents = get().toolEvents
@@ -685,7 +703,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     void useAppStore.getState().refreshSession(sessionId)
 
     } finally {
-      if (get().streaming) {
+      if (get().streaming && ownsLiveStream()) {
         set({
           streaming: false,
           streamingSessionId: null,

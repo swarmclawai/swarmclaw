@@ -618,6 +618,33 @@ function buildCustomProviderConfig(custom: CustomProviderConfig): BuiltinProvide
   }
 }
 
+/**
+ * Session fields a provider handler may write while streaming. CLI providers
+ * record the upstream session/thread id here so the next turn can resume
+ * instead of starting a fresh conversation.
+ */
+const HANDLER_MUTABLE_SESSION_FIELDS = [
+  'claudeSessionId',
+  'codexThreadId',
+  'opencodeSessionId',
+  'geminiSessionId',
+  'copilotSessionId',
+  'droidSessionId',
+  'cursorSessionId',
+  'qwenSessionId',
+  'acpSessionId',
+] as const
+
+/** Copy handler-written resume handles from a patched session copy back to the original. */
+export function copyHandlerSessionMutations(
+  from: Record<string, unknown>,
+  to: Record<string, unknown>,
+): void {
+  for (const key of HANDLER_MUTABLE_SESSION_FIELDS) {
+    if (from[key] !== to[key]) to[key] = from[key]
+  }
+}
+
 export function getProvider(id: string): BuiltinProviderConfig | null {
   // Check builtin providers — inject custom baseUrl from provider config if set
   const builtin = PROVIDERS[id]
@@ -643,7 +670,14 @@ export function getProvider(id: string): BuiltinProviderConfig | null {
             ...opts.session,
             apiEndpoint: apiEndpoint || undefined,
           }
-          return originalHandler.streamChat({ ...opts, session: patchedSession })
+          // patchedSession is a shallow copy, so resume handles a CLI handler
+          // records on it are invisible to the caller. chat-turn-finalization
+          // reads them off the run session to persist them, so copy them back.
+          const syncBack = () => copyHandlerSessionMutations(patchedSession, opts.session)
+          return originalHandler.streamChat({ ...opts, session: patchedSession }).then(
+            (result) => { syncBack(); return result },
+            (err) => { syncBack(); throw err },
+          )
         },
       },
     }

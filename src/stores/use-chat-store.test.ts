@@ -765,3 +765,127 @@ describe('useChatStore control-token hygiene', () => {
     )
   })
 })
+
+describe('useChatStore cross-session stream isolation', () => {
+  function resetChatState() {
+    useChatStore.setState({
+      messages: [],
+      pendingFiles: [],
+      replyingTo: null,
+      toolEvents: [],
+      streamText: '',
+      displayText: '',
+      streaming: false,
+      streamingSessionId: null,
+      streamSource: null,
+      assistantRenderId: null,
+      streamPhase: 'thinking',
+      streamToolName: '',
+      thinkingText: '',
+      thinkingStartTime: 0,
+      queuedMessages: [],
+      agentStatus: null,
+      lastUsage: null,
+      hasMoreMessages: false,
+      loadingMore: false,
+      totalMessages: 0,
+    })
+  }
+
+  /** SSE response whose events are pushed manually so the test controls timing. */
+  function controlledSse() {
+    const encoder = new TextEncoder()
+    let controller!: ReadableStreamDefaultController<Uint8Array>
+    const response = new Response(new ReadableStream<Uint8Array>({
+      start(c) { controller = c },
+    }), { status: 200, headers: { 'content-type': 'text/event-stream' } })
+    return {
+      response,
+      push(event: unknown) { controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n`)) },
+      close() { controller.close() },
+    }
+  }
+
+  /** Mirrors what ChatArea does when the user opens another agent mid-stream. */
+  function simulateSwitchToSession(messages: Array<{ role: 'user' | 'assistant'; text: string; time: number }>) {
+    useChatStore.getState().setMessages([], { startIndex: 0, totalMessages: 0 })
+    useChatStore.setState({ streaming: false, streamingSessionId: null, streamSource: null, streamText: '', assistantRenderId: null, toolEvents: [] })
+    useChatStore.getState().setMessages(messages, { startIndex: 0, totalMessages: messages.length })
+  }
+
+  it('does not leak a detached stream into the session the user switched to', async () => {
+    const sessionOne = makeSession({ id: 'session-1' })
+    const sessionTwo = makeSession({ id: 'session-2', name: 'Session Two' })
+    useAppStore.setState({
+      agents: { 'agent-1': makeAgent(), 'agent-2': makeAgent({ id: 'agent-2', threadSessionId: 'session-2' }) },
+      sessions: { [sessionOne.id]: sessionOne, [sessionTwo.id]: sessionTwo },
+      currentAgentId: 'agent-1',
+    })
+    resetChatState()
+
+    const streamOne = controlledSse()
+    const streamTwo = controlledSse()
+    global.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url === '/api/chats/session-1/chat') return streamOne.response
+      if (url === '/api/chats/session-2/chat') return streamTwo.response
+      if (url === '/api/chats/session-1') return jsonResponse(sessionOne)
+      if (url === '/api/chats/session-2') return jsonResponse(sessionTwo)
+      throw new Error(`Unexpected fetch: ${url}`)
+    }) as unknown as typeof fetch
+
+    const sendOne = useChatStore.getState().sendMessage('Hello agent one', { sessionId: 'session-1' })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(useChatStore.getState().streamingSessionId, 'session-1')
+
+    // User opens agent two while agent one is still answering.
+    useAppStore.setState({ currentAgentId: 'agent-2' })
+    simulateSwitchToSession([{ role: 'user', text: 'Earlier question', time: 1 }])
+
+    // Agent one keeps streaming in the background — nothing from it may show up here.
+    streamOne.push({ t: 'd', text: 'Agent one partial' })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(useChatStore.getState().streamText, '', 'detached stream must not write live text')
+
+    // User sends to agent two; its live stream now owns the UI.
+    const sendTwo = useChatStore.getState().sendMessage('Hello agent two', { sessionId: 'session-2' })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(useChatStore.getState().streamingSessionId, 'session-2')
+    streamTwo.push({ t: 'd', text: 'Agent two says hi' })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(useChatStore.getState().streamText, 'Agent two says hi')
+
+    // Agent one finishes first.
+    streamOne.push({ t: 'd', text: ' and final' })
+    streamOne.push({ t: 'done' })
+    streamOne.close()
+    await sendOne
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    const afterOne = useChatStore.getState()
+    assert.equal(afterOne.streaming, true, 'agent two stream must still be live')
+    assert.equal(afterOne.streamingSessionId, 'session-2')
+    assert.equal(afterOne.streamText, 'Agent two says hi')
+    assert.equal(
+      afterOne.messages.some((m) => m.text.includes('Agent one')),
+      false,
+      'agent one reply must not land in agent two chat',
+    )
+
+    // Agent two finishes normally.
+    streamTwo.push({ t: 'done' })
+    streamTwo.close()
+    await sendTwo
+
+    const final = useChatStore.getState()
+    assert.equal(final.streaming, false)
+    assert.deepEqual(
+      final.messages.map((m) => [m.role, m.text]),
+      [
+        ['user', 'Earlier question'],
+        ['user', 'Hello agent two'],
+        ['assistant', 'Agent two says hi'],
+      ],
+    )
+  })
+})

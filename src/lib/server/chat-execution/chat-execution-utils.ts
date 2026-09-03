@@ -249,6 +249,21 @@ export function extractHeartbeatStatus(text: string): { goal?: string; status?: 
   }
 }
 
+/**
+ * True when the previous stored message is this run's own streaming assistant
+ * message, which the final assistant message supersedes rather than follows.
+ *
+ * The user message that opened the run carries the same runId, so the role
+ * check is what stops the assistant reply from overwriting it.
+ */
+export function isSameRunAssistantMessage(
+  previous: Message | null | undefined,
+  runId: string,
+): boolean {
+  if (!previous || previous.role !== 'assistant') return false
+  return Boolean(runId) && previous.runId === runId
+}
+
 export function shouldReplaceRecentAssistantMessage(params: {
   previous: Message | null | undefined
   nextToolEvents: MessageToolEvent[]
