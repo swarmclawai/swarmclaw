@@ -19,6 +19,7 @@ import {
   extractHeartbeatStatus,
   getPersistedAssistantText,
   hasPersistableAssistantPayload,
+  isSameRunAssistantMessage,
   normalizeAssistantArtifactLinks,
   pruneOldHeartbeatMessages,
   shouldAutoRouteHeartbeatAlerts,
@@ -510,7 +511,7 @@ export async function finalizeChatTurn(params: {
           now: nowTs,
         })) {
           persistedResponseForHooks = nextAssistantMessage.text
-        } else if (previous?.runId === lifecycleRunId || shouldReplaceRecentAssistantMessage({
+        } else if (isSameRunAssistantMessage(previous, lifecycleRunId) || shouldReplaceRecentAssistantMessage({
           previous,
           nextToolEvents,
           nextKind,

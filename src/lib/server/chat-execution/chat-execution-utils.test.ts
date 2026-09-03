@@ -13,6 +13,7 @@ import {
   pruneOldHeartbeatMessages,
   shouldAutoRouteHeartbeatAlerts,
   shouldPersistInboundUserMessage,
+  isSameRunAssistantMessage,
   shouldReplaceRecentAssistantMessage,
   stripMarkupForHeartbeat,
 } from '@/lib/server/chat-execution/chat-execution-utils'
@@ -567,5 +568,32 @@ describe('pruneOldHeartbeatMessages', () => {
     ]
     assert.equal(pruneOldHeartbeatMessages(messages), 0)
     assert.equal(messages.length, 3)
+  })
+})
+
+describe('isSameRunAssistantMessage', () => {
+  const runId = 'run-1'
+
+  it('matches this run\'s streaming assistant message', () => {
+    const previous: Message = { role: 'assistant', text: 'partial', time: 1, runId }
+    assert.equal(isSameRunAssistantMessage(previous, runId), true)
+  })
+
+  it('does not match the user message that opened the same run', () => {
+    // The inbound user message is stamped with the same runId as the reply, so
+    // a runId-only check makes the final assistant message overwrite it.
+    const previous: Message = { role: 'user', text: 'hello', time: 1, runId }
+    assert.equal(isSameRunAssistantMessage(previous, runId), false)
+  })
+
+  it('does not match an assistant message from an earlier run', () => {
+    const previous: Message = { role: 'assistant', text: 'older', time: 1, runId: 'run-0' }
+    assert.equal(isSameRunAssistantMessage(previous, runId), false)
+  })
+
+  it('does not match when either side has no runId', () => {
+    assert.equal(isSameRunAssistantMessage({ role: 'assistant', text: 'x', time: 1 }, runId), false)
+    assert.equal(isSameRunAssistantMessage({ role: 'assistant', text: 'x', time: 1, runId }, ''), false)
+    assert.equal(isSameRunAssistantMessage(null, runId), false)
   })
 })
