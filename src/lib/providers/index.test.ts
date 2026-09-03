@@ -212,3 +212,40 @@ test('disabled custom providers are not resolved by getProvider', () => {
 
   assert.equal(output.resolved, false)
 })
+
+test('getProvider copies handler-written resume handles back onto the caller session', () => {
+  const output = runWithTempDataDir<{
+    handleAfterStream: string | null
+    handleAfterFailedStream: string | null
+    apiEndpointLeaked: boolean
+  }>(`
+    const providersMod = await import('@/lib/providers/index')
+    const providers = providersMod.default || providersMod
+
+    // A CLI handler records the upstream session id on the session it is handed.
+    // getProvider passes it a shallow copy, so without a copy-back the caller
+    // (and chat-turn-finalization, which persists the handle) never sees it.
+    const runSession = { id: 'sess-1', apiEndpoint: 'https://agent.example', claudeSessionId: null }
+    providers.copyHandlerSessionMutations(
+      { ...runSession, apiEndpoint: undefined, claudeSessionId: 'claude-abc-123' },
+      runSession,
+    )
+
+    const failedSession = { id: 'sess-2', apiEndpoint: null, codexThreadId: null }
+    providers.copyHandlerSessionMutations(
+      { ...failedSession, codexThreadId: 'codex-xyz' },
+      failedSession,
+    )
+
+    console.log(JSON.stringify({
+      handleAfterStream: runSession.claudeSessionId,
+      handleAfterFailedStream: failedSession.codexThreadId,
+      // The endpoint patch belongs to the copy only and must not leak back.
+      apiEndpointLeaked: runSession.apiEndpoint !== 'https://agent.example',
+    }))
+  `)
+
+  assert.equal(output.handleAfterStream, 'claude-abc-123')
+  assert.equal(output.handleAfterFailedStream, 'codex-xyz')
+  assert.equal(output.apiEndpointLeaked, false)
+})
