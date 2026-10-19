@@ -272,6 +272,8 @@ Hosted deployments should:
 
 Full hosted deployment guides live at https://swarmclaw.ai/docs/deployment
 
+SwarmClaw can also be deployed in one click on [RepoCloud](https://repocloud.io/details/SwarmClaw/).
+
 ## Core Capabilities
 
 - **Providers**: 24+ built-in — Claude Code CLI, Codex CLI, OpenCode CLI, Gemini CLI, Copilot CLI, Cursor Agent CLI, Qwen Code CLI, Goose, Anthropic, OpenAI, OpenRouter, Google Gemini, DeepSeek, Groq, Together, Mistral, xAI, Fireworks, Nebius, DeepInfra, Ollama, LM Studio, OpenClaw, and Hermes Agent, plus compatible custom endpoints.
