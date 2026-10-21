@@ -1,5 +1,12 @@
 import assert from 'node:assert/strict'
 import { before, describe, it } from 'node:test'
+import {
+  isMiniMaxAnthropicEndpoint,
+  MINIMAX_ANTHROPIC_BASE_URL,
+  MINIMAX_CN_ANTHROPIC_BASE_URL,
+  MINIMAX_CN_OPENAI_BASE_URL,
+  MINIMAX_OPENAI_BASE_URL,
+} from '../providers/minimax'
 
 // provider-health uses globalThis to store state — we can import directly
 // since the pure logic functions don't need DATA_DIR. But spawnSync is used
@@ -129,6 +136,7 @@ describe('provider-health', () => {
     assert.ok(defaults.mistral)
     assert.ok(defaults.xai)
     assert.ok(defaults.fireworks)
+    assert.ok(defaults.minimax)
     assert.ok(defaults.hermes)
     assert.ok(defaults.lmstudio)
 
@@ -141,6 +149,34 @@ describe('provider-health', () => {
       } else {
         assert.ok(val.defaultEndpoint.startsWith('https://'))
       }
+    }
+  })
+
+  it('recognizes MiniMax OpenAI-compatible and Anthropic-compatible endpoints', () => {
+    assert.equal(isMiniMaxAnthropicEndpoint(MINIMAX_OPENAI_BASE_URL), false)
+    assert.equal(isMiniMaxAnthropicEndpoint(MINIMAX_CN_OPENAI_BASE_URL), false)
+    assert.equal(isMiniMaxAnthropicEndpoint(MINIMAX_ANTHROPIC_BASE_URL), true)
+    assert.equal(isMiniMaxAnthropicEndpoint(`${MINIMAX_CN_ANTHROPIC_BASE_URL}/`), true)
+  })
+
+  it('pings MiniMax Anthropic-compatible endpoints with Anthropic headers', async () => {
+    const originalFetch = globalThis.fetch
+    const calls: Array<{ url: string; headers?: HeadersInit }> = []
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({ url: String(input), headers: init?.headers })
+      return new Response(JSON.stringify({ data: [{ id: 'MiniMax-M3' }] }), { status: 200 })
+    }) as typeof fetch
+
+    try {
+      const result = await providerHealth.pingProvider('minimax', 'minimax-test-key', MINIMAX_ANTHROPIC_BASE_URL)
+      const headers = new Headers(calls[0]?.headers)
+
+      assert.deepEqual(result, { ok: true, message: 'Connected to MiniMax.' })
+      assert.equal(calls[0]?.url, 'https://api.minimax.io/anthropic/v1/models')
+      assert.equal(headers.get('x-api-key'), 'minimax-test-key')
+      assert.equal(headers.get('anthropic-version'), '2023-06-01')
+    } finally {
+      globalThis.fetch = originalFetch
     }
   })
 

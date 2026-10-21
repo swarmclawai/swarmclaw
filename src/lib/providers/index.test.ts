@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import { runWithTempDataDir } from '@/lib/server/test-utils/run-with-temp-data-dir'
+import { PROVIDERS } from './index'
 
 test('custom providers resolve from saved provider configs', () => {
   const output = runWithTempDataDir<{
@@ -178,6 +179,10 @@ test('custom provider with uuid-style ID resolves correctly', () => {
 
   assert.equal(output.resolvedName, 'My llama-server')
   assert.equal(output.hasHandler, true)
+})
+
+test('MiniMax ordinary text catalog puts M3.1-Flash first and keeps M3 second', () => {
+  assert.deepEqual(PROVIDERS.minimax.models, ['MiniMax-M3.1-Flash', 'MiniMax-M3'])
 })
 
 test('disabled custom providers are not resolved by getProvider', () => {

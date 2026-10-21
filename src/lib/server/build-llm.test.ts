@@ -48,6 +48,28 @@ beforeEach(() => {
   saveSessions({})
 })
 
+test('buildChatModel passes MiniMax Flash max reasoning effort by default', () => {
+  const model = buildChatModel({
+    provider: 'minimax',
+    model: 'MiniMax-M3.1-Flash',
+    apiKey: 'test-key',
+  }) as unknown as { modelKwargs?: Record<string, unknown>; model?: string }
+
+  assert.equal(model.model, 'MiniMax-M3.1-Flash')
+  assert.deepEqual(model.modelKwargs, { reasoning_effort: 'max' })
+})
+
+test('buildChatModel leaves MiniMax M3 without Flash-only reasoning effort', () => {
+  const model = buildChatModel({
+    provider: 'minimax',
+    model: 'MiniMax-M3',
+    apiKey: 'test-key',
+    thinkingLevel: 'high',
+  }) as unknown as { modelKwargs?: Record<string, unknown> }
+
+  assert.deepEqual(model.modelKwargs, {})
+})
+
 after(() => {
   if (originalEnv.DATA_DIR === undefined) delete process.env.DATA_DIR
   else process.env.DATA_DIR = originalEnv.DATA_DIR

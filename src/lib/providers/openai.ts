@@ -8,6 +8,7 @@ import {
   shouldUseDeepSeekReasoningBridge,
 } from '@/lib/providers/deepseek-reasoning-chat-openai'
 import { normalizeLmStudioEndpoint, normalizeOpenAiCompatibleV1Endpoint } from '@/lib/providers/openai-compatible-endpoint'
+import { resolveMiniMaxReasoningEffort } from '@/lib/providers/minimax'
 
 const TAG = 'provider-openai'
 
@@ -92,6 +93,10 @@ export function streamOpenAiChat({ session, message, imagePath, imageUrl, apiKey
               messages,
               stream: true,
             }
+            const reasoningEffort = session.provider === 'minimax'
+              ? resolveMiniMaxReasoningEffort(model, session.thinkingLevel)
+              : null
+            if (reasoningEffort) payloadObj.reasoning_effort = reasoningEffort
             if (includeStreamOptions) {
               payloadObj.stream_options = { include_usage: true }
             }

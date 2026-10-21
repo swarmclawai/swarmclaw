@@ -12,6 +12,7 @@ import { resolveProviderApiEndpoint, resolveProviderCredentialId } from './provi
 import { getAgent } from './agents/agent-repository'
 import { resolveCredentialSecret } from './credentials/credential-service'
 import { getSession } from './sessions/session-repository'
+import { resolveMiniMaxReasoningEffort } from '@/lib/providers/minimax'
 import type { Agent } from '@/types'
 
 const OLLAMA_CLOUD_URL = 'https://ollama.com/v1'
@@ -41,7 +42,7 @@ interface ResolvedGenerationModelConfig {
   responseFormat?: GenerationResponseFormat
 }
 
-type OpenAiReasoningEffort = 'low' | 'medium' | 'high'
+type OpenAiReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 type ChatOpenAiConfig = ConstructorParameters<typeof ChatOpenAI>[0] & {
   modelKwargs?: {
     reasoning_effort?: OpenAiReasoningEffort
@@ -137,8 +138,11 @@ export function buildChatModel(opts: {
     timeout: OPENAI_COMPAT_MODEL_TIMEOUT_MS,
     maxRetries: OPENAI_COMPAT_MODEL_MAX_RETRIES,
   }
-  // Map thinking level to reasoning_effort for OpenAI o-series models
-  if (thinkingLevel && provider === 'openai' && /^o\d/.test(model || '')) {
+  // Map thinking level to reasoning_effort for OpenAI o-series models and MiniMax M3.1-Flash.
+  if (provider === 'minimax') {
+    const reasoningEffort = resolveMiniMaxReasoningEffort(model, thinkingLevel)
+    if (reasoningEffort) config.modelKwargs = { reasoning_effort: reasoningEffort }
+  } else if (thinkingLevel && provider === 'openai' && /^o\d/.test(model || '')) {
     const effortMap: Record<NonNullable<typeof thinkingLevel>, OpenAiReasoningEffort> = {
       minimal: 'low',
       low: 'low',

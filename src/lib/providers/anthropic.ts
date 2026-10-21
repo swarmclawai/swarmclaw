@@ -3,6 +3,7 @@ import type { StreamChatOptions } from './index'
 import { PROVIDER_DEFAULTS, IMAGE_EXTS, TEXT_EXTS, ANTHROPIC_MAX_TOKENS, MAX_HISTORY_MESSAGES, writeSSE } from './provider-defaults'
 import { log } from '@/lib/server/logger'
 import { resolveImagePath } from '@/lib/server/resolve-image'
+import { resolveMiniMaxReasoningEffort } from '@/lib/providers/minimax'
 
 const TAG = 'provider-anthropic'
 
@@ -42,6 +43,10 @@ export function streamAnthropicChat({ session, message, imagePath, apiKey, syste
         if (systemPrompt) {
           body.system = systemPrompt
         }
+        const reasoningEffort = session.provider === 'minimax'
+          ? resolveMiniMaxReasoningEffort(model, session.thinkingLevel)
+          : null
+        if (reasoningEffort) body.output_config = { effort: reasoningEffort }
 
         const payload = JSON.stringify(body)
 

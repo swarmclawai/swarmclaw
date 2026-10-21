@@ -7,6 +7,7 @@ import { checkCliProviderReady } from '@/lib/server/cli-provider-readiness'
 import { createProviderDiagnostics, sanitizeProviderDiagnosticText } from '@/lib/server/provider-diagnostics'
 import { OPENAI_COMPATIBLE_DEFAULTS } from '@/lib/server/provider-health'
 import { normalizeLmStudioEndpoint, normalizeOpenAiCompatibleV1Endpoint } from '@/lib/providers/openai-compatible-endpoint'
+import { isMiniMaxAnthropicEndpoint } from '@/lib/providers/minimax'
 import { resolveOllamaRuntimeConfig } from '@/lib/server/ollama-runtime'
 import { normalizeOllamaSetupEndpoint, normalizeOpenClawUrl, parseErrorMessage } from './helpers'
 import type { ProviderCheckResult } from '@/types/provider'
@@ -102,6 +103,7 @@ async function checkOpenAiCompatible(
       DeepInfra: 'deepseek-ai/DeepSeek-R1-0528',
       OpenRouter: 'openai/gpt-4.1-mini',
       'Hermes Agent': 'hermes-agent',
+      MiniMax: 'MiniMax-M3.1-Flash',
       'LM Studio': 'local-model',
     }
     testModel = fallbacks[providerName] || 'gpt-4o-mini'
@@ -160,7 +162,7 @@ async function checkOpenAiCompatible(
   }
 }
 
-async function checkAnthropic(apiKey: string, endpointRaw: string, modelRaw: string): Promise<ProviderCheckResult> {
+async function checkAnthropic(apiKey: string, endpointRaw: string, modelRaw: string, providerName = 'Anthropic'): Promise<ProviderCheckResult> {
   const diagnostics = createProviderDiagnostics()
   const model = modelRaw || 'claude-sonnet-4-6'
   const baseUrl = (endpointRaw || 'https://api.anthropic.com').replace(/\/+$/, '')
@@ -188,7 +190,7 @@ async function checkAnthropic(apiKey: string, endpointRaw: string, modelRaw: str
   } catch (err: unknown) {
     const message = err instanceof Error && err.name === 'TimeoutError'
       ? 'Connection check timed out. Verify endpoint/network and try again.'
-      : (err instanceof Error && err.message ? err.message : 'Anthropic request failed.')
+      : (err instanceof Error && err.message ? err.message : `${providerName} request failed.`)
     diagnostics.fail('Message check request failed', {
       target,
       detail: message,
@@ -197,7 +199,7 @@ async function checkAnthropic(apiKey: string, endpointRaw: string, modelRaw: str
     return { ok: false, message: sanitizeProviderDiagnosticText(message), diagnostics: diagnostics.toJSON() }
   }
   if (!res.ok) {
-    const detail = sanitizeProviderDiagnosticText(await parseErrorMessage(res, `Anthropic returned ${res.status}.`))
+    const detail = sanitizeProviderDiagnosticText(await parseErrorMessage(res, `${providerName} returned ${res.status}.`))
     diagnostics.fail('Message check failed', {
       target,
       detail: `HTTP ${res.status}: ${detail}`,
@@ -216,7 +218,7 @@ async function checkAnthropic(apiKey: string, endpointRaw: string, modelRaw: str
     detail: text ? `Sample: ${text.slice(0, 80)}` : 'Provider returned a successful response.',
     durationMs: Date.now() - startedAt,
   })
-  return { ok: true, message: text ? `Connected to Anthropic. Sample: ${text.slice(0, 120)}` : 'Connected to Anthropic.', diagnostics: diagnostics.toJSON() }
+  return { ok: true, message: text ? `Connected to ${providerName}. Sample: ${text.slice(0, 120)}` : `Connected to ${providerName}.`, diagnostics: diagnostics.toJSON() }
 }
 
 async function checkOllama(params: {
@@ -525,6 +527,14 @@ export async function POST(req: Request) {
         const info = OPENAI_COMPATIBLE_DEFAULTS[provider]
         if (!apiKey) return NextResponse.json({ ok: false, message: `${info.name} API key is required.` })
         const result = await checkOpenAiCompatible(info.name, apiKey, endpoint, info.defaultEndpoint, model)
+        return NextResponse.json(result)
+      }
+      case 'minimax': {
+        const info = OPENAI_COMPATIBLE_DEFAULTS.minimax
+        if (!apiKey) return NextResponse.json({ ok: false, message: `${info.name} API key is required.` })
+        const result = isMiniMaxAnthropicEndpoint(endpoint)
+          ? await checkAnthropic(apiKey, endpoint, model || 'MiniMax-M3.1-Flash', info.name)
+          : await checkOpenAiCompatible(info.name, apiKey, endpoint, info.defaultEndpoint, model || 'MiniMax-M3.1-Flash')
         return NextResponse.json(result)
       }
       case 'hermes': {

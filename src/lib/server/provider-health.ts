@@ -4,6 +4,7 @@ import { upsertStoredItem, loadCollection } from './storage'
 import { log } from './logger'
 import { isCliProviderId } from '@/lib/providers/cli-provider-metadata'
 import { normalizeLmStudioEndpoint, normalizeOpenAiCompatibleV1Endpoint } from '@/lib/providers/openai-compatible-endpoint'
+import { isMiniMaxAnthropicEndpoint, MINIMAX_OPENAI_BASE_URL } from '@/lib/providers/minimax'
 
 const TAG = 'provider-health'
 
@@ -272,6 +273,7 @@ export const OPENAI_COMPATIBLE_DEFAULTS: Record<string, { name: string; defaultE
   fireworks: { name: 'Fireworks AI', defaultEndpoint: 'https://api.fireworks.ai/inference/v1' },
   nebius: { name: 'Nebius', defaultEndpoint: 'https://api.tokenfactory.nebius.com/v1' },
   deepinfra: { name: 'DeepInfra', defaultEndpoint: 'https://api.deepinfra.com/v1/openai' },
+  minimax: { name: 'MiniMax', defaultEndpoint: MINIMAX_OPENAI_BASE_URL },
   hermes: { name: 'Hermes Agent', defaultEndpoint: 'http://127.0.0.1:8642/v1' },
   lmstudio: { name: 'LM Studio', defaultEndpoint: 'http://127.0.0.1:1234/v1' },
 }
@@ -295,8 +297,13 @@ export async function pingOpenAiCompatible(
   return { ok: true, message: 'Connected.' }
 }
 
-export async function pingAnthropic(apiKey: string): Promise<{ ok: boolean; message: string }> {
-  const res = await fetch('https://api.anthropic.com/v1/models', {
+export async function pingAnthropic(
+  apiKey: string,
+  endpoint = 'https://api.anthropic.com',
+  providerName = 'Anthropic',
+): Promise<{ ok: boolean; message: string }> {
+  const baseUrl = endpoint.replace(/\/+$/, '')
+  const res = await fetch(`${baseUrl}/v1/models`, {
     headers: {
       'x-api-key': apiKey,
       'anthropic-version': '2023-06-01',
@@ -305,10 +312,10 @@ export async function pingAnthropic(apiKey: string): Promise<{ ok: boolean; mess
     cache: 'no-store',
   })
   if (!res.ok) {
-    const detail = await parseErrorMessage(res, `Anthropic returned ${res.status}.`)
+    const detail = await parseErrorMessage(res, `${providerName} returned ${res.status}.`)
     return { ok: false, message: detail }
   }
-  return { ok: true, message: 'Connected to Anthropic.' }
+  return { ok: true, message: `Connected to ${providerName}.` }
 }
 
 export async function pingOllama(endpoint: string, apiKey?: string): Promise<{ ok: boolean; message: string }> {
@@ -364,6 +371,10 @@ export async function pingProvider(
     if (provider === 'anthropic') {
       if (!apiKey) return { ok: false, message: 'No API key configured.' }
       return await pingAnthropic(apiKey)
+    }
+    if (provider === 'minimax' && isMiniMaxAnthropicEndpoint(endpoint)) {
+      if (!apiKey) return { ok: false, message: 'No API key configured.' }
+      return await pingAnthropic(apiKey, endpoint, 'MiniMax')
     }
     if (provider === 'ollama') {
       return await pingOllama(endpoint || 'http://localhost:11434', apiKey)

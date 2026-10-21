@@ -173,3 +173,63 @@ test('POST rejects TokenMix setup checks without an API key', async () => {
   assert.equal(payload.ok, false)
   assert.equal(payload.message, 'TokenMix API key is required.')
 })
+
+test('POST checks MiniMax OpenAI-compatible endpoints with the Flash default model', async () => {
+  const originalFetch = globalThis.fetch
+  const calls: Array<{ url: string; init?: RequestInit }> = []
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    calls.push({ url: String(input), init })
+    return new Response(JSON.stringify({ choices: [{ message: { content: 'OPENAI_SETUP_OK' } }] }), { status: 200 })
+  }) as typeof fetch
+
+  try {
+    const res = await POST(new Request('http://localhost/api/setup/check-provider', {
+      method: 'POST',
+      body: JSON.stringify({
+        provider: 'minimax',
+        apiKey: 'minimax-test-key',
+        endpoint: 'https://api.minimax.io/v1',
+      }),
+    }))
+    const payload = await res.json()
+    const body = JSON.parse(String(calls[0]?.init?.body || '{}'))
+
+    assert.equal(payload.ok, true)
+    assert.equal(calls[0]?.url, 'https://api.minimax.io/v1/chat/completions')
+    assert.equal(body.model, 'MiniMax-M3.1-Flash')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('POST checks MiniMax Anthropic-compatible endpoints with the Anthropic protocol', async () => {
+  const originalFetch = globalThis.fetch
+  const calls: Array<{ url: string; init?: RequestInit }> = []
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    calls.push({ url: String(input), init })
+    return new Response(JSON.stringify({ content: [{ type: 'text', text: 'ANTHROPIC_SETUP_OK' }] }), { status: 200 })
+  }) as typeof fetch
+
+  try {
+    const res = await POST(new Request('http://localhost/api/setup/check-provider', {
+      method: 'POST',
+      body: JSON.stringify({
+        provider: 'minimax',
+        apiKey: 'minimax-test-key',
+        endpoint: 'https://api.minimaxi.com/anthropic',
+      }),
+    }))
+    const payload = await res.json()
+    const headers = new Headers(calls[0]?.init?.headers)
+    const body = JSON.parse(String(calls[0]?.init?.body || '{}'))
+
+    assert.equal(payload.ok, true)
+    assert.equal(payload.message, 'Connected to MiniMax. Sample: ANTHROPIC_SETUP_OK')
+    assert.equal(calls[0]?.url, 'https://api.minimaxi.com/anthropic/v1/messages')
+    assert.equal(headers.get('x-api-key'), 'minimax-test-key')
+    assert.equal(headers.get('anthropic-version'), '2023-06-01')
+    assert.equal(body.model, 'MiniMax-M3.1-Flash')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
