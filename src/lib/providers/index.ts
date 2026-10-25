@@ -487,6 +487,29 @@ export const PROVIDERS: Record<string, BuiltinProviderConfig> = {
       },
     },
   },
+  runcrate: {
+    id: 'runcrate',
+    name: 'Runcrate',
+    models: [
+      'deepseek-ai/DeepSeek-V4.1-Flash',
+      'zai-org/GLM-5.3',
+      'zai-org/GLM-5.3-Flash',
+      'Qwen/Qwen3.8-Flash',
+      'openai/gpt-oss-120b',
+    ],
+    requiresApiKey: true,
+    requiresEndpoint: false,
+    defaultEndpoint: 'https://api.runcrate.ai/v1',
+    handler: {
+      streamChat: (opts) => {
+        const patchedSession = {
+          ...opts.session,
+          apiEndpoint: opts.session.apiEndpoint || 'https://api.runcrate.ai/v1',
+        }
+        return streamOpenAiChat({ ...opts, session: patchedSession })
+      },
+    },
+  },
   deepinfra: {
     id: 'deepinfra',
     name: 'DeepInfra',

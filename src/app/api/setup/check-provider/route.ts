@@ -527,6 +527,13 @@ export async function POST(req: Request) {
         const result = await checkOpenAiCompatible(info.name, apiKey, endpoint, info.defaultEndpoint, model)
         return NextResponse.json(result)
       }
+      case 'runcrate': {
+        // Runcrate's /models lists image and video models first, so check chat with its default model.
+        const info = OPENAI_COMPATIBLE_DEFAULTS.runcrate
+        if (!apiKey) return NextResponse.json({ ok: false, message: `${info.name} API key is required.` })
+        const result = await checkOpenAiCompatible(info.name, apiKey, endpoint, info.defaultEndpoint, model || 'deepseek-ai/DeepSeek-V4.1-Flash')
+        return NextResponse.json(result)
+      }
       case 'hermes': {
         const info = OPENAI_COMPATIBLE_DEFAULTS.hermes
         const result = await checkOpenAiCompatible(info.name, apiKey, endpoint, info.defaultEndpoint, model)

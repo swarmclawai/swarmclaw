@@ -253,6 +253,17 @@ export const SETUP_PROVIDERS: SetupProviderOption[] = [
     modelLibraryUrl: 'https://nebius.com/services/token-factory',
   },
   {
+    id: 'runcrate',
+    name: 'Runcrate',
+    description: 'Open models (DeepSeek, GLM, Qwen, gpt-oss) on an OpenAI-compatible API.',
+    requiresKey: true,
+    supportsEndpoint: false,
+    keyUrl: 'https://www.runcrate.ai/dashboard/api-keys?utm_source=swarmclaw&utm_medium=directory&utm_campaign=gpu_pricing',
+    keyLabel: 'runcrate.ai',
+    icon: 'R',
+    modelLibraryUrl: 'https://www.runcrate.ai/inference?utm_source=swarmclaw&utm_medium=directory&utm_campaign=gpu_pricing',
+  },
+  {
     id: 'deepinfra',
     name: 'DeepInfra',
     description: 'Fast serverless inference for popular open-source models.',
@@ -868,6 +879,13 @@ export const DEFAULT_AGENTS = {
     description: 'A helpful assistant powered by Nebius.',
     systemPrompt: SWARMCLAW_ASSISTANT_PROMPT,
     model: 'deepseek-ai/DeepSeek-V3.2',
+    tools: STARTER_AGENT_TOOLS,
+  },
+  runcrate: {
+    name: 'Runcrate Agent',
+    description: 'A helpful assistant powered by Runcrate.',
+    systemPrompt: SWARMCLAW_ASSISTANT_PROMPT,
+    model: 'deepseek-ai/DeepSeek-V4.1-Flash',
     tools: STARTER_AGENT_TOOLS,
   },
   deepinfra: {

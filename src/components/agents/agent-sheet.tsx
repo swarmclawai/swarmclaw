@@ -49,6 +49,7 @@ const AUTO_SYNC_MODEL_PROVIDER_IDS = new Set<ProviderType>([
   'xai',
   'fireworks',
   'nebius',
+  'runcrate',
   'deepinfra',
   'hermes',
   'lmstudio',

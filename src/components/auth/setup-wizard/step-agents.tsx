@@ -24,6 +24,7 @@ const SETUP_PROVIDERS_WITH_MODEL_DISCOVERY = new Set([
   'xai',
   'fireworks',
   'nebius',
+  'runcrate',
   'deepinfra',
   'ollama',
   'openclaw',
